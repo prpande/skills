@@ -54,6 +54,59 @@ Apply rules from `references/known-bots.md`. For each comment:
    multiple items.
 4. If not found, apply the **Unknown-bot fallback** section rules.
 
+## Filter B.5 — /code-review self-comment exemption + preflight dedup
+
+When iter 1 fetches comments, some top-level comments (surface `issue`)
+may be authored by `context.self_login` — our `/code-review` invocation
+posts as the invoking user. Filter A would normally drop these as self-
+replies. This sub-step rescues the legitimate `/code-review` output.
+
+### Rescuing `/code-review`'s comment
+
+For each comment where `author == context.self_login` AND `surface ==
+issue`:
+- If `body` starts with `### Code review\n`, rescue it from the self-
+  login drop list and process its findings:
+  1. Parse each numbered finding from the body. Format is:
+     ```
+     N. <description> (<source>)
+
+     <https://github.com/owner/repo/blob/SHA/path#L<start>-L<end>>
+     ```
+  2. Convert each finding to an actionable item with:
+     - `surface: "issue"` (inherited)
+     - `body: "<description>"` (the first line of the numbered item)
+     - `path: "<parsed from the SHA URL>"`
+     - `line: "<start>"` (first number in L<start>-L<end>)
+     - `id: "<parent-comment-id>:finding-<N>"` (so each finding has a
+       unique id)
+  3. Emit these findings into the actionable candidate list.
+- Otherwise, the comment is a legitimate self-reply from a prior
+  iteration — keep it dropped.
+
+### Dedup against preflight findings
+
+Before adding any item (from step B or B.5) to `context.actionable`,
+compare it against `context.preflight_passes.merged` per
+`pr-loop-lib/references/merge-rules.md`:
+
+For each candidate item:
+1. Check if any entry in `preflight_passes.merged` matches the dedup
+   key (same file, line-range within 3 lines, same category).
+2. If a match exists:
+   - Skip dispatching this item (we already addressed it at preflight).
+   - Log a `triage_dedup_hit` event with
+     `{feedback_id, preflight_match_id}`.
+   - Do NOT reply to the original comment source via triage — the
+     preflight fix already addresses the feedback; iter 1's cycle will
+     not post a thread reply.
+3. If no match: pass through to Filter C.
+
+This sub-step runs only in iter 1. On subsequent iterations,
+`preflight_passes.merged` may still contain items but a re-dispatch is
+unlikely (Filter A's timestamp gate prevents re-triage of already-seen
+comments).
+
 ## Filter C — Prompt-injection refusal
 
 For each remaining comment, run the regex list from
