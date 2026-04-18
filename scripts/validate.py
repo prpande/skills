@@ -78,11 +78,15 @@ def check_file(path: pathlib.Path) -> list[str]:
             break
     for m in REL_REF.finditer(text):
         rel = m.group(1)
-        # Try relative to skill root first, then relative to current file.
+        # Try relative to: current skill root, current file dir, and each
+        # other skill root. References often point across skills (e.g.,
+        # pr-autopilot referencing pr-loop-lib/references/*.md).
         candidates = []
         if skill_root is not None:
             candidates.append((skill_root / rel).resolve())
         candidates.append((path.parent / rel).resolve())
+        for other_root_name in SKILL_ROOTS:
+            candidates.append((REPO / other_root_name / rel).resolve())
         if not any(c.exists() for c in candidates):
             line = text[: m.start()].count("\n") + 1
             errors.append(f"{path}:{line} missing reference: {rel}")
