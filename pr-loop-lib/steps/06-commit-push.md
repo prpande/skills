@@ -25,9 +25,14 @@ Never `git add .` or `git add -A` — risk of staging unrelated work.
 
 ## Commit message
 
+The PR number comes from `context.pr_number`, exported as the shell variable
+`$PR` by platform detection (see `platform/github.md` / `platform/azdo.md`).
+Use `$PR` throughout — not `$PR_NUMBER` — to stay consistent with the rest
+of the loop.
+
 Format:
 ```
-Address PR review feedback (#<PR_NUMBER>)
+Address PR review feedback (#<$PR>)
 
 - <agent1.reason>
 - <agent2.reason>
@@ -41,7 +46,7 @@ Use heredoc to avoid shell-quoting issues:
 
 ```bash
 git -c commit.gpgsign=false commit -m "$(cat <<EOF
-Address PR review feedback (#${PR_NUMBER})
+Address PR review feedback (#${PR})
 
 - ${AGENT1_REASON}
 - ${AGENT2_REASON}

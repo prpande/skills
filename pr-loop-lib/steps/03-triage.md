@@ -8,10 +8,27 @@ iteration.
 
 Keep a comment only if `max(created_at, updated_at) > context.last_push_timestamp`.
 
-**Exception**: keep threaded comments where `is_resolved == false` AND the
-skill has not already posted a reply in this thread (check GraphQL comment
-list for an author login matching the skill's git-configured user email).
-This catches threads missed by earlier cycles.
+**Pre-filter**: regardless of timestamp, always drop comments authored by
+the skill itself (the current GitHub user). On GitHub, comment authors
+expose a `login`, not an email — fetch the acting login once at skill
+entry and store it in `context.self_login`:
+
+```bash
+# GitHub
+context.self_login = $(gh api user --jq .login)
+# AzDO
+context.self_login = $(az account show --query user.name -o tsv)
+```
+
+A comment where `author == context.self_login` is never actionable —
+these are replies the skill posted in a previous iteration. Without this
+pre-filter, the loop would treat its own replies as new feedback and
+could grow unboundedly.
+
+**Exception to timestamp rule**: keep threaded comments where
+`is_resolved == false` AND the thread has no reply with
+`author == context.self_login`. This catches threads missed by earlier
+cycles (e.g., a fixer crashed before step 07 could reply).
 
 On first iteration of `pr-autopilot`, `context.last_push_timestamp` is the
 committer timestamp of the commit that opened the PR. On `pr-followup`, it

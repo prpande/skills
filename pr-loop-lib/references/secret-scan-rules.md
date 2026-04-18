@@ -6,23 +6,52 @@ any match halts the skill and surfaces the file + line to the user.
 
 ## Patterns
 
-Run each pattern against the full text of every file about to be staged.
+Regex flavor: **Python `re`** (compatible with most modern engines; `ripgrep`
+uses the same syntax). Run each pattern against the full text of every
+file about to be staged. Patterns are listed in a fenced block (one per
+line, unescaped) because markdown-table cells would force `|` to be
+escaped and change the meaning.
 
-| # | Pattern | Matches |
-|---|---|---|
-| 1 | `-----BEGIN (?:RSA \|EC \|OPENSSH \|DSA \|)PRIVATE KEY-----` | Private keys |
-| 2 | `(?i)(api[_-]?key\|secret[_-]?key\|access[_-]?token\|auth[_-]?token\|client[_-]?secret)\s*[:=]\s*["']?[A-Za-z0-9+/=_\-]{20,}["']?` | Keyed assignments |
-| 3 | `(?i)password\s*[:=]\s*["'][^"']{8,}["']` | Password assignments |
-| 4 | `[A-Za-z0-9]{32,64}\.apps\.googleusercontent\.com` | Google OAuth client IDs |
-| 5 | `AKIA[0-9A-Z]{16}` | AWS access key ID |
-| 6 | `(?i)(aws[_-]?secret[_-]?access[_-]?key)\s*[:=]\s*["']?[A-Za-z0-9+/=]{40}["']?` | AWS secret access key |
-| 7 | `xox[baprs]-[A-Za-z0-9-]{10,}` | Slack tokens |
-| 8 | `ghp_[A-Za-z0-9]{36}` | GitHub personal access tokens |
-| 9 | `github_pat_[A-Za-z0-9_]{82}` | GitHub fine-grained PATs |
-| 10 | `(?i)(Server\|Host\|Data Source)\s*=\s*[^;]+;\s*.*?(?:Password\|Pwd)\s*=\s*[^;]+` | Connection strings |
-| 11 | `mongodb(\+srv)?://[^:]+:[^@]+@` | MongoDB connection strings |
-| 12 | `postgres(?:ql)?://[^:]+:[^@]+@` | Postgres connection strings |
-| 13 | `(?i)^\s*(SECRET\|PASSWORD\|TOKEN\|KEY)\s*=\s*\S{8,}\s*$` (in `.env` / `.env.*` files) | `.env` entries |
+```
+# 1 — Private keys
+-----BEGIN (?:RSA |EC |OPENSSH |DSA |)PRIVATE KEY-----
+
+# 2 — Keyed assignments (api_key, secret_key, access_token, auth_token, client_secret)
+(?i)(api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret)\s*[:=]\s*["']?[A-Za-z0-9+/=_\-]{20,}["']?
+
+# 3 — Password assignments
+(?i)password\s*[:=]\s*["'][^"']{8,}["']
+
+# 4 — Google OAuth client IDs
+[A-Za-z0-9]{32,64}\.apps\.googleusercontent\.com
+
+# 5 — AWS access key ID
+AKIA[0-9A-Z]{16}
+
+# 6 — AWS secret access key
+(?i)(aws[_-]?secret[_-]?access[_-]?key)\s*[:=]\s*["']?[A-Za-z0-9+/=]{40}["']?
+
+# 7 — Slack tokens
+xox[baprs]-[A-Za-z0-9-]{10,}
+
+# 8 — GitHub personal access tokens
+ghp_[A-Za-z0-9]{36}
+
+# 9 — GitHub fine-grained PATs
+github_pat_[A-Za-z0-9_]{82}
+
+# 10 — Connection strings (with password)
+(?i)(Server|Host|Data Source)\s*=\s*[^;]+;\s*.*?(?:Password|Pwd)\s*=\s*[^;]+
+
+# 11 — MongoDB connection strings
+mongodb(\+srv)?://[^:]+:[^@]+@
+
+# 12 — Postgres connection strings
+postgres(?:ql)?://[^:]+:[^@]+@
+
+# 13 — .env entries (SECRET/PASSWORD/TOKEN/KEY assignments; apply only to .env / .env.* files)
+(?i)^\s*(SECRET|PASSWORD|TOKEN|KEY)\s*=\s*\S{8,}\s*$
+```
 
 ## File-type guardrails
 

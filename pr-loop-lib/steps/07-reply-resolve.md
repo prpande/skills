@@ -65,9 +65,12 @@ For `suspicious` items from step 03 (prompt-injection filter):
 
 ### Azure DevOps threads (surface = `thread`)
 
-1. Reply: `az repos pr thread comment add --thread-id <T> --content "$REPLY_TEXT"`.
-2. Resolve: `az repos pr thread update --thread-id <T> --status closed`.
+1. Reply: `az repos pr thread comment add --pull-request-id "$PR" --thread-id <T> --content "$REPLY_TEXT"`.
+2. Resolve: `az repos pr thread update --pull-request-id "$PR" --thread-id <T> --status closed`.
    Skip resolve if verdict is `needs-human` (status stays `active`).
+
+Both commands require `--pull-request-id`; omitting it causes the AzDO CLI
+to exit non-zero. The exact flag names match `platform/azdo.md`.
 
 ## Error handling
 

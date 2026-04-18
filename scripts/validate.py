@@ -32,7 +32,11 @@ PLACEHOLDER_PATTERNS = [
 # Exclude matches inside fenced code blocks (``` ... ```).
 FENCED_BLOCK = re.compile(r"```.*?```", re.DOTALL)
 REL_REF = re.compile(
-    r"`((?:steps|references|platform)/[A-Za-z0-9._/-]+\.md)`"
+    r"`("
+    r"(?:steps|references|platform)/[A-Za-z0-9._/-]+\.md"   # skill-root-relative
+    r"|"
+    r"pr-(?:autopilot|followup|loop-lib)/[A-Za-z0-9._/-]+\.md"  # repo-relative
+    r")`"
 )
 HOME_REF = re.compile(
     r"`(~/\.claude/skills/[A-Za-z0-9._/-]+\.md)`"
@@ -51,7 +55,11 @@ def _mask_code_blocks(text: str) -> str:
 
 def check_file(path: pathlib.Path) -> list[str]:
     errors: list[str] = []
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError) as e:
+        errors.append(f"{path}: cannot read as UTF-8 ({type(e).__name__}: {e})")
+        return errors
     scan_text = _mask_code_blocks(text)
     for pat in PLACEHOLDER_PATTERNS:
         for m in pat.finditer(scan_text):
@@ -78,15 +86,19 @@ def check_file(path: pathlib.Path) -> list[str]:
             break
     for m in REL_REF.finditer(text):
         rel = m.group(1)
-        # Try relative to: current skill root, current file dir, and each
-        # other skill root. References often point across skills (e.g.,
-        # pr-autopilot referencing pr-loop-lib/references/*.md).
+        # If the reference already starts with a skill root name, resolve it
+        # from the repo root. Otherwise try relative to the current skill
+        # root, the current file's dir, and each other skill root.
         candidates = []
-        if skill_root is not None:
-            candidates.append((skill_root / rel).resolve())
-        candidates.append((path.parent / rel).resolve())
-        for other_root_name in SKILL_ROOTS:
-            candidates.append((REPO / other_root_name / rel).resolve())
+        first_segment = rel.split("/", 1)[0]
+        if first_segment in SKILL_ROOTS:
+            candidates.append((REPO / rel).resolve())
+        else:
+            if skill_root is not None:
+                candidates.append((skill_root / rel).resolve())
+            candidates.append((path.parent / rel).resolve())
+            for other_root_name in SKILL_ROOTS:
+                candidates.append((REPO / other_root_name / rel).resolve())
         if not any(c.exists() for c in candidates):
             line = text[: m.start()].count("\n") + 1
             errors.append(f"{path}:{line} missing reference: {rel}")

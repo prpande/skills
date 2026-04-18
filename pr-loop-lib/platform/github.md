@@ -70,17 +70,28 @@ gh api "repos/{owner}/{repo}/pulls/${PR}/reviews" --paginate --jq '[
 
 Needed for the resolve mutation. Posts and replies use REST; resolution uses GraphQL.
 
+Both connections (`reviewThreads` and each thread's `comments`) must be
+paginated via `pageInfo { hasNextPage, endCursor }` — GitHub caps a single
+page at 100 for threads and 100 for comments (we request 50 to stay under
+typical API-cost limits). PRs with >100 threads or any thread with >50
+comments require repeated queries until `hasNextPage` is false. Do not
+skip the loop; a missing `thread_id` for a single inline comment silently
+breaks the resolve step for that thread.
+
 ```bash
+# First page. For subsequent pages, pass $threadsCursor / $commentsCursor.
 gh api graphql -f query='
-query($owner: String!, $repo: String!, $pr: Int!) {
+query($owner: String!, $repo: String!, $pr: Int!, $threadsCursor: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $pr) {
-      reviewThreads(first: 100) {
+      reviewThreads(first: 100, after: $threadsCursor) {
+        pageInfo { hasNextPage endCursor }
         nodes {
           id
           isResolved
           isOutdated
           comments(first: 50) {
+            pageInfo { hasNextPage endCursor }
             nodes {
               id
               databaseId
@@ -96,8 +107,13 @@ query($owner: String!, $repo: String!, $pr: Int!) {
     }
   }
 }
-' -f owner="$OWNER" -f repo="$REPO" -F pr="$PR"
+' -f owner="$OWNER" -f repo="$REPO" -F pr="$PR" -f threadsCursor=""
 ```
+
+If any returned thread reports `comments.pageInfo.hasNextPage == true`,
+re-query that single thread by node ID with a `comments(first: 50, after: $commentsCursor)`
+sub-query until the per-thread pagination also completes. Merge the
+resulting comment lists client-side.
 
 ### Reply to an inline thread (GraphQL mutation)
 

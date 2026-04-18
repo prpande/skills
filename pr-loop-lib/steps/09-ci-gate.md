@@ -31,18 +31,29 @@ Collect one record per pipeline: `{name, result, link, pipeline_id}`.
 Populate `context.ci_results` as a list of:
 ```
 { name: <check/pipeline name>,
-  state: green|red,
+  state: green | red | pending-timeout,
   link: <URL>,
   raw_state: <platform-specific terminal value>,
   extra: {...}  // e.g., pipeline_id for AzDO, bucket for GitHub
 }
 ```
 
+The three state values have distinct meanings:
+- `green` — check reported success.
+- `red` — check reported failure (any non-success terminal state on the
+  platform).
+- `pending-timeout` — check never reached a terminal state within the
+  skill's timeout window. Step 10 does NOT classify these; step 11
+  reports them alongside the per-check breakdown so the user knows the
+  gate was abandoned, not failed.
+
 ## Routing
 
 - All green → proceed to step 11 (final report) with
   `context.termination_reason = "ci-green"`.
 - Any red → proceed to step 10 (classify + possibly re-enter the loop).
+- Any `pending-timeout` (with no red checks) → proceed to step 11 with
+  `context.termination_reason = "ci-timeout"`.
 
 ## Timeout
 

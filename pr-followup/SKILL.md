@@ -20,7 +20,8 @@ verified once.
 
 - PR is OPEN on the remote
 - Current branch (if the user is working from a local worktree) matches
-  the PR's head branch; otherwise `--pr <N>` argument is used
+  the PR's head branch; otherwise pass the PR number as the first positional
+  argument (see below)
 - `gh` or `az` CLI authenticated
 
 ## Argument parsing

@@ -5,7 +5,14 @@ Decide whether to start another iteration or exit to the CI gate.
 ## Exit conditions (any one triggers exit)
 
 1. **Zero actionable items** in this iteration's step 03 output
-   (`context.actionable == [] AND context.suspicious_items == []`).
+   (`context.actionable == []`). Suspicious items do not block exit —
+   they get refusal replies posted by step 07 once per cycle and nothing
+   else the loop can do advances them. If we kept looping on suspicious-only
+   iterations without a push, `last_push_timestamp` would not advance and
+   the same suspicious items would re-enter the queue forever. Instead,
+   after step 07 posts the refusal replies, advance a secondary cursor
+   `context.last_handled_timestamp = now` so filter A's "new-since" gate
+   applies to suspicious items too, and treat this iteration as quiescent.
 2. **No code changed** this iteration: all verdicts are in
    `{replied, not-addressing, needs-human}`. Re-entering the loop cannot
    progress — another fetch will see the same state.
@@ -25,13 +32,21 @@ is the outer runaway bound.
 
 ## Recording the exit reason
 
-Set `context.loop_exit_reason` to one of:
-- `quiescent-zero-actionable`
-- `quiescent-no-code-change`
-- `iteration-cap`
-- `runaway-detected`
+Set BOTH fields so the final report has a single authoritative source:
 
-Step 11 uses this in the final report.
+- `context.loop_exit_reason` — the fine-grained loop-level reason (one of
+  `quiescent-zero-actionable`, `quiescent-no-code-change`, `iteration-cap`,
+  `runaway-detected`).
+- `context.termination_reason` — the top-level termination label used by
+  step 11. When step 08 exits directly (cap / runaway), set this too so
+  the report is never missing the field:
+  - `loop_exit_reason == quiescent-*` → leave `termination_reason`
+    unset; step 09 will populate it (`ci-green` / `ci-timeout`) or step 10
+    will (`ci-pre-existing-failures` / `ci-reentry-cap`).
+  - `loop_exit_reason == iteration-cap` → set
+    `termination_reason = "iteration-cap"`.
+  - `loop_exit_reason == runaway-detected` → set
+    `termination_reason = "runaway-detected"`.
 
 ## Routing
 
