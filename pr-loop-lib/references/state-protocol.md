@@ -76,6 +76,11 @@ Plain JSON, two required fields:
    - If age > 30 min:
      - Treat as stale. Overwrite with new session's lock.
      - Log `lock_stale_reclaimed` event with old session_id + age.
+     - **Also update `state.session_id` in the state file to the new
+       `context.session_id`** and log a `state_write` event with
+       `changed_keys: ["session_id"]`. Without this, global invariant
+       G1 (state.session_id == lock.session_id) fires on the next
+       write.
      - Proceed.
    - Otherwise (fresh lock, different session):
      - Halt with message:

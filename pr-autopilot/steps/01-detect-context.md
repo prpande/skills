@@ -71,9 +71,15 @@ section. Store one of: `claude-code`, `codex`, `gemini`, `other`.
 
 ## Session ID generation
 
-Generate `context.session_id` (a UUID) per state-protocol's
-"First-run setup" section. This value is constant across all
-`ScheduleWakeup` resumes within the same skill invocation.
+First check whether a state file already exists for this PR (or
+branch, pre-PR-number). If it exists, LOAD `session_id` from the state
+file — do NOT generate a new one. Reusing the prior `session_id`
+preserves global invariant G1 (state.session_id == lock.session_id)
+across `ScheduleWakeup` resumes.
+
+Only when no state file exists, generate a fresh UUID per state-
+protocol's "First-run setup" section. This value is then constant for
+the rest of the skill invocation.
 
 ## Self-login detection
 

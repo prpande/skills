@@ -35,6 +35,14 @@ Each invariant identifies the step that owns it and the exact predicate.
 | S01.4 | `context.self_login` is a non-empty string |
 | S01.5 | `context.base_sha != context.head_sha` (diff exists) — warn-only, not halt |
 
+### Step 02 — preflight-review (pr-autopilot)
+
+| # | Predicate |
+|---|---|
+| S02.1 | `context.preflight_passes.pass2_raw` is set (array; may be empty) |
+| S02.2 | `context.preflight_passes.merged` is set and equals `pass2_raw` at this point (no other passes run at preflight) |
+| S02.3 | Every `severity` in `pass2_raw` findings is one of `critical`/`important`/`minor` (lowercase) |
+
 ### Step 03 — triage
 
 | # | Predicate |
@@ -50,7 +58,7 @@ Each invariant identifies the step that owns it and the exact predicate.
 |---|---|
 | S04.1 | `len(agent_returns) == len(dispatch_units)` where dispatch_units is clusters + individual items |
 | S04.2 | Every return's `verdict` is one of the 5 allowed values |
-| S04.3 | Every return with verdict `fixed` or `fixed-differently` has a corresponding entry in `verifier_judgements` |
+| S04.3 | Every entry in `verifier_judgements` has a matching entry in `agent_returns` (by `feedback_id`), AND every `feedback_id` whose fixer invocation produced a `fixed`/`fixed-differently` verdict (recorded via the `subagent_return` log event) has an entry in `verifier_judgements`. Demotion in the policy ladder does NOT excuse a missing verifier_judgement — judgements are keyed off the fixer's ORIGINAL verdict, not the post-ladder one. |
 | S04.4 | `files_changed_this_iteration` equals the union of `files_changed` across all returns |
 | S04.5 | No file in `files_changed_this_iteration` has a path outside `context.repo_root` |
 

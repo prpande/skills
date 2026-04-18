@@ -77,7 +77,9 @@ issue`:
      - `surface: "issue"` (inherited)
      - `body: "<description>"` (the first line of the numbered item)
      - `path: "<parsed from the SHA URL>"`
-     - `line: "<start>"` (first number in L<start>-L<end>)
+     - `line: <start>` — INTEGER, not string; parse the first number in
+       `L<start>-L<end>` (e.g., `L42-L48` → `42`). Storing as string
+       violates `CommentRecord.line` (integer-or-null) and trips G3.
      - `id: "<parent-comment-id>:finding-<N>"` (so each finding has a
        unique id)
   3. Emit these findings into the actionable candidate list.
