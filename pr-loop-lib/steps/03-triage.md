@@ -137,7 +137,7 @@ Worked example — Copilot inline comment:
 ```
   author: "Copilot"
   surface: "inline"
-  path: "Mindbody.BizApp.Bff.Data/Providers/PermissionsProvider.cs"
+  path: "src/providers/permissions-provider.cs"
   body: "In the invalid-IP branch, the code skips adding X-IPAddress but..."
 ```
 Known-bots table row: `Copilot` + inline + `path` set → **Actionable**.

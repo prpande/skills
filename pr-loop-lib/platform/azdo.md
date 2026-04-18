@@ -36,7 +36,7 @@ The response shape (simplified):
     "comments": [
       {
         "id": 1,
-        "author": { "uniqueName": "bot@mindbody.com", "displayName": "Copilot" },
+        "author": { "uniqueName": "bot@example.com", "displayName": "Copilot" },
         "content": "comment body",
         "publishedDate": "...",
         "commentType": "text"
