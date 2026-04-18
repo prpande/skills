@@ -134,3 +134,49 @@ Entering comment loop. Next fetch in 10 minutes.
 
 Then hand off to `pr-loop-lib/steps/01-wait-cycle.md` (the wait is on —
 first fetch will happen after the delay).
+
+## 4g — Invoke host-native code-review skill (fire-and-forget)
+
+After `gh pr create` (or `az repos pr create`) succeeds and
+`context.pr_number` + `context.pr_url` are recorded, invoke the host's
+native code-review skill. Its output becomes a PR comment that iter 1
+of the comment loop processes.
+
+### Host-skill table
+
+| `context.host_platform` | Skill name | Invocation |
+|---|---|---|
+| `claude-code` | `code-review` | Use the Skill tool: `Skill(skill="code-review", args="")` |
+| `codex` | (not yet mapped) | Skip; log `code_review_invoked` with `skipped: true` |
+| `gemini` | (not yet mapped) | Skip; log `code_review_invoked` with `skipped: true` |
+| `other` | (none) | Skip; log `code_review_invoked` with `skipped: true` |
+
+### Invocation
+
+1. Look up the skill name for `context.host_platform` in the table above.
+2. If the skill is mapped:
+   a. Log a `code_review_invoked` event with `host`, `skill`, and
+      current UTC timestamp.
+   b. Invoke the skill via the host's skill-dispatch mechanism.
+      **Fire-and-forget** — do not wait for the skill to complete.
+      `/code-review` runs asynchronously and posts its output as a PR
+      comment when ready.
+   c. Set `context.code_review_invoked = true` and
+      `context.code_review_invoked_at = <timestamp>`.
+3. If not mapped:
+   a. Log `code_review_invoked` with `{host, skipped: true}`.
+   b. Leave `context.code_review_invoked = false`.
+
+### Why fire-and-forget
+
+`/code-review` takes 1-3 minutes. The loop's step 01 waits 10 minutes
+before the first comment fetch, so `/code-review`'s comment lands in
+iter 1 naturally. Waiting synchronously would add 2-3 min of dead time
+between PR creation and loop entry.
+
+### Rerun on `pr-followup`
+
+When `pr-followup` re-enters the loop later, do NOT re-invoke
+`/code-review`. The skill's own eligibility check prevents duplicate
+reviews (it checks whether the same user has already posted a review
+comment). `pr-followup` skips step 04g regardless.
