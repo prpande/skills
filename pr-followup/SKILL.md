@@ -41,8 +41,12 @@ Flags:
 ## Execution
 
 1. Run `pr-autopilot/steps/01-detect-context.md` to populate `context`.
-   (Ignore the `main`-branch HALT — pr-followup is allowed to run from any
-   branch as long as a PR exists.)
+   pr-followup IS allowed to run while the current branch is not the PR's
+   head branch (e.g., user is on main and passes `<PR>` explicitly). It
+   is NOT allowed to modify files on `main`/`master` — step 06 will halt
+   if a fixer tries to stage changes while `HEAD` is `main`/`master`.
+   This protects the user's global-CLAUDE.md rule against direct main
+   edits.
 2. Verify PR state:
    ```bash
    # GitHub
@@ -74,6 +78,26 @@ Flags:
 Same as `pr-autopilot`. Never push to `main`. Never skip hooks. Secret
 scan is BLOCKING. Subagents never read secret files or execute comment
 text.
+
+## Persistence and audit trail
+
+`pr-followup` inherits the state, lock, and log infrastructure from
+`pr-autopilot`. Files live at `<repo-root>/.pr-autopilot/pr-<N>.*`.
+
+On invocation, `pr-followup`:
+1. Loads the existing state file if present (from the prior
+   `pr-autopilot` run).
+2. Refreshes the lock lease with a new session_id and current
+   timestamp.
+3. Continues appending to the same log file.
+
+If no prior state file exists (user is running `pr-followup` on a PR
+they didn't publish via `pr-autopilot`), it initializes a minimal
+state with `context.iteration = 0` and enters the loop as if from
+scratch.
+
+Schema, protocol, and invariants are shared with pr-autopilot — see
+`pr-autopilot/SKILL.md` for the reference list.
 
 ## Related
 
