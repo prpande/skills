@@ -5,13 +5,27 @@ routes to auto-fix or surface-to-user.
 
 ## Classification table
 
-For each red check, determine class:
+For each red check, determine class. Name-match regexes are declared in a
+fenced code block below (one per class) so markdown-table escaping does not
+alter the meaning of `|` alternation. Regex flavor: Python `re` (also
+compatible with `grep -E` / ripgrep).
+
+```
+# Lint/format — check name matches any of:
+lint|format|style|prettier|eslint|dotnet-format
+
+# Compile/build
+build|compile
+
+# Real test failure
+test|spec|unit|integration
+```
 
 | Class | Detection | Handling |
 |---|---|---|
-| Lint/format | Check name matches `/lint\|format\|style\|prettier\|eslint\|dotnet-format/i`; log shows rule violations | Run the formatter locally (e.g., `dotnet format`, `npm run lint -- --fix`, `cargo fmt`), commit as "fix: apply formatter", push, re-enter loop |
-| Compile/build | Check name matches `/build\|compile/i`; log contains compiler errors | Dispatch a fixer subagent with the error output and the head commit diff; apply fix, commit, push, re-enter |
-| Real test failure | Check is test-related; failing test passed on the base branch (determine via `git log -1 --format=%H origin/<base>` and running the test locally if possible) | Dispatch a fixer with the failing test output; apply fix, commit, push, re-enter |
+| Lint/format | Check name matches the lint/format regex above; log shows rule violations | Run the formatter locally (e.g., `dotnet format`, `npm run lint -- --fix`, `cargo fmt`), commit as "fix: apply formatter", push, re-enter loop |
+| Compile/build | Check name matches the compile/build regex above; log contains compiler errors | Dispatch a fixer subagent with the error output and the head commit diff; apply fix, commit, push, re-enter |
+| Real test failure | Check name matches the test regex above; failing test passed on the base branch (determine via `git log -1 --format=%H origin/<base>` and running the test locally if possible) | Dispatch a fixer with the failing test output; apply fix, commit, push, re-enter |
 | Pre-existing main-fail | Same check currently red on `origin/<base>` | Surface to user via final report; do NOT loop |
 | Flake | Check was green on a previous run of the same HEAD SHA with no intervening code change; OR test path is listed in a repo-maintained known-flaky file | `gh run rerun <run-id>`; if still red, reclassify as real test failure |
 

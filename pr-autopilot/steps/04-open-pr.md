@@ -41,13 +41,19 @@ Body: one-paragraph summary pointing to the spec file(s) that motivate
 the change, if any.
 
 ```bash
-git -c commit.gpgsign=false commit -m "$(cat <<EOF
+git commit -m "$(cat <<EOF
 <subject>
 
 <body>
 EOF
 )"
 ```
+
+Commit signing follows the user's local git configuration. Do NOT pass
+`-c commit.gpgsign=false`, `--no-gpg-sign`, or `--no-verify` — the
+orchestrator SKILL.md hard rule forbids bypassing signing or hooks unless
+the user explicitly asks. If signing fails locally, surface the error
+instead of silencing it.
 
 Push with upstream tracking on first push:
 ```bash

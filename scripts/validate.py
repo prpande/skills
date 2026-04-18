@@ -3,12 +3,20 @@
 
 Checks:
   1. Every .md file under pr-autopilot/, pr-followup/, pr-loop-lib/ parses as
-     valid UTF-8 and has no placeholder strings (TBD, TODO:, 'fill in', 'XXX').
-  2. Every SKILL.md starts with YAML frontmatter containing at least `name` and
-     `description` fields.
-  3. Relative file references inside each .md (of the form
-     `steps/NN-*.md`, `references/*.md`, `platform/*.md`, or absolute
-     `~/.claude/skills/...`) actually exist on disk.
+     valid UTF-8. Placeholder-marker scan flags unfinished section markers
+     appearing at the **start of a line** (outside fenced code blocks):
+     `[TBD]`, `TODO: `, `[fill in ...`, `XXX `. Inline prose mentioning
+     those strings (e.g., describing what the validator rejects) is not
+     flagged — the check targets markers left behind in an actual draft.
+  2. Every SKILL.md starts with YAML frontmatter containing at least `name`
+     and `description` fields. Frontmatter detection tolerates both LF and
+     CRLF line endings (Windows checkouts).
+  3. Relative file references inside each .md that look like skill-internal
+     includes — `steps/NN-*.md`, `references/*.md`, `platform/*.md`, or the
+     repo-relative form `pr-(autopilot|followup|loop-lib)/...` — actually
+     resolve to a real file on disk, and the resolved path is contained
+     within the repo root (`..` traversal that escapes the repo is a bug).
+     Absolute `~/.claude/skills/...` references are validated the same way.
 
 Exit non-zero on any failure with a per-file diagnostic.
 """
@@ -42,7 +50,7 @@ HOME_REF = re.compile(
     r"`(~/\.claude/skills/[A-Za-z0-9._/-]+\.md)`"
 )
 FRONTMATTER = re.compile(
-    r"\A---\s*\n(.*?\n)---\s*\n", re.DOTALL
+    r"\A---\s*\r?\n(.*?\r?\n)---\s*\r?\n", re.DOTALL
 )
 
 def _mask_code_blocks(text: str) -> str:
@@ -84,6 +92,13 @@ def check_file(path: pathlib.Path) -> list[str]:
         if ancestor.name in SKILL_ROOTS:
             skill_root = ancestor
             break
+    repo_resolved = REPO.resolve()
+    def _is_within_repo(p: pathlib.Path) -> bool:
+        try:
+            p.relative_to(repo_resolved)
+            return True
+        except ValueError:
+            return False
     for m in REL_REF.finditer(text):
         rel = m.group(1)
         # If the reference already starts with a skill root name, resolve it
@@ -99,13 +114,22 @@ def check_file(path: pathlib.Path) -> list[str]:
             candidates.append((path.parent / rel).resolve())
             for other_root_name in SKILL_ROOTS:
                 candidates.append((REPO / other_root_name / rel).resolve())
-        if not any(c.exists() for c in candidates):
+        # Only accept a candidate that both exists AND lives inside the repo.
+        # References with enough `..` segments to escape the repo root are
+        # always rejected as an out-of-tree reference.
+        valid = [c for c in candidates if c.exists() and _is_within_repo(c)]
+        if not valid:
             line = text[: m.start()].count("\n") + 1
-            errors.append(f"{path}:{line} missing reference: {rel}")
+            if any(c.exists() and not _is_within_repo(c) for c in candidates):
+                errors.append(
+                    f"{path}:{line} reference escapes repo root (..): {rel}"
+                )
+            else:
+                errors.append(f"{path}:{line} missing reference: {rel}")
     for m in HOME_REF.finditer(text):
         ref = m.group(1).replace("~/.claude/skills/", "")
         target = (REPO / ref).resolve()
-        if not target.exists():
+        if not target.exists() or not _is_within_repo(target):
             line = text[: m.start()].count("\n") + 1
             errors.append(f"{path}:{line} missing home-ref: {m.group(1)}")
     return errors

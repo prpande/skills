@@ -1,8 +1,16 @@
 # Secret scan rules
 
-Used by `pr-autopilot/steps/04-open-pr.md` (sub-step 4a) and
-`pr-loop-lib/steps/04.5-local-verify.md` (after fixer changes). BLOCKING:
-any match halts the skill and surfaces the file + line to the user.
+Used by:
+- `pr-autopilot/steps/04-open-pr.md` sub-step 4a — scans the initial PR
+  commit's staged files.
+- `pr-loop-lib/steps/06-commit-push.md` pre-stage secret scan — re-scans
+  any files a fixer subagent modified before they are staged for the
+  address-feedback commit.
+
+BLOCKING: any match halts the skill and surfaces the file + line to the
+user. `pr-loop-lib/steps/04.5-local-verify.md` runs build/test sanity
+checks but does NOT invoke this scan (the scan runs at commit-stage time
+in step 06, immediately after verify).
 
 ## Patterns
 

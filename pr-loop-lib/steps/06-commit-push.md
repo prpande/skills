@@ -45,7 +45,7 @@ One bullet per agent with a non-`not-addressing` verdict whose
 Use heredoc to avoid shell-quoting issues:
 
 ```bash
-git -c commit.gpgsign=false commit -m "$(cat <<EOF
+git commit -m "$(cat <<EOF
 Address PR review feedback (#${PR})
 
 - ${AGENT1_REASON}
@@ -53,6 +53,12 @@ Address PR review feedback (#${PR})
 EOF
 )"
 ```
+
+Commit signing follows the user's local git configuration — do NOT pass
+`-c commit.gpgsign=false`, `--no-gpg-sign`, or `--no-verify`. This honors
+the hard rule in the orchestrator SKILL.md ("never bypass signing unless
+the user explicitly asks"). If a signing setup is broken locally, surface
+the failure to the user rather than silencing it.
 
 ## Push
 

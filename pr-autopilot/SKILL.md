@@ -81,7 +81,10 @@ Phase 5 — Report
 - Never use `run_in_background` for build/test. Foreground only. Timeout
   ≥ 300000ms.
 - Never skip hooks (`--no-verify`) or bypass signing unless the user
-  explicitly asks.
+  explicitly asks. Step files MUST NOT hard-code flags that silence
+  signing (`-c commit.gpgsign=false`, `--no-gpg-sign`). Commit signing
+  follows the user's local git config; failures surface to the user
+  rather than being silenced.
 - Never commit secrets. Secret scan is BLOCKING at steps 04 and 06.
 - Destructive git ops (reset --hard, clean -fd, push --force) are never
   used by this skill.
