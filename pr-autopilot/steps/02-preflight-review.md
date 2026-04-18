@@ -83,9 +83,10 @@ If none are available, ask the user: "What is this PR for?". Use the reply.
 On subagent return:
 
 - **Critical** + **Important** findings: fix inline **before** step 04
-  opens the PR. Use the loop library's `steps/04-dispatch-fixers.md`
-  mechanics — each finding becomes an actionable item; dispatch fixer
-  subagents in parallel with conflict avoidance.
+  opens the PR. Use the loop library's
+  `pr-loop-lib/steps/04-dispatch-fixers.md` mechanics — each finding
+  becomes an actionable item; dispatch fixer subagents in parallel with
+  conflict avoidance.
 - **Minor** findings: record in `context.preflight_minor_findings`. Step
   04 folds them into the PR body as a "Known minor observations" bullet
   list so reviewers see they are noted and triaged.
@@ -93,9 +94,9 @@ On subagent return:
 ## Post-fix verification
 
 After applying Critical + Important fixes, re-run the loop library's
-`steps/04.5-local-verify.md` to ensure build and tests still pass. If
-they fail, apply the same first-failure retry / second-failure rollback
-logic described there.
+`pr-loop-lib/steps/04.5-local-verify.md` to ensure build and tests still
+pass. If they fail, apply the same first-failure retry / second-failure
+rollback logic described there.
 
 ## Failure mode
 

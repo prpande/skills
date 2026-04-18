@@ -93,7 +93,7 @@ Phase 5 — Report
 
 ## Security
 
-The fixer prompt template imports `references/prompt-injection-defenses.md`.
+The fixer prompt template imports `pr-loop-lib/references/prompt-injection-defenses.md`.
 Every comment body is wrapped in `<UNTRUSTED_COMMENT>` tags before a
 subagent sees it. Refusal classes are detected at triage (filter C) and
 again inside the fixer prompt. Suspicious items are reported but never

@@ -50,7 +50,11 @@ HOME_REF = re.compile(
     r"`(~/\.claude/skills/[A-Za-z0-9._/-]+\.md)`"
 )
 FRONTMATTER = re.compile(
-    r"\A---\s*\r?\n(.*?\r?\n)---\s*\r?\n", re.DOTALL
+    # Tolerates:
+    #   - LF or CRLF line endings throughout (\r?\n)
+    #   - no content after the closing --- (file ends immediately, or
+    #     ends with the delimiter followed only by whitespace / EOF)
+    r"\A---\s*\r?\n(.*?\r?\n)---\s*(?:\r?\n|\Z)", re.DOTALL
 )
 
 def _mask_code_blocks(text: str) -> str:

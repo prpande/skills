@@ -6,7 +6,14 @@ iteration.
 
 ## Filter A — New since last push
 
-Keep a comment only if `max(created_at, updated_at) > context.last_push_timestamp`.
+Keep a comment only if
+`max(created_at, updated_at) > max(context.last_push_timestamp, context.last_handled_timestamp)`.
+
+`last_push_timestamp` advances when step 06 pushes a fix commit.
+`last_handled_timestamp` advances when step 07 posts refusal replies for
+a suspicious-only iteration (step 08 updates it to prevent an infinite
+suspicious loop). Either cursor is authoritative; using the max ensures
+comments previously handled by either mechanism are not re-dispatched.
 
 **Pre-filter**: regardless of timestamp, always drop comments authored by
 the skill itself (the current GitHub user). On GitHub, comment authors
@@ -65,8 +72,11 @@ matches (case-insensitive unless specified):
 - `context.suspicious_items` — list of filtered-out comments with their
   matched refusal class and the reply to post.
 
-If `context.actionable` is empty AND `context.suspicious_items` is empty,
-step 08 will recognize this as a quiescent iteration and exit the loop.
+If `context.actionable` is empty, step 08 will recognize this as a
+quiescent iteration and exit the loop. `context.suspicious_items` does
+NOT block quiescence — step 07 posts refusal replies once, step 08
+advances `context.last_handled_timestamp`, and filter A here will then
+exclude those same suspicious items on the next fetch.
 
 ## Known-bot signature application
 

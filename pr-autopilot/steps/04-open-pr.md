@@ -5,7 +5,7 @@ the PR.
 
 ## 4a — Secret scan (BLOCKING)
 
-Apply `references/secret-scan-rules.md` to every file in
+Apply `pr-loop-lib/references/secret-scan-rules.md` to every file in
 `context.uncommitted` (filtered to "related" per step 01) plus every file
 in `context.spec_updates` + any file modified by step 02 fixer dispatches.
 
@@ -74,8 +74,8 @@ If `context.template_path` is set:
 5. Write to `/tmp/pr-body.md`.
 
 If `context.template_path` is empty:
-Use `references/pr-template-fallback.md` template. Apply the same fill
-rules.
+Use `pr-loop-lib/references/pr-template-fallback.md` template. Apply the
+same fill rules.
 
 ### Section Fill Rules
 

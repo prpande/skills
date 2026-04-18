@@ -82,7 +82,8 @@ missing `thread_id` for a single inline comment silently breaks the
 resolve step for that thread.
 
 ```bash
-# First page. For subsequent pages, pass $threadsCursor / $commentsCursor.
+# First page: omit the cursor variable so $threadsCursor is null.
+# (Passing an empty string is NOT valid — GraphQL rejects "" as a cursor.)
 gh api graphql -f query='
 query($owner: String!, $repo: String!, $pr: Int!, $threadsCursor: String) {
   repository(owner: $owner, name: $repo) {
@@ -110,7 +111,10 @@ query($owner: String!, $repo: String!, $pr: Int!, $threadsCursor: String) {
     }
   }
 }
-' -f owner="$OWNER" -f repo="$REPO" -F pr="$PR" -f threadsCursor=""
+' -f owner="$OWNER" -f repo="$REPO" -F pr="$PR"
+
+# Subsequent pages: pass the endCursor from the previous response:
+#   -f threadsCursor="<endCursor from last reviewThreads.pageInfo>"
 ```
 
 If any returned thread reports `comments.pageInfo.hasNextPage == true`,
