@@ -8,7 +8,7 @@
 
 **Tech Stack:** Markdown + YAML frontmatter (skill file format). Shell (`bash`, `git`, `gh`) for state primitives. Claude Code Skill + Agent tools for subagent dispatch. No Python, Node, or pip install.
 
-**Working directory:** `C:\src\skills-alpha` on branch `pp/pr-autopilot-subproject-alpha-design` (worktree of `C:\src\skills`).
+**Working directory:** `<worktree-path>` on branch `<feature-branch>` (worktree of the main checkout). The original run of this plan used `C:\src\skills-alpha` on branch `pp/pr-autopilot-subproject-alpha-design`; these are retained in quoted shell commands below only as historical examples, and should be substituted when re-running the plan in a different environment.
 
 **"Testing":** Same story as the original — markdown prose; no unit-test runner. Structural validation via existing `scripts/validate.py`. Smoke test via a real PR at the end.
 

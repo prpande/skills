@@ -48,7 +48,7 @@ Rules:
 | `lock_released` | `{session_id}` |
 | `lock_stale_reclaimed` | `{old_session_id, age_minutes}` |
 | `lock_lease_refreshed` | `{session_id}` |
-| `comments_fetched` | `{surface_counts: {inline, issue, review}, total}` |
+| `comments_fetched` | `{surface_counts: {inline, issue, review, thread}, total}` — `thread` is the AzDO surface; GitHub runs will have `thread: 0` |
 | `triage_result` | `{actionable, suspicious, filtered_self, filtered_known_bot, filtered_pre_push}` |
 | `triage_dedup_hit` | `{feedback_id, preflight_match_id}` |
 | `cluster_gate_fired` | `{items, clusters_formed}` |
@@ -60,7 +60,7 @@ Rules:
 | `reply_posted` | `{feedback_id, thread_id?, surface, resolved}` |
 | `quiescence` | `{reason, loop_exit_reason, termination_reason}` |
 | `ci_result` | `{check_name, state, link}` |
-| `code_review_invoked` | `{host, skill, invoked_at}` |
+| `code_review_invoked` | `{host, skill, invoked_at}` when a review skill is mapped and dispatched, OR `{host, skipped: true}` when no skill is mapped for this host (`skill`/`invoked_at` are omitted in the skipped variant) |
 | `invariant_fail` | `{step, invariant, observed, expected}` |
 | `error` | `{stage, error_type, message}` |
 
@@ -101,9 +101,15 @@ file exceeds 10 MB (check via `wc -c < "<path>"`):
 ```bash
 LOG="<repo_root>/.pr-autopilot/pr-<PR>.log"
 if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 10485760 ]; then
-  gzip -k "$LOG"
-  mv "$LOG.gz" "$LOG.1.gz"
-  : > "$LOG"
+  # Order matters: rename the compressed backup to its final name BEFORE
+  # truncating the live log. If gzip or mv fails, the live log is
+  # preserved rather than truncated against a missing backup.
+  if gzip -k "$LOG" && mv "$LOG.gz" "$LOG.1.gz"; then
+    : > "$LOG"
+  else
+    echo "log rotation failed; live log preserved" >&2
+    rm -f "$LOG.gz"  # clean up any orphaned intermediate
+  fi
 fi
 ```
 

@@ -128,7 +128,12 @@ Required fields are marked as such.
 2. Every enum value must be in the Allowed values list.
 3. No unknown top-level keys may appear in the state file.
 4. Required fields must be present (non-null where Type disallows null).
-5. Timestamps are UTC ISO-8601 with second precision, e.g. `2026-04-18T07:44:32Z`.
+5. Timestamps are UTC ISO-8601 strings ending in `Z`, with second
+   precision OR fractional-second precision (milli/microseconds).
+   Accepted forms: `2026-04-18T07:44:32Z`, `2026-04-18T07:44:32.123Z`,
+   `2026-04-18T07:44:32.123456Z`. Platform normalizers (e.g.,
+   `pr-loop-lib/platform/azdo.md`) may leave source precision intact
+   rather than truncating — validators accept either.
 
 Violations are errors, not warnings. The step that detects a violation
 must halt with an `invariant_fail` event (see `invariants.md`).

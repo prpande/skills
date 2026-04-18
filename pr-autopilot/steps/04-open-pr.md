@@ -144,12 +144,17 @@ of the comment loop processes.
 
 ### Host-skill table
 
-| `context.host_platform` | Skill name | Invocation |
-|---|---|---|
-| `claude-code` | `code-review` | Use the Skill tool: `Skill(skill="code-review", args="")` |
-| `codex` | (not yet mapped) | Skip; log `code_review_invoked` with `skipped: true` |
-| `gemini` | (not yet mapped) | Skip; log `code_review_invoked` with `skipped: true` |
-| `other` | (none) | Skip; log `code_review_invoked` with `skipped: true` |
+| `context.host_platform` | Skill name | Invocation | Posts to PR? |
+|---|---|---|---|
+| `claude-code` | `review` | Use the Skill tool: `Skill(skill="review", args="<PR>")` | **No — orchestrator must post** (see below) |
+| `codex` | (not yet mapped) | Skip; log `code_review_invoked` with `skipped: true` | n/a |
+| `gemini` | (not yet mapped) | Skip; log `code_review_invoked` with `skipped: true` | n/a |
+| `other` | (none) | Skip; log `code_review_invoked` with `skipped: true` | n/a |
+
+The claude-code host exposes the skill as `review` (not `code-review`).
+Earlier revisions of this table named it `code-review` — that was
+documentation drift; the slash-command / skill name in installed
+claude-code is `review`.
 
 ### Invocation
 
@@ -158,21 +163,29 @@ of the comment loop processes.
    a. Log a `code_review_invoked` event with `host`, `skill`, and
       current UTC timestamp.
    b. Invoke the skill via the host's skill-dispatch mechanism.
-      **Fire-and-forget** — do not wait for the skill to complete.
-      `/code-review` runs asynchronously and posts its output as a PR
-      comment when ready.
-   c. Set `context.code_review_invoked = true` and
+      The claude-code `review` skill renders its review body into the
+      orchestrator's context — **it does not post to the PR itself**.
+      The orchestrator MUST capture the rendered review and post it as
+      a top-level PR comment (`gh pr comment <PR> --body "..."`) so
+      iter 1's Filter B.5 can rescue and process it.
+   c. Convention for the posted body: begin with `### Code review\n`
+      so Filter B.5's rescue pattern matches. Findings follow the
+      numbered-item format documented in
+      `pr-loop-lib/steps/03-triage.md` (Filter B.5 rescue).
+   d. Set `context.code_review_invoked = true` and
       `context.code_review_invoked_at = <timestamp>`.
 3. If not mapped:
    a. Log `code_review_invoked` with `{host, skipped: true}`.
    b. Leave `context.code_review_invoked = false`.
 
-### Why fire-and-forget
+### Why "post once and continue"
 
-`/code-review` takes 1-3 minutes. The loop's step 01 waits 10 minutes
-before the first comment fetch, so `/code-review`'s comment lands in
-iter 1 naturally. Waiting synchronously would add 2-3 min of dead time
-between PR creation and loop entry.
+The `review` skill takes 1-3 minutes to render. We pay that inline
+(it returns to the orchestrator's context), but the orchestrator then
+posts the output and continues without waiting for reviewer-bot
+roundtrips. The loop's step 01 waits 10 minutes before the first
+comment fetch, so the posted `/code-review` comment lands in iter 1
+naturally alongside any Copilot review.
 
 ### Rerun on `pr-followup`
 

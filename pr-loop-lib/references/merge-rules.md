@@ -25,6 +25,22 @@ Two findings are "the same" when ALL of:
 
 When all three match, the findings are considered the same issue.
 
+### Triage override — description-based dedup
+
+Triage (`pr-loop-lib/steps/03-triage.md` Filter B.5) CANNOT use the
+category-based key above because `CommentRecord` (the shape of triage
+actionable items) has no `category` field. Triage dedups against
+preflight findings using a distinct key:
+
+1. Same file path (exact match).
+2. `line` within 3 lines.
+3. Normalized description equality — whitespace-trimmed, internal
+   whitespace collapsed, lowercased.
+
+This override is authoritative for triage. The category-based key
+above remains the correct key when both sources carry `category` (e.g.,
+merging two adversarial-prompt outputs).
+
 ## Severity escalation
 
 Severity strings match the adversarial-review-prompt's JSON output:

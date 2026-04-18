@@ -76,9 +76,12 @@ For each fixer return where `verdict ∈ {fixed, fixed-differently}`:
 2. Read `pr-loop-lib/references/fixer-verifier-prompt.md`.
 3. Render the template by substituting:
    - `{{FEEDBACK_BODY_VERBATIM}}` → the original comment body (the one
-     this fixer was dispatched to address), from
-     `context.actionable[<id>].body`. Wrap in `<UNTRUSTED_COMMENT>`
-     tags per prompt-injection defenses.
+     this fixer was dispatched to address). Resolve the actionable
+     item by matching `fixer_return.feedback_id` to each entry's
+     `.id` in `context.actionable` (treat `actionable` as a list;
+     optionally prebuild a `feedback_id → record` map at dispatch
+     time). Use the matched record's `.body`. Wrap in
+     `<UNTRUSTED_COMMENT>` tags per prompt-injection defenses.
    - `{{FIXER_VERDICT}}` → `fixer_return.verdict`
    - `{{FIXER_REASON}}` → `fixer_return.reason`
    - `{{FIXER_DIFF}}` → the diff from step 1

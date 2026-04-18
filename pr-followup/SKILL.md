@@ -42,11 +42,14 @@ Flags:
 
 1. Run `pr-autopilot/steps/01-detect-context.md` to populate `context`.
    pr-followup IS allowed to run while the current branch is not the PR's
-   head branch (e.g., user is on main and passes `<PR>` explicitly). It
-   is NOT allowed to modify files on `main`/`master` — step 06 will halt
-   if a fixer tries to stage changes while `HEAD` is `main`/`master`.
-   This protects the user's global-CLAUDE.md rule against direct main
-   edits.
+   head branch (e.g., user is on main and passes `<PR>` explicitly).
+   However, do NOT modify files while `HEAD` is `main`/`master`: the
+   orchestrator MUST checkout the PR head branch (via
+   `gh pr checkout <PR>` or `git checkout <headRefName>`) before
+   applying or staging any fixer changes. `pr-loop-lib/steps/06-commit-push.md`
+   enforces this with a BLOCKING guard that halts if `HEAD` is
+   `main`/`master` at stage-time, preserving the user's global-CLAUDE.md
+   rule against direct main edits.
 2. Verify PR state:
    ```bash
    # GitHub

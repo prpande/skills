@@ -63,8 +63,10 @@ second-failure rollback logic described there.
 `context.preflight_passes.merged` is populated at this point with
 the full finding list (identical to `pass2_raw` since no Pass 1 runs
 at preflight). Later, iter 1's triage step may dedup against this
-list per `pr-loop-lib/references/merge-rules.md` when `/code-review`'s
-output arrives.
+list using Filter B.5's **description-based** dedup key from
+`pr-loop-lib/steps/03-triage.md` (NOT the category-based key in
+`merge-rules.md` — triage items don't carry `category`; see the
+"Triage override" section of merge-rules.md).
 
 ## Failure mode
 
