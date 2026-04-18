@@ -101,8 +101,8 @@ For each fixer return where `verdict ∈ {fixed, fixed-differently}`:
 |---|---|
 | `addresses` | Keep `fixer_return` as-is. Proceed. |
 | `partial` | Demote `fixer_return.verdict` to `needs-human`. Append verifier's reason to `fixer_return.reason`. Keep the diff in the working tree (partial fix may be better than nothing). Thread stays unresolved. |
-| `not-addresses` | Demote to `needs-human`. Roll back the fixer's file changes: `git checkout -- <files_changed>`. Remove those files from `context.files_changed_this_iteration`. Append verifier's reason to `fixer_return.reason`. |
-| `feedback-wrong` | ONLY permitted when `fixer_return.verdict` was `fixed-differently`. If the fixer's verdict was `fixed`, the verifier cannot escalate to this (per the prompt); if it somehow returns `feedback-wrong` anyway, demote to `not-addresses` instead. Action: demote fixer's verdict to `not-addressing`, roll back files, set `fixer_return.reply_text` to: `> [quoted relevant sentence]\n\nNot addressing: a proposed fix was attempted and verified against the feedback; verification determined the feedback appears factually incorrect about the current code. Evidence: <verifier's reason>. Not making the change.` |
+| `not-addresses` | Demote to `needs-human`. Roll back the fixer's file changes: `git checkout -- <files_changed>`. Remove those files from `context.files_changed_this_iteration`. Clear `fixer_return.files_changed = []` so invariant S04.4 (union across returns) still holds. Append verifier's reason to `fixer_return.reason`. |
+| `feedback-wrong` | ONLY permitted when `fixer_return.verdict` was `fixed-differently`. If the fixer's verdict was `fixed`, the verifier cannot escalate to this (per the prompt); if it somehow returns `feedback-wrong` anyway, demote to `not-addresses` instead. Action: demote fixer's verdict to `not-addressing`, roll back files (and clear `fixer_return.files_changed = []`), set `fixer_return.reply_text` to: `> [quoted relevant sentence]\n\nNot addressing: a proposed fix was attempted and verified against the feedback; verification determined the feedback appears factually incorrect about the current code. Evidence: <verifier's reason>. Not making the change.` |
 
 ### Rollback scope
 
@@ -131,9 +131,12 @@ step end; halt on violation.
 
 ### Skip conditions
 
-- Return verdicts `replied`, `not-addressing`, `needs-human`,
-  `suspicious` → no verification runs. These already declined to
-  change code.
+- Return verdicts `replied`, `not-addressing`, `needs-human` → no
+  verification runs. These already declined to change code.
+- Return with `fixer_return.suspicious == true` → no verification runs.
+  `suspicious` is a boolean flag on the return, not a verdict value;
+  suspicious returns carry a canned `not-addressing` verdict plus the
+  flag.
 - Return with `files_changed: []` despite verdict `fixed`: log an
   `invariant_fail` and demote to `needs-human` (the fixer claimed a
   fix but produced no diff — bug).

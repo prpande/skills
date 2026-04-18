@@ -87,14 +87,22 @@ text.
 On invocation, `pr-followup`:
 1. Loads the existing state file if present (from the prior
    `pr-autopilot` run).
-2. Refreshes the lock lease with a new session_id and current
-   timestamp.
+2. Applies the lock protocol from
+   `pr-loop-lib/references/state-protocol.md`:
+   - If the lock file exists and the holding `session_id` matches the
+     new session's ID (rare — only if the caller carried it forward),
+     refreshes the lease by overwriting `acquired_at`.
+   - If the lock file is missing OR stale (> 30 min without refresh),
+     acquires a new lock with the new session's `session_id` and a
+     current timestamp.
+   - Otherwise (fresh lock held by a different session), HALTs per
+     the state-protocol's acquire rules.
 3. Continues appending to the same log file.
 
 If no prior state file exists (user is running `pr-followup` on a PR
-they didn't publish via `pr-autopilot`), it initializes a minimal
-state with `context.iteration = 0` and enters the loop as if from
-scratch.
+they didn't publish via `pr-autopilot`), it still follows the same
+lock protocol, initializes a minimal state with
+`context.iteration = 0`, and enters the loop as if from scratch.
 
 Schema, protocol, and invariants are shared with pr-autopilot — see
 `pr-autopilot/SKILL.md` for the reference list.

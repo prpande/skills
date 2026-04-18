@@ -27,13 +27,16 @@ When all three match, the findings are considered the same issue.
 
 ## Severity escalation
 
+Severity strings match the adversarial-review-prompt's JSON output:
+always lowercase `critical`/`important`/`minor`.
+
 | Pass 2 severity | `/code-review` severity | Merged severity |
 |---|---|---|
-| Critical | any | Critical (no escalation needed) |
-| Important | Important or Critical | Critical |
-| Important | Minor | Important (no change) |
-| Minor | Important or Critical | Important (escalated by one) |
-| Minor | Minor | Minor |
+| `critical` | any | `critical` (no escalation needed) |
+| `important` | `important` or `critical` | `critical` |
+| `important` | `minor` | `important` (no change) |
+| `minor` | `important` or `critical` | `important` (escalated by one) |
+| `minor` | `minor` | `minor` |
 
 Single-source findings (only one pass flagged them) retain their
 original severity.

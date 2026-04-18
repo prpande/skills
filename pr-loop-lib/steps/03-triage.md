@@ -87,12 +87,23 @@ issue`:
 ### Dedup against preflight findings
 
 Before adding any item (from step B or B.5) to `context.actionable`,
-compare it against `context.preflight_passes.merged` per
-`pr-loop-lib/references/merge-rules.md`:
+compare it against `context.preflight_passes.merged`. Note: triage
+actionable items (per `CommentRecord` schema) do not carry a `category`
+field, so this comparison cannot use the category-based dedup key from
+`pr-loop-lib/references/merge-rules.md`. Use description-based dedup
+instead.
+
+Normalize descriptions before comparing:
+- Trim leading / trailing whitespace.
+- Collapse runs of internal whitespace to a single space.
+- Lowercase.
 
 For each candidate item:
-1. Check if any entry in `preflight_passes.merged` matches the dedup
-   key (same file, line-range within 3 lines, same category).
+1. Check if any entry in `preflight_passes.merged` matches ALL of:
+   - Same `path` (exact match).
+   - `line` within 3 lines of the preflight finding's `line`.
+   - Normalized `candidate.body` equals normalized preflight
+     `description`.
 2. If a match exists:
    - Skip dispatching this item (we already addressed it at preflight).
    - Log a `triage_dedup_hit` event with

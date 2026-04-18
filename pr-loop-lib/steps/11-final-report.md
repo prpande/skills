@@ -14,7 +14,7 @@ PR #<N> — <title>
 URL: <link>
 
 Termination reason:
-  <ci-green | iteration-cap | ci-reentry-cap | ci-timeout |
+  <ci-green | ci-red | iteration-cap | ci-reentry-cap | ci-timeout |
    ci-pre-existing-failures | runaway-detected | ci-skipped |
    user-intervention-needed>
 

@@ -9,8 +9,10 @@ classifies a comment as actionable or skip-able.
 |---|---|---|---|
 | `Copilot` | Inline review comment | Any body with `path` set on the API response | Actionable |
 | `copilot-pull-request-reviewer[bot]` | Review body | `Copilot reviewed N out of N changed files` | Skip — meta/summary; inline comments carry the findings |
-| `sonarqube[bot]` (any `sonarqube*[bot]` login) | Top-level PR comment | `Quality Gate passed` | Skip — status only |
-| `sonarqube[bot]` (any `sonarqube*[bot]` login) | Top-level PR comment | `Quality Gate failed` | Actionable — surface listed issues |
+| `sonarqube[bot]` | Top-level PR comment | `Quality Gate passed` | Skip — status only |
+| `sonarqube[bot]` | Top-level PR comment | `Quality Gate failed` | Actionable — surface listed issues |
+| `sonarqubecloud[bot]` | Top-level PR comment | `Quality Gate passed` | Skip — status only |
+| `sonarqubecloud[bot]` | Top-level PR comment | `Quality Gate failed` | Actionable — surface listed issues |
 | `github-actions[bot]` | Top-level PR comment | Any | Usually skip; check if body contains failure details (then actionable) |
 | `dependabot[bot]` | Top-level PR comment | Any | Skip for this skill's scope (dependency updates are out of scope) |
 

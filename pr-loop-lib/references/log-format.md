@@ -47,8 +47,10 @@ Rules:
 | `lock_acquired` | `{session_id}` |
 | `lock_released` | `{session_id}` |
 | `lock_stale_reclaimed` | `{old_session_id, age_minutes}` |
+| `lock_lease_refreshed` | `{session_id}` |
 | `comments_fetched` | `{surface_counts: {inline, issue, review}, total}` |
 | `triage_result` | `{actionable, suspicious, filtered_self, filtered_known_bot, filtered_pre_push}` |
+| `triage_dedup_hit` | `{feedback_id, preflight_match_id}` |
 | `cluster_gate_fired` | `{items, clusters_formed}` |
 | `subagent_dispatch` | `{role, model, prompt_first_200_chars, feedback_id?, timeout_s}` |
 | `subagent_return` | `{role, feedback_id?, verdict, files_changed, reason_first_200_chars, duration_ms}` |

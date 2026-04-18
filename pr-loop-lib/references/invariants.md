@@ -39,7 +39,7 @@ Each invariant identifies the step that owns it and the exact predicate.
 
 | # | Predicate |
 |---|---|
-| S03.1 | `len(actionable) + len(suspicious) + len(dropped_count) == len(all_comments)` where `dropped_count` is tracked via log event `triage_result.filtered_*` fields |
+| S03.1 | `len(actionable) + len(suspicious) + dropped_count == len(all_comments)` where `dropped_count` is an integer total tracked via log event `triage_result.filtered_*` fields |
 | S03.2 | No comment appears in both `actionable` and `suspicious` |
 | S03.3 | Every item in `actionable` has `body` set (non-empty) |
 | S03.4 | Every item in `suspicious` has a `matched_refusal_class` field (from filter C) |
