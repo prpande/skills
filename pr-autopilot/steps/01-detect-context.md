@@ -18,6 +18,79 @@ threaded through the entire skill.
 | `spec_candidates[]` | Glob: `docs/superpowers/specs/*.md`, `docs/superpowers/plans/*.md`, `specs/*/spec.md`, `specs/*/plan.md`, `specs/*/tasks.md`, `docs/specs/*.md`, `docs/plans/*.md` |
 | `repo_root` | `git rev-parse --show-toplevel` |
 | `user_iteration_cap` | From the skill's argument (if any) |
+| `session_id` | UUID generated via uuid/uuidgen/fallback (see state-protocol.md) |
+| `host_platform` | Environment sniffing (see state-protocol.md) |
+| `self_login` | `gh api user --jq .login` or `az account show --query user.name -o tsv` |
+
+## Preflight environment checks (run before anything else)
+
+Run each command; halt with the quoted diagnostic on any failure.
+
+1. **Git repo check**:
+   ```bash
+   git rev-parse --show-toplevel 2>/dev/null
+   ```
+   On failure: HALT with "pr-autopilot must run inside a git working tree. No `.git/` found in any parent directory."
+
+2. **Remote origin check**:
+   ```bash
+   git remote get-url origin 2>/dev/null
+   ```
+   On failure: HALT with "No `origin` remote configured. Add one and re-invoke."
+
+3. **Platform detection** (populate `context.platform`):
+   - Match `origin` URL against `github.com` → `github`
+   - Match `dev.azure.com` / `visualstudio.com` → `azdo`
+   - Else: `github` (with a log warning)
+
+4. **CLI auth check** (platform-specific):
+   - GitHub:
+     ```bash
+     gh auth status 2>/dev/null
+     ```
+     On failure: HALT with "gh CLI is not authenticated. Run `gh auth login` and re-invoke."
+   - Azure DevOps:
+     ```bash
+     az account show >/dev/null 2>&1
+     ```
+     On failure: HALT with "az CLI is not authenticated. Run `az login` and re-invoke."
+
+5. **Draft PR check** (only if a PR already exists for the current branch):
+   ```bash
+   # GitHub:
+   gh pr view --json isDraft --jq .isDraft 2>/dev/null
+   ```
+   If result is `true`: HALT with "PR is in draft state. Mark it ready for review before running pr-autopilot."
+   (pr-followup allows drafts; pr-autopilot does not.)
+
+## Host platform detection
+
+Populate `context.host_platform` per
+`pr-loop-lib/references/state-protocol.md` "Host-platform detection"
+section. Store one of: `claude-code`, `codex`, `gemini`, `other`.
+
+## Session ID generation
+
+Generate `context.session_id` (a UUID) per state-protocol's
+"First-run setup" section. This value is constant across all
+`ScheduleWakeup` resumes within the same skill invocation.
+
+## Self-login detection
+
+Populate `context.self_login` per state-protocol's "Self-login
+detection" section.
+
+## State file initialization
+
+After all fields in the "Outputs (context fields)" table are
+populated, initialize the state file per
+`pr-loop-lib/references/state-protocol.md` "First-run setup" and
+"Writing state" sections. Acquire the lock before the first write.
+
+If a state file for the current PR or branch already exists (re-entry
+after a `ScheduleWakeup`), LOAD the existing state instead of
+re-initializing. Refresh the lock lease. Log a `skill_start` event
+noting `resumed: true`.
 
 ## Blocking conditions
 
