@@ -6,15 +6,22 @@ quiescent (not on cap/runaway).
 ## GitHub
 
 ```bash
-gh pr checks "$PR" --watch --fail-fast=false
-```
+# The --watch form exits non-zero if ANY check finishes red. We need the
+# skill to continue into step 10 (classify) in that case, so capture the
+# exit status instead of letting it propagate as a hard failure:
+gh pr checks "$PR" --watch --fail-fast=false >/dev/null 2>&1 || true
 
-Blocks until every reported check has a terminal status. Then collect:
-
-```bash
+# Then collect the final per-check status unconditionally:
 gh pr checks "$PR" --json name,state,link,bucket,completedAt \
   --jq '[.[] | {name, state, link, bucket, completedAt}]'
 ```
+
+The `|| true` is intentional — a non-zero from `--watch` means "some check
+ended red", which is exactly the branch step 10 handles. Letting the exit
+code abort the orchestrator would skip classification entirely. The
+`--json` follow-up query is the authoritative source for
+`context.ci_results`; the `--watch` call is used only for its blocking
+behavior.
 
 ## Azure DevOps
 

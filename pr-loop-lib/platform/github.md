@@ -71,12 +71,15 @@ gh api "repos/{owner}/{repo}/pulls/${PR}/reviews" --paginate --jq '[
 Needed for the resolve mutation. Posts and replies use REST; resolution uses GraphQL.
 
 Both connections (`reviewThreads` and each thread's `comments`) must be
-paginated via `pageInfo { hasNextPage, endCursor }` — GitHub caps a single
-page at 100 for threads and 100 for comments (we request 50 to stay under
-typical API-cost limits). PRs with >100 threads or any thread with >50
-comments require repeated queries until `hasNextPage` is false. Do not
-skip the loop; a missing `thread_id` for a single inline comment silently
-breaks the resolve step for that thread.
+paginated via `pageInfo { hasNextPage, endCursor }`. GitHub caps a single
+page at 100 for both connections; the query below requests the maximum
+(`first: 100` for threads, `first: 50` for comments — 50 is a safe default
+under typical per-query cost limits, raise to 100 if you know the PRs
+you're querying have many comments per thread). PRs with more threads or
+any thread with more comments than the requested page size require
+repeated queries until `hasNextPage` is false. Do not skip the loop; a
+missing `thread_id` for a single inline comment silently breaks the
+resolve step for that thread.
 
 ```bash
 # First page. For subsequent pages, pass $threadsCursor / $commentsCursor.
