@@ -257,6 +257,157 @@ Rejected: static delimiters + pre-scan content for `</UNTRUSTED_*>` and replace 
 
 Rejected: deleting the declarations. These were declared because they were planned; removing them weakens operator diagnosis ("why did this stop?" → "unspecified generic exit"). Wire-in is strictly preferable.
 
+## Section 5 — Internal-only automated review (item 11)
+
+Late-added to β scope on 2026-04-19 after spec approval. The three
+review surfaces the skill itself controls — Pass 2 preflight, any
+Critical/Important preflight fixes, and the post-open `/code-review`
+invocation — must not surface their output to other reviewers on the
+PR. Findings are either fixed silently or reported only to the invoking
+user via a local summary artifact.
+
+External reviewer bots (Copilot, SonarCloud, mergewatch, human
+commenters) still post normally — the skill doesn't control those, and
+the comment loop continues to handle them.
+
+### Behavior changes
+
+**Preflight Minor findings.** α step 04 folds
+`context.preflight_minor_findings` into the PR body as a "Known minor
+observations" section. β removes that section from the PR body
+template entirely (no opt-back-in flag — premature without a user
+asking). Minor findings are retained in `context.preflight_minor_findings`
+for the local summary only.
+
+**`/code-review` post-open (step 04g).** α posts the rendered review
+body as a top-level PR comment prefixed `### Code review\n`, then
+relies on iter-1 Filter B.5 to rescue and process it. β changes the
+contract:
+
+- Invoke the host's `review` skill exactly as α does.
+- Capture the rendered output into `context.code_review_raw_output`
+  (local context only — never written to `gh pr comment`).
+- Parse the numbered findings out of the captured output using the
+  same parser Filter B.5 Stage 1 uses.
+- Dedup against `preflight_findings[]` via the normalized-lead
+  `description_hash` (from Section 3). Log `triage_dedup_hit` for
+  each dup — same mechanism, different source.
+- For each non-dup finding, dispatch a fixer via step 04-dispatch-fixers
+  mechanics, scoped to `P02.*` invariants (same as preflight dispatch).
+  Verifier + policy ladder + overlap re-verify all apply.
+- If any fixes land, commit + push via step 06 mechanics. Commit
+  subject: `Address internal /code-review findings (preflight)`.
+- Record outcomes in `context.internal_review_findings[]` with per-
+  finding status (fixed / fixed-differently / deferred /
+  feedback-wrong / needs-human) for the local summary.
+- Do **not** `gh pr comment` the review output under any branch.
+
+**Filter B.5 Stage 1** remains in place but is effectively dead code
+for our own `/code-review` output (the comment that triggered it no
+longer exists). Leaving it in handles stray self-authored comments
+from future revisions that might re-enable the posted path. Stage 2
+(normalized-lead dedup) stays necessary — it still deduplicates
+external-bot comments against preflight findings.
+
+### New post-condition invariant
+
+Under the invariants scope for `pr-autopilot/steps/04-open-pr.md`,
+add:
+
+| # | Predicate |
+|---|---|
+| S04g.1 | After step 04g completes, no top-level PR comment authored by `context.self_login` has a body matching `^\s*#{1,6}\s*code[\s-]*review\b` (case-insensitive). Checked via `gh pr view --comments --json comments --jq ...`. A hit means the orchestrator regressed into the α posting behavior and is a hard halt. |
+
+### User-facing summary artifact
+
+The skill writes a markdown summary at:
+
+```
+<repo-root>/.pr-autopilot/pr-<PR>-review-summary.md
+```
+
+Populated incrementally as step 02 runs (preflight section) and step
+04g runs (`/code-review` section). Content:
+
+```markdown
+# pr-autopilot internal review summary — PR #<N>
+
+## Preflight adversarial review (Pass 2)
+
+- Critical fixed:  <count> (listed below)
+- Important fixed: <count> (listed below)
+- Minor (not surfaced on PR): <count> (listed below)
+
+### Critical (fixed)
+- file:line — description → fixer verdict / verifier judgement
+
+### Important (fixed)
+- file:line — ...
+
+### Minor (captured locally only)
+- file:line — ...
+
+## /code-review post-open
+
+- Raw findings: <count>
+- Dedup vs preflight: <count>
+- Fixed by dispatch: <count>
+- Fixed-differently: <count>
+- Deferred (feedback-wrong / needs-human): <count>
+
+### Fixed
+- file:line — ...
+
+### Deferred
+- file:line — description → reason
+```
+
+Step 11 (final report) cites the path of this file and summarizes its
+top-level counts so the operator knows where to look. The file lives
+under `.pr-autopilot/` which is gitignored, so it does not land in a
+commit.
+
+### Why separate artifact rather than in-terminal report only
+
+The skill may be re-entered via `pr-followup`. Having the summary on
+disk lets the operator review it even after the skill's terminal
+output has scrolled away, and lets tooling (a future inspection
+command) parse it.
+
+### New context fields
+
+Added to `references/context-schema.md`:
+
+| Field | Type | Purpose |
+|---|---|---|
+| `code_review_raw_output` | string | Captured stdout/return-value of the host's `review` skill. Never posted. |
+| `internal_review_findings` | array of objects | Structured per-finding records used to populate the summary file. Shape: `{source: "preflight" \| "code-review", severity, file, line?, description, status, fixer_feedback_id?, verifier_judgement?}`. |
+| `internal_review_summary_path` | string | Path to the summary markdown file, set by step 02 on first write. |
+
+`code_review_invoked` and `code_review_invoked_at` retain their
+semantics from α; `code_review_invoked: true` now means "captured
+locally and dispatched", not "posted as a PR comment".
+
+### Migration from α
+
+α runs with the prior posting behavior leave a `### Code review\n`
+comment on the PR. β does NOT clean those up — if a β session follows
+an α run on the same PR (atypical but possible in testing), the α
+comment stays as history. Filter B.5's iter-1 rescue continues to
+handle it if it's still within the timestamp window.
+
+### Rejected alternatives
+
+- **Flag-gated public-review mode (`--public-review`).** Rejected:
+  nobody is asking for it, and design flags are forever. Re-add behind
+  a flag only when a real use case arises.
+- **Post a redacted summary-only comment instead of nothing.** Rejected:
+  the user's intent is to hide automated review output from other
+  reviewers entirely. A "we ran review; no findings" comment is still
+  output.
+- **Keep Stage 1 rescue logic removed.** Rejected: minor code cost to
+  leave in, but future-proofs against re-enabling posted review.
+
 ## Cross-cutting concerns
 
 ### Files touched (complete list)

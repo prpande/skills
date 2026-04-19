@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship the 10 concurrency / escaping / invariant-correctness fixes from the [2026-04-19 sub-project β design](../specs/2026-04-19-pr-autopilot-subproject-beta-design.md). Zero-dependency: no Python, no pip install, no new CLI tooling. All edits land in existing markdown files.
+**Goal:** Ship the 10 concurrency / escaping / invariant-correctness fixes from the [2026-04-19 sub-project β design](../specs/2026-04-19-pr-autopilot-subproject-beta-design.md), plus the late-added Section 5 "internal-only automated review" (item 11). Zero-dependency: no Python, no pip install, no new CLI tooling. All edits land in existing markdown files.
 
 **Source of requirements:** The "Known follow-ups for sub-project β" list in PR [#3](https://github.com/prpande/skills/pull/3) (concurrency + escaping), plus unresolved findings from inline review comments on that PR.
 
@@ -352,6 +352,157 @@ git commit -m "termination-reasons: wire ci-red, ci-skipped, user-intervention-n
 ```
 
 ---
+
+## Phase 4b — Internal-only automated review (Section 5 of the spec)
+
+Late-added to β scope. Four coordinated edits across pr-autopilot
+step files plus two reference files.
+
+### Task 9b: Add new context fields
+
+**Files:**
+- Edit: `pr-loop-lib/references/context-schema.md`
+
+- [ ] **Step 1 — Add three fields**
+
+Append rows to the appropriate tables:
+
+| Field | Type | Purpose |
+|---|---|---|
+| `code_review_raw_output` | string (default "") | Captured return of host's `review` skill. Never posted. |
+| `internal_review_findings` | array of objects (default `[]`) | Per-finding records; see Section 5 of spec for shape. |
+| `internal_review_summary_path` | string or null | Path to `<repo>/.pr-autopilot/pr-<PR>-review-summary.md`. |
+
+- [ ] **Step 2 — Validate and commit**
+
+```bash
+python scripts/validate.py
+git add pr-loop-lib/references/context-schema.md
+git commit -m "context-schema: add internal_review_* fields (β item 11)"
+```
+
+### Task 9c: Preflight writes to summary file, drops Minor-from-body wiring
+
+**Files:**
+- Edit: `pr-autopilot/steps/02-preflight-review.md`
+
+- [ ] **Step 1 — Initialize the summary file on first write**
+
+Right after preflight findings are classified by severity, create
+`.pr-autopilot/pr-<PR>-review-summary.md` (or `branch-<slug>-review-
+summary.md` pre-PR-assignment) and populate the preflight section.
+Store the path in `context.internal_review_summary_path`. Use
+Primitive C (tmp+mv) from state-protocol.md — same atomicity rule as
+state writes.
+
+- [ ] **Step 2 — Populate `internal_review_findings` with preflight entries**
+
+For each Critical/Important finding that dispatch handled, append a
+record to `context.internal_review_findings` with `source:
+"preflight"` and the post-dispatch outcome (`status`). For each Minor
+finding, append with `status: "captured-only"` (not surfaced on PR,
+not dispatched).
+
+- [ ] **Step 3 — Explicit note: minor findings NOT folded into PR body**
+
+Add a sentence in the "Action policy on findings" section: *"Minor
+findings are captured in `context.preflight_minor_findings` AND in the
+summary artifact, but are NOT included in the PR body under β. See
+`04-open-pr.md` for the removed PR-body section."*
+
+- [ ] **Step 4 — Validate and commit**
+
+```bash
+python scripts/validate.py
+git add pr-autopilot/steps/02-preflight-review.md
+git commit -m "02-preflight: write review summary file; drop minor→PR-body wire (β item 11)"
+```
+
+### Task 9d: 04g rewrite — capture, don't post; dispatch fixers; new invariant
+
+**Files:**
+- Edit: `pr-autopilot/steps/04-open-pr.md`
+- Edit: `pr-loop-lib/references/invariants.md`
+
+- [ ] **Step 1 — Remove "Known minor observations" from PR body template**
+
+Delete the row from the Section Fill Rules table in `04-open-pr.md`.
+Remove any code path that appended the section.
+
+- [ ] **Step 2 — Rewrite 04g procedure**
+
+Replace the "Why 'post once and continue'" subsection and update the
+Invocation subsection so that:
+- `review` skill invocation remains as α.
+- Rendered output is captured into `context.code_review_raw_output`.
+- Findings are parsed (reuse Filter B.5 Stage 1's parser prose — put
+  the parser in its own small reference in 03-triage.md if needed,
+  or duplicate the specification here).
+- Dedup against `preflight_findings[].description_hash` via the
+  normalized-lead hash (Section 3). Log `triage_dedup_hit` for
+  matches.
+- Non-dup findings go through step 04-dispatch-fixers mechanics under
+  `P02.*` scope (same as preflight dispatch). Verifier, policy
+  ladder, and overlap re-verify apply.
+- Any resulting diff is committed + pushed via step 06 mechanics,
+  commit subject: `Address internal /code-review findings (preflight)`.
+- Record each finding in `context.internal_review_findings` with
+  `source: "code-review"` and the post-dispatch outcome. Append to the
+  summary file.
+- `gh pr comment` is NOT called. Add an explicit "do NOT post" line in
+  the procedure.
+- Update the host-skill table's "Posts to PR?" column: for
+  `claude-code`, the new answer is **"No — captured locally; not
+  posted"**.
+
+- [ ] **Step 3 — Add S04g.1 invariant**
+
+In `pr-loop-lib/references/invariants.md`, append a new
+"Step 04g — post-open code-review invocation (pr-autopilot)" table
+with:
+
+```
+| S04g.1 | After step 04g completes, `gh pr view --comments --json
+          comments --jq ...` returns no top-level comment authored by
+          `context.self_login` whose body matches
+          ^\s*#{1,6}\s*code[\s-]*review\b (case-insensitive). A hit
+          means the orchestrator regressed into α posting behavior and
+          is a hard halt. |
+```
+
+Cite S04g.1 at the end of step 04g's procedure.
+
+- [ ] **Step 4 — Validate and commit**
+
+```bash
+python scripts/validate.py
+git add pr-autopilot/steps/04-open-pr.md pr-loop-lib/references/invariants.md
+git commit -m "04g: capture /code-review output internally; never post; add S04g.1 (β item 11)"
+```
+
+### Task 9e: Final-report surfaces summary + counts
+
+**Files:**
+- Edit: `pr-loop-lib/steps/11-final-report.md`
+
+- [ ] **Step 1 — Replace the "Preflight adversarial review" + "/code-review (post-open)" blocks**
+
+with structured counts from `context.internal_review_findings` by
+source. Add a top-level line:
+
+```
+Internal review summary: <repo-root>/.pr-autopilot/pr-<N>-review-summary.md
+```
+
+so the operator knows where the full detail lives.
+
+- [ ] **Step 2 — Validate and commit**
+
+```bash
+python scripts/validate.py
+git add pr-loop-lib/steps/11-final-report.md
+git commit -m "11-final-report: surface internal-review summary path and counts (β item 11)"
+```
 
 ## Phase 5 — Smoke test and PR
 
