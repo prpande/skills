@@ -45,7 +45,7 @@ Required fields are marked as such.
 | `iteration` | integer | default `0` | Current loop iteration (1-indexed once loop starts) |
 | `user_iteration_cap` | integer | default `10` | Cap from skill argument |
 | `no_wait_first_iteration` | boolean | default `false` | Set by pr-followup |
-| `wait_override_minutes` | integer or null | no | From `--wait N` |
+| `wait_override_minutes` | integer or null | no | From `--wait N`. Interpreted as `max(10, N)` by `pr-loop-lib/steps/01-wait-cycle.md` — the 10-minute floor applies to the *effective* delay, not the raw user input. Values below 10 are accepted at parse time but clamped up in step 01 with a warning log event. |
 | `last_push_timestamp` | string (ISO-8601) or null | no | Committer timestamp of most recent push |
 | `last_handled_timestamp` | string (ISO-8601) or null | no | Set by step 08 after suspicious-only iterations |
 | `last_push_sha` | string (hex) or null | no | HEAD SHA after most recent push |

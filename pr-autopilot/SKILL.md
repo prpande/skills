@@ -36,11 +36,17 @@ Optional single positional argument: an integer iteration cap.
 Store in `context.user_iteration_cap`.
 
 Flags supported (parse from the raw invocation string):
-- `--wait <minutes>` → override loop wait delay (default 10 min)
+- `--wait <minutes>` → override loop wait delay. **Floor: 10 minutes.**
+  Values less than 10 are clamped up to 10 with a warning log event;
+  the skill never waits less than 10 minutes between iterations (see
+  `pr-loop-lib/steps/01-wait-cycle.md` "Minimum wait"). The 10-minute
+  floor is a hard rule; reviewer bots can take up to ~10 min to post
+  follow-up findings, and a shorter wait observably misses them.
 - `--dry-run` → execute every step except `gh/az pr create`, push, and
   thread resolve mutations. Print what would happen.
-- `--no-wait` → skip the first wait cycle (useful when bots are known to
-  have already posted)
+- `--no-wait` → skip the **first** wait cycle only (useful when bots
+  are known to have already posted). Subsequent iterations still honor
+  the 10-minute floor.
 
 ## Execution
 
