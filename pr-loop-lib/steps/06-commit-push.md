@@ -58,23 +58,16 @@ Address PR review feedback (#<$PR>)
 One bullet per agent with a non-`not-addressing` verdict whose
 `files_changed` was non-empty.
 
-Use heredoc to avoid shell-quoting issues:
-
-```bash
-git commit -m "$(cat <<EOF
-Address PR review feedback (#${PR})
-
-- ${AGENT1_REASON}
-- ${AGENT2_REASON}
-EOF
-)"
-```
-
 Commit signing follows the user's local git configuration — do NOT pass
 `-c commit.gpgsign=false`, `--no-gpg-sign`, or `--no-verify`. This honors
 the hard rule in the orchestrator SKILL.md ("never bypass signing unless
 the user explicitly asks"). If a signing setup is broken locally, surface
 the failure to the user rather than silencing it.
+
+The actual `git commit` invocation is shown in the "Emit
+`git_commit_argv`" subsection below — the same `COMMIT_MSG` heredoc
+feeds both the log event and the commit, so we don't render two
+copies of it here.
 
 ### Emit `git_commit_argv` for S06.3 audit trail
 
@@ -91,6 +84,18 @@ flag addition MUST update this array — that's the point: the log is
 honest about what git actually received.
 
 ```bash
+# Build the message first via heredoc into a shell variable, so the
+# COMMIT_ARGS array can reference it. Never inline the heredoc inside
+# the array definition — heredocs inside array contexts don't expand
+# on all Bash versions.
+COMMIT_MSG=$(cat <<EOF
+Address PR review feedback (#${PR})
+
+- ${AGENT1_REASON}
+- ${AGENT2_REASON}
+EOF
+)
+
 # Source-of-truth flag list. If a future revision adds a flag, append
 # it here so both the log and the commit see it.
 # Forbidden by orchestrator hard rule (do NOT add): --no-verify,

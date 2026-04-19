@@ -100,10 +100,12 @@ hashes (not a re-normalization round-trip):
 Store the resulting hex string as
 `context.preflight_passes.merged[].description_hash` (NOT a separate
 `preflight_findings[]` — that name doesn't exist in the schema and
-would trip G2). Each `merged[]` entry also gets a stable `id` field
-(e.g., `preflight-<N>` indexed by finding position) so that P02.1's
-predicate "every `fixer_return.feedback_id` matches a
-`merged[].id`" is mechanically checkable.
+would trip G2). Each `merged[]` entry also gets a stable `id` field:
+**`preflight-<N>` where `<N>` is the 1-indexed position in the
+`pass2_raw` array at first population, never renumbered even if the
+skill retries a dispatch**. Deterministic ids let P02.1's predicate
+"every `fixer_return.feedback_id` matches a `merged[].id`" be checked
+mechanically, and survive `ScheduleWakeup` resumes without drift.
 
 See `pr-loop-lib/steps/03-triage.md#filter-b5` for the receiving-side
 normalization — the two must stay in lock-step. Step 04g's internal

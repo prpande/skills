@@ -284,11 +284,11 @@ for dest in "pr-<PR>.json" "pr-<PR>.lock" "pr-<PR>.log" "pr-<PR>-review-summary.
   fi
 done
 
-mv "branch-<slug>.json"               "pr-<PR>.json"
-mv "branch-<slug>.lock"               "pr-<PR>.lock"          # directory mv; git-bash handles atomically when target is absent
-mv "branch-<slug>.log"                "pr-<PR>.log"
+mv "branch-<slug>.json"               "pr-<PR>.json"      || halt_rename "json"
+mv "branch-<slug>.lock"               "pr-<PR>.lock"      || halt_rename "lock"   # directory mv; git-bash handles atomically when target is absent
+mv "branch-<slug>.log"                "pr-<PR>.log"       || halt_rename "log"
 if [ -f "branch-<slug>-review-summary.md" ]; then
-  mv "branch-<slug>-review-summary.md" "pr-<PR>-review-summary.md"
+  mv "branch-<slug>-review-summary.md" "pr-<PR>-review-summary.md" || halt_rename "review-summary"
 fi
 
 # Update the $LOG environment variable in-memory for subsequent log
@@ -300,6 +300,29 @@ LOG="<repo_root>/.pr-autopilot/pr-<PR>.log"
 Update `pr_number` and `internal_review_summary_path` fields inside
 the state file after the rename. Log a `state_rename` event to the
 newly-pointed `$LOG` listing every renamed artifact (old → new pairs).
+
+**Split-brain recovery.** If any `mv` inside the batch fails
+mid-sequence (e.g., git-bash returns non-zero on a directory mv when
+antivirus briefly locks the lock dir), `halt_rename` must surface a
+clear operator diagnostic naming exactly which files were renamed and
+which remain under `branch-<slug>.*`. Recommended `halt_rename`
+implementation:
+
+```bash
+halt_rename() {
+  echo "HALT state_rename: '$1' rename failed mid-batch."
+  echo "Current .pr-autopilot/ contents:"
+  ls -la "<repo_root>/.pr-autopilot/"
+  echo "Operator action required: rename the remaining branch-<slug>.*"
+  echo "files to pr-<PR>.* manually, or delete .pr-autopilot/ and"
+  echo "re-invoke. Do NOT proceed with an inconsistent split-brain"
+  echo "state — a future lock acquire would target the wrong path."
+  exit 1
+}
+```
+
+This is better than retrying: the mv failure indicates a filesystem-
+level contention that a retry loop won't fix quickly.
 
 ## Host-platform detection (called from step 01)
 

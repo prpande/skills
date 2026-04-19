@@ -206,13 +206,32 @@ For each numbered finding, produce a record:
 - `line: <start>` — INTEGER, not string; first number in
   `L<start>-L<end>`. (Same shape rule as Filter B.5 Stage 1 — storing
   as string trips G3.)
-- `id: "code-review:finding-<N>"` (stable within this session)
+- `id: "code-review:finding-<N>"` (stable within this session;
+  1-indexed by the order findings appear in
+  `context.code_review_raw_output`)
+- `severity: "important"` — `/code-review` findings are treated as
+  Important by default. The `review` skill does not return a severity
+  field, and preflight's adversarial subagent has already caught
+  Critical-severity issues (dispatched inline in step 02), so what
+  `/code-review` surfaces post-open is by construction Important or
+  less. Operators tuning this default may set `severity: "minor"` at
+  the dispatch site if `/code-review` produces verbose low-priority
+  comments in a given project.
 - `source: "code-review"` — marks the origin for `internal_review_findings`
 
 If parsing fails (malformed numbered section, no `<https://...>` URL,
 missing description):
 - Log an `error` event with `stage: "04g-parse"`.
 - Skip this finding. Do NOT dispatch malformed inputs to a fixer.
+
+**Empty / zero-finding output.** If `context.code_review_raw_output`
+is empty (the host's `review` skill returned nothing — e.g., "no
+issues found") OR if parsing yields zero well-formed findings, skip
+the Dedup, Dispatch, and Commit+push subsections below. Set
+`context.code_review_invoked = true`, append a single
+"no findings" line to the review-summary file's `/code-review`
+section, and hand off to `4f`. This is the happy path — treat it as
+success, not as an error.
 
 ### Dedup against preflight findings
 
