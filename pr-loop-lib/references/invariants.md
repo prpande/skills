@@ -117,7 +117,7 @@ equivalent predicates live in `P02.*`.
 | # | Predicate |
 |---|---|
 | S09.1 | Every entry in `ci_results` has `state` ∈ {`green`, `red`, `pending-timeout`} |
-| S09.2 | If all entries have `state: green`, `termination_reason` is set to `ci-green` |
+| S09.2 | If `ci_results` is **non-empty** AND every entry has `state: green`, `termination_reason` is set to `ci-green`. The non-empty qualifier is required because β's step 09 now routes an empty `ci_results` (no CI configured) to `ci-skipped`, not to a vacuously-true `ci-green`. |
 
 ### Step 10 — ci-failure-classify
 
@@ -131,7 +131,7 @@ equivalent predicates live in `P02.*`.
 | # | Predicate |
 |---|---|
 | S11.1 | `termination_reason` is set |
-| S11.2 | Lock file has been removed by the time this step completes |
+| S11.2 | Lock **directory** (Primitive A in `state-protocol.md`) has been removed by the time this step completes. Verified via `test ! -d "<repo-root>/.pr-autopilot/pr-<N>.lock"`. Under α the lock was a flat file and this read "Lock file has been removed"; under β the directory-as-lock form requires `rm -rf`, but the presence-check predicate is unchanged in intent — the path must not exist. |
 
 ### Step 04g — post-open /code-review invocation (pr-autopilot)
 

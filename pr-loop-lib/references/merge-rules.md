@@ -25,21 +25,44 @@ Two findings are "the same" when ALL of:
 
 When all three match, the findings are considered the same issue.
 
-### Triage override — description-based dedup
+### Triage override — normalized-lead hash (β)
 
 Triage (`pr-loop-lib/steps/03-triage.md` Filter B.5) CANNOT use the
 category-based key above because `CommentRecord` (the shape of triage
-actionable items) has no `category` field. Triage dedups against
-preflight findings using a distinct key:
+actionable items) has no `category` field. Under β Section 3, triage
+dedups against preflight findings using a **normalized-lead-paragraph
+SHA-1 hash**:
 
-1. Same file path (exact match).
-2. `line` within 3 lines.
-3. Normalized description equality — whitespace-trimmed, internal
-   whitespace collapsed, lowercased.
+1. Strip fenced code blocks (` ``` … ``` `) and HTML tags from the
+   candidate body.
+2. Take the lead paragraph (everything up to the first blank line).
+3. Lowercase and collapse whitespace to single spaces.
+4. Truncate to 200 characters.
+5. SHA-1; compare the hex digest (`description_hash`).
 
-This override is authoritative for triage. The category-based key
-above remains the correct key when both sources carry `category` (e.g.,
+Path match is retained when both sides carry a path (exact match;
+missing path on either side is "don't restrict by path"). The
+preflight side stores the hash at
+`context.preflight_passes.merged[].description_hash`; step 02 computes
+it using the same five-step normalization so the two sides stay in
+lock-step. See `pr-loop-lib/steps/03-triage.md` Filter B.5 Stage 2
+for the receiving-side pipeline, and
+`pr-autopilot/steps/02-preflight-review.md` "Per-finding
+description_hash" for the emitting-side pipeline.
+
+This override is authoritative for triage *and* for step 04g's
+internal `/code-review` dispatch. The category-based key above
+remains the correct key when both sources carry `category` (e.g.,
 merging two adversarial-prompt outputs).
+
+**Note.** An earlier revision of this section described a looser
+`line within 3 lines` + "normalized description equality"
+(whitespace-trimmed + lowercased). β replaced that with the
+hash-based scheme above — equality on a normalized-lead hash is
+deterministic and tolerates bodies that bundle summary + snippet +
+table (the common non-`/code-review` bot shape). If you see a
+pointer to "Triage override" expecting the older equality form,
+it's now this hash scheme.
 
 ## Severity escalation
 

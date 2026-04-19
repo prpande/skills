@@ -109,7 +109,15 @@ COMMIT_ARGV_FLAGS=(-m "<commit-message>") # flag tokens only for the log
 # corrupt the JSON-lines log. S06.3 only grep-checks for forbidden
 # flag tokens, so dropping the message content is lossless for the
 # predicate's purpose and keeps the log parseable.
-COMMIT_ARGV_STR="${COMMIT_ARGV_FLAGS[*]}"
+COMMIT_ARGV_STR_RAW="${COMMIT_ARGV_FLAGS[*]}"
+
+# JSON-escape the argv string before interpolation. Even though the
+# current COMMIT_ARGV_FLAGS values are safe ASCII, defensive escaping
+# keeps the JSON-lines log valid if a future flag ever introduces a
+# `"` or `\` (e.g., `--author='Foo "Bar"'`). Order matters: escape
+# backslashes first so the subsequent quote-escape's inserted
+# backslashes don't get doubled.
+COMMIT_ARGV_STR=$(printf '%s' "$COMMIT_ARGV_STR_RAW" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
 
 # Second-precision UTC timestamp. %3N (millisecond) is GNU-date
 # specific and prints a literal "%3N" on macOS BSD date — use the
