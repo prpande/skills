@@ -42,13 +42,16 @@ rather than loading the full history and filtering in step 03.
 Compute the fetch cursor from state (subtract 300 s to absorb clock skew):
 
 ```bash
-FETCH_SINCE_EPOCH=$(( $(date +%s) - 300 ))
+NOW_EPOCH=$(date +%s)
+FETCH_SINCE_EPOCH=${LAST_PUSH_EPOCH:-0}
 # Use the max of the two cursors so we never miss comments
-[ "${LAST_PUSH_EPOCH:-0}" -gt 0 ] && \
-  FETCH_SINCE_EPOCH=$(( LAST_PUSH_EPOCH - 300 ))
 [ "${LAST_HANDLED_EPOCH:-0}" -gt "$FETCH_SINCE_EPOCH" ] && \
-  FETCH_SINCE_EPOCH=$(( LAST_HANDLED_EPOCH - 300 ))
-# Convert back to ISO-8601 for the API `since` parameter
+  FETCH_SINCE_EPOCH=${LAST_HANDLED_EPOCH}
+# Subtract skew buffer; clamp to [0, now] to guard against unset/future values
+FETCH_SINCE_EPOCH=$(( FETCH_SINCE_EPOCH - 300 ))
+[ "$FETCH_SINCE_EPOCH" -lt 0 ] && FETCH_SINCE_EPOCH=0
+[ "$FETCH_SINCE_EPOCH" -gt "$NOW_EPOCH" ] && FETCH_SINCE_EPOCH=$NOW_EPOCH
+# Convert to ISO-8601 for the API `since` parameter
 SINCE_ISO=$(date -u -d "@${FETCH_SINCE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
   || date -u -r "${FETCH_SINCE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)
 ```

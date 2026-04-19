@@ -147,19 +147,20 @@ this step retries a commit, emit a fresh event per retry.
 git push origin HEAD
 ```
 
-Explicit `origin HEAD` is required. Bare `git push` depends on `push.default`
-config: with `push.default=matching` (Git 1.x default) it pushes ALL matching
-local branches; with `push.default=nothing` it fails silently. `git push origin
-HEAD` is safe regardless of configuration and does not require the tracking
-upstream to be set (which may not be true when `pr-followup` re-enters without
-going through step 04's `git push -u origin <branch>`).
+Explicit `origin HEAD` is required. Bare `git push` is configuration-dependent:
+with `push.default=matching` (Git 1.x default) it pushes ALL matching local
+branches; with `push.default=nothing` it exits non-zero with no refspec pushed;
+with `push.default=simple` it errors if no tracking upstream is set. `git push
+origin HEAD` is safe regardless of configuration and does not require the
+tracking upstream to be set (which may not be true when `pr-followup` re-enters
+without going through step 04's `git push -u origin <branch>`).
 
 No `--force`. No `--no-verify`.
 
 ## Update context
 
 After successful push:
-```bash
+```
 context.last_push_timestamp = $(git log -1 --format=%ct)  # Unix epoch seconds
 context.last_push_sha = $(git rev-parse HEAD)
 ```

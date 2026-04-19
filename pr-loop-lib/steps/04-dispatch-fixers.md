@@ -45,7 +45,7 @@ For each unit:
      *"_${FIXER_NONCE}"*)
        FIXER_NONCE=$(printf '%08x' $(( (RANDOM << 15) | RANDOM )))
        case "$COMMENT_BODY_VERBATIM" in
-         *"_${FIXER_NONCE}"*) log verifier_nonce_collision slot=fixer; FIXER_NONCE=""; ;;
+         *"_${FIXER_NONCE}"*) log fixer_nonce_collision; FIXER_NONCE=""; ;;
        esac ;;
    esac
    [ -z "$FIXER_NONCE" ] && escalate_to_needs_human && continue
