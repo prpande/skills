@@ -54,66 +54,134 @@ Apply rules from `references/known-bots.md`. For each comment:
    multiple items.
 4. If not found, apply the **Unknown-bot fallback** section rules.
 
-## Filter B.5 — /code-review self-comment exemption + preflight dedup
+## Filter B.5 — /code-review rescue + preflight dedup (two-stage pipeline)
 
 When iter 1 fetches comments, some top-level comments (surface `issue`)
 may be authored by `context.self_login` — our `/code-review` invocation
-posts as the invoking user. Filter A would normally drop these as self-
-replies. This sub-step rescues the legitimate `/code-review` output.
+posts as the invoking user. Filter A would normally drop these as
+self-replies. This sub-step rescues legitimate reviewer output, then
+deduplicates its findings against preflight.
 
-### Rescuing `/code-review`'s comment
+### Stage 1 — Tolerant rescue
 
 For each comment where `author == context.self_login` AND `surface ==
-issue`:
-- If `body` starts with `### Code review\n`, rescue it from the self-
-  login drop list and process its findings:
-  1. Parse each numbered finding from the body. Format is:
-     ```
-     N. <description> (<source>)
+issue`, test the body against a **case-insensitive heading regex**
+(markdown heading, any level 1–6, with "code review" — spaces or hyphens
+between the two words tolerated, leading whitespace allowed):
 
-     <https://github.com/owner/repo/blob/SHA/path#L<start>-L<end>>
-     ```
-  2. Convert each finding to an actionable item with:
-     - `surface: "issue"` (inherited)
-     - `body: "<description>"` (the first line of the numbered item)
-     - `path: "<parsed from the SHA URL>"`
-     - `line: <start>` — INTEGER, not string; parse the first number in
-       `L<start>-L<end>` (e.g., `L42-L48` → `42`). Storing as string
-       violates `CommentRecord.line` (integer-or-null) and trips G3.
-     - `id: "<parent-comment-id>:finding-<N>"` (so each finding has a
-       unique id)
-  3. Emit these findings into the actionable candidate list.
-- Otherwise, the comment is a legitimate self-reply from a prior
-  iteration — keep it dropped.
+```
+^\s*#{1,6}\s*code[\s-]*review\b
+```
 
-### Dedup against preflight findings
+(`\s*` — zero-or-more — is deliberately permissive between `#` and
+`code`; valid markdown requires a space but we prefer accepting slight
+malformations over silently dropping a legitimate review comment.)
 
-Before adding any item (from step B or B.5) to `context.actionable`,
-compare it against `context.preflight_passes.merged`. Note: triage
-actionable items (per `CommentRecord` schema) do not carry a `category`
-field, so this comparison cannot use the category-based dedup key from
-`pr-loop-lib/references/merge-rules.md`. Use description-based dedup
-instead.
+If the regex matches the start of the body:
+- Rescue the comment from the self-login drop list.
+- Strip the matched heading line (and any following blank line) from the
+  body; carry the remainder forward as the candidate body for finding
+  extraction.
+- Parse each numbered finding (same shape as α):
+  ```
+  N. <description> (<source>)
 
-Normalize descriptions before comparing:
-- Trim leading / trailing whitespace.
-- Collapse runs of internal whitespace to a single space.
-- Lowercase.
+  <https://github.com/owner/repo/blob/SHA/path#L<start>-L<end>>
+  ```
+- Convert each finding to an actionable item with:
+  - `surface: "issue"` (inherited)
+  - `body: "<description>"` (the first line of the numbered item)
+  - `path: "<parsed from the SHA URL>"`
+  - `line: <start>` — INTEGER, not string; parse the first number in
+    `L<start>-L<end>` (e.g., `L42-L48` → `42`). Storing as string
+    violates `CommentRecord.line` (integer-or-null) and trips G3.
+  - `id: "<parent-comment-id>:finding-<N>"` (so each finding has a
+    unique id)
+- Emit these findings into the actionable candidate list.
 
-For each candidate item:
-1. Check if any entry in `preflight_passes.merged` matches ALL of:
-   - Same `path` (exact match).
-   - `line` within 3 lines of the preflight finding's `line`.
-   - Normalized `candidate.body` equals normalized preflight
-     `description`.
-2. If a match exists:
-   - Skip dispatching this item (we already addressed it at preflight).
+**Near-miss logging (log-on-drop).** If the regex does NOT match BUT the
+comment's author matches the known-bots list (or any pattern that would
+typically indicate an automated review comment), emit a
+`code_review_rescue_failed` event:
+
+```json
+{"event": "code_review_rescue_failed", "data": {"author": "<login>", "body_prefix": "<first 200 chars>"}}
+```
+
+so format drift (reviewer changes heading style) is observable in the
+log rather than silently dropped. Then proceed as a normal self-reply
+drop.
+
+If the author does not match either the self-login rescue condition
+or a known-bot pattern, no log event is emitted — this is just a
+regular user comment that doesn't happen to start with a code-review
+heading.
+
+### Stage 2 — Preflight dedup via normalized-lead hash
+
+Before adding any candidate (from Filter B or B.5 Stage 1) to
+`context.actionable`, compare it against
+`context.preflight_passes.merged`. Triage items don't carry a
+`category` field, so the category-based dedup key in
+`pr-loop-lib/references/merge-rules.md` does not apply — see the
+"Triage override" section of that file.
+
+Dedup uses a **normalized-lead-paragraph SHA-1 hash**, computed
+identically on both sides:
+
+1. Strip fenced code blocks (` ``` … ``` `) and HTML tags from the
+   candidate body.
+2. Take the lead paragraph — everything up to the first blank line.
+3. Lowercase and collapse whitespace to single spaces.
+4. Truncate to 200 characters.
+5. SHA-1; hex string.
+
+The preflight side stores this same hash as
+`preflight_findings[].description_hash` in step 02 (see
+`pr-autopilot/steps/02-preflight-review.md`, "Per-finding description
+hash"). The two sides MUST stay in lock-step — if you change the
+normalization here, change it there too.
+
+Why lead-paragraph and not full body: `/code-review` bodies ARE
+descriptions, but Copilot / SonarCloud / other bot bodies bundle a
+summary, code snippets, and tables. Hashing the full body works only
+for the former. Hashing just the lead paragraph (which bots universally
+lead with) handles both.
+
+For each candidate:
+1. Compute `candidate_hash` per the five steps above.
+2. If any entry in `preflight_passes.merged` has
+   `description_hash == candidate_hash` AND the paths match when both
+   sides carry a path (exact match; missing path on either side is
+   treated as "don't restrict by path"):
+   - Skip dispatching this item (preflight already addressed it).
    - Log a `triage_dedup_hit` event with
      `{feedback_id, preflight_match_id}`.
    - Do NOT reply to the original comment source via triage — the
      preflight fix already addresses the feedback; iter 1's cycle will
      not post a thread reply.
-3. If no match: pass through to Filter C.
+3. Otherwise: include the candidate in the actionable list; pass
+   through to Filter C.
+
+**Miss logging (log-on-near-miss).** If the candidate does NOT dedup
+against any preflight finding, but the candidate's `author` matches
+the `author` field of any preflight finding (i.e., the same reviewer
+is making a point we thought we already addressed), emit a
+`triage_dedup_miss` event with both normalized lead strings (not their
+hashes — the strings are what makes the miss diagnosable):
+
+```json
+{"event": "triage_dedup_miss", "data": {
+  "candidate_lead": "<normalized lead paragraph string>",
+  "closest_preflight_lead": "<nearest preflight lead by edit distance or just any from same author>",
+  "author": "<login>"
+}}
+```
+
+Edge cases — a bot posts a table-only comment with no lead text, or a
+single-line comment where the lead paragraph is effectively empty —
+fall through as non-matches and are included as actionable. Safer than
+a false dedup.
 
 This sub-step runs only in iter 1. On subsequent iterations,
 `preflight_passes.merged` may still contain items but a re-dispatch is
