@@ -318,16 +318,14 @@ After step 04g completes, verify per
 
   ```bash
   OWNER_REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-  # Extract the first non-blank line of each self-authored comment
-  # body in one pass, using gh's built-in jq engine (embedded in gh
-  # itself — no external jq binary dependency, no python runtime dep).
-  # Each emitted line is already the first non-blank line of one
-  # comment; grep matches them independently.
+  # Extract the first line of each self-authored comment body, one line
+  # per comment to stdout. Uses gh's embedded jq engine only — no
+  # external jq binary, no python runtime dep. grep does the
+  # leading-whitespace tolerance via `^[[:space:]]*`, so jq doesn't
+  # need any regex (avoiding `\S`-style escapes that are fragile
+  # through nested shell quoting).
   gh api "repos/${OWNER_REPO}/issues/${PR}/comments" --paginate \
-    --jq '.[] | select(.user.login == "'"$SELF_LOGIN"'") | .body
-              | split("\n")
-              | map(select(test("\\S")))
-              | .[0] // ""' \
+    --jq '.[] | select(.user.login == "'"$SELF_LOGIN"'") | .body | split("\n")[0]' \
     | grep -iE '^[[:space:]]*#{1,6}[[:space:]]*code[[:space:]-]*review\b' \
     && { echo "HALT S04g.1: self-authored code-review comment found on PR #${PR}"; exit 1; } \
     || echo "S04g.1: OK — no self-authored code-review comment on PR #${PR}"
@@ -337,17 +335,26 @@ After step 04g completes, verify per
   Breakdown of the `--jq` filter:
   - `.[] | select(.user.login == "$SELF_LOGIN")` — iterate comments,
     keep only self-authored.
-  - `.body | split("\n")` — split the multi-line body into lines.
-  - `map(select(test("\\S")))` — drop blank lines (no non-whitespace).
-  - `.[0] // ""` — take the first surviving line, or empty string if
-    the body was all blank.
-  - One line per comment is emitted to stdout; `grep -iE` then tests
-    each against the code-review heading regex independently.
+  - `.body | split("\n")[0]` — split body on newlines, take the
+    first element (possibly blank).
+  - One line per comment is emitted; `grep -iE` tests each against the
+    code-review heading regex, tolerating leading whitespace via
+    `^[[:space:]]*`.
 
-  Matching only the first non-blank line avoids a false positive when
-  an unrelated comment quotes the heading in the middle of its body.
+  Comments that start with a blank first line (rare) produce an empty
+  stdin line to grep, which doesn't match the heading regex — safe.
   `gh api --paginate` reads every page so the check can't miss a
   comment past page 1 on busy PRs.
+
+  **Escaping footnote.** An earlier revision of this step used
+  `map(select(test("\\S")))` to drop blank lines inside jq. The
+  `\\S` escape survives single-quoted shell interpolation in isolation
+  but is fragile through several nesting layers (heredocs, `$(…)`
+  substitution, some harnesses), and a broken jq parse silently
+  short-circuits the pipeline — grep gets empty stdin and the `||`
+  branch prints "OK" even though the check didn't run. The
+  `split("\n")[0]` form avoids all of that by not using a regex
+  inside jq at all.
 
   A hit means the orchestrator regressed into α's posting behavior
   (the `gh pr comment` call from α crept back in somehow). Hard halt
