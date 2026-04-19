@@ -63,6 +63,11 @@ Rules:
 | `code_review_invoked` | `{host, skill, invoked_at}` when a review skill is mapped and dispatched, OR `{host, skipped: true}` when no skill is mapped for this host (`skill`/`invoked_at` are omitted in the skipped variant) |
 | `invariant_fail` | `{step, invariant, observed, expected}` |
 | `error` | `{stage, error_type, message}` |
+| `git_commit_argv` | `{argv}` — flat space-joined string of `git commit` arguments; emitted by step 06 immediately before the commit runs. Lossy for args that contain spaces; the predicate S06.3 only cares about flag presence (`--no-verify`, `--no-gpg-sign`, `-c commit.gpgsign=false`), so lossiness is acceptable |
+| `fixer_reverify` | `{survivor_id, rolled_back_id, overlap_files, new_verdict}` — emitted by step 04's policy ladder after a rollback, for each surviving fixer whose `changed_files` intersect the rolled-back fixer's `changed_files`. `new_verdict` is one of `fixed`, `fixed-differently`, `feedback-wrong`, `skipped-empty-diff`, or `error` |
+| `code_review_rescue_failed` | `{author, body_prefix}` — emitted by Filter B.5 in step 03 when a top-level comment whose author matches the known-bots list fails the tolerant rescue regex; `body_prefix` is the first 200 chars of the body |
+| `triage_dedup_miss` | `{candidate_lead, closest_preflight_lead, author}` — emitted by Filter B.5 when a candidate does NOT dedup against any preflight finding but its author matches a preflight-finding author. Both leads are the normalized-and-truncated lead-paragraph strings (not their hashes) so the miss is diagnosable |
+| `verifier_nonce_collision` | `{slot, body_sample}` — emitted by the verifier prompt renderer when raw content in one of the untrusted slots contains the nonce literal. `slot` is `feedback` / `reason` / `diff`; `body_sample` is the first 200 chars of the offending input. First collision triggers nonce regeneration; a second collision aborts the verifier call |
 
 ## Truncation
 

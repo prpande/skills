@@ -45,11 +45,22 @@ If none are available, ask the user: "What is this PR for?".
 - **Critical + Important findings**: fix inline BEFORE step 04 opens the
   PR. Use the loop library's
   `pr-loop-lib/steps/04-dispatch-fixers.md` mechanics. Each finding
-  becomes an actionable item; dispatch fixer subagents in parallel
-  with conflict avoidance.
+  becomes a preflight dispatch unit; dispatch fixer subagents in
+  parallel with conflict avoidance.
 - **Minor findings**: record in `context.preflight_minor_findings`.
   Step 04 folds them into the PR body as a "Known minor observations"
   bullet list.
+
+**Invariant scope when reusing 04-dispatch-fixers mechanics.** When
+preflight executes the fixer-dispatch procedure from
+`pr-loop-lib/steps/04-dispatch-fixers.md`, the applicable post-dispatch
+invariants are **`P02.*`** from `pr-loop-lib/references/invariants.md`,
+NOT `S04.*`. `S04.*` assume a comment-loop context (triage, actionable
+array, assigned PR number) that does not exist at preflight. See the
+"Scope" section of `invariants.md` for the rationale. `S04.7` (overlap
+re-verify) also does not apply in preflight — preflight dispatch is
+single-shot and parallel-fixer overlap is rare enough to not warrant
+preflight mirroring in β.
 
 ## Post-fix verification
 
@@ -63,10 +74,29 @@ second-failure rollback logic described there.
 `context.preflight_passes.merged` is populated at this point with
 the full finding list (identical to `pass2_raw` since no Pass 1 runs
 at preflight). Later, iter 1's triage step may dedup against this
-list using Filter B.5's **description-based** dedup key from
+list using Filter B.5's **normalized-lead description hash** from
 `pr-loop-lib/steps/03-triage.md` (NOT the category-based key in
 `merge-rules.md` — triage items don't carry `category`; see the
 "Triage override" section of merge-rules.md).
+
+### Per-finding `description_hash` (for Filter B.5 dedup)
+
+For each finding in `merged`, compute and store a `description_hash`
+field using the same normalization that Filter B.5 applies at triage
+time, so dedup at iter 1 is a simple equality check over identical
+hashes (not a re-normalization round-trip):
+
+1. Take the finding's `description` field (the human-readable summary
+   sentence produced by the adversarial reviewer).
+2. Strip fenced code blocks (` ``` … ``` `) and HTML tags.
+3. Take the lead paragraph — everything up to the first blank line.
+4. Lowercase and collapse whitespace to single spaces.
+5. Truncate to 200 characters.
+6. SHA-1.
+
+Store the resulting hex string as `preflight_findings[].description_hash`.
+See `pr-loop-lib/steps/03-triage.md#filter-b5` for the receiving-side
+normalization — the two must stay in lock-step.
 
 ## Failure mode
 

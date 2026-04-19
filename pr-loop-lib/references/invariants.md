@@ -13,6 +13,29 @@ evaluation is not judgement-dependent.
 
 Each invariant identifies the step that owns it and the exact predicate.
 
+## Scope
+
+Invariants are partitioned by the scope in which they are valid. A step
+must cite invariants only from its applicable scope; citing an
+out-of-scope invariant is itself a bug.
+
+- **`G*`** — Global. Checked after every state write in every step.
+- **`SNN.*`** — Step-scoped. Each table below is keyed by the step that
+  owns it (e.g., `S01.*` for step 01 of pr-autopilot, `S03.*` for the
+  loop's triage step). A step cites only its own `SNN.*` invariants
+  plus any global `G*`.
+- **`P02.*`** — Preflight-dispatch scope. Applicable in
+  `pr-autopilot/steps/02-preflight-review.md` **when preflight performs
+  fixer dispatch to address its findings** (mirroring the loop's
+  `S04.*`, but for preflight's `preflight_findings[]` rather than the
+  loop's `actionable[]`).
+
+**Important cross-scope rule:** Preflight MUST NOT cite `S04.*`. The
+post-dispatch predicates in `S04.*` bake in assumptions — keyed off
+`feedback_id` from triage, referring to `actionable[]`, depending on an
+assigned `pr_number` — that do not hold at preflight. Preflight's
+equivalent predicates live in `P02.*`.
+
 ## Global invariants (checked after every state write)
 
 | # | Predicate | Failure mode if violated |
@@ -61,6 +84,7 @@ Each invariant identifies the step that owns it and the exact predicate.
 | S04.3 | Every entry in `verifier_judgements` has a matching entry in `agent_returns` (by `feedback_id`), AND every `feedback_id` whose fixer invocation produced a `fixed`/`fixed-differently` verdict (recorded via the `subagent_return` log event) has an entry in `verifier_judgements`. Demotion in the policy ladder does NOT excuse a missing verifier_judgement — judgements are keyed off the fixer's ORIGINAL verdict, not the post-ladder one. |
 | S04.4 | `files_changed_this_iteration` equals the union of `files_changed` across all returns |
 | S04.5 | No file in `files_changed_this_iteration` has a path outside `context.repo_root` |
+| S04.7 | After the policy ladder resolves for the current dispatch, no surviving fixer's `changed_files` contains an entry that also appears in any rolled-back fixer's `changed_files` unless a `fixer_reverify` log event for that survivor exists this step with the overlapping files listed in `overlap_files`. See `04-dispatch-fixers.md` — "Overlap re-verify". |
 
 ### Step 04.5 — local-verify
 
@@ -75,7 +99,7 @@ Each invariant identifies the step that owns it and the exact predicate.
 |---|---|
 | S06.1 | If `last_push_sha` was updated in this step, `last_push_timestamp` was also updated |
 | S06.2 | `last_push_sha` equals the output of `git rev-parse HEAD` after the push |
-| S06.3 | Commit message does NOT contain `-c commit.gpgsign=false` or `--no-verify` (the commit itself didn't use those flags) |
+| S06.3 | The most recent `git_commit_argv` log event for this step has an `argv` string that contains none of the forbidden-flag tokens, matched as whole words: `--no-verify`, `--no-gpg-sign`, `-c commit.gpgsign=false`. Step 06 MUST emit this event immediately before invoking `git commit ...` (see `06-commit-push.md` and `log-format.md#event-taxonomy`); the predicate greps the argv string, not the commit message, because forbidden flags only ever appear in argv. |
 
 ### Step 08 — quiescence-check
 
@@ -105,6 +129,25 @@ Each invariant identifies the step that owns it and the exact predicate.
 |---|---|
 | S11.1 | `termination_reason` is set |
 | S11.2 | Lock file has been removed by the time this step completes |
+
+## P02 — preflight-dispatch invariants (pr-autopilot step 02)
+
+Preflight runs an adversarial reviewer and may dispatch fixers to address
+its findings — all before any PR exists. The post-dispatch predicates
+below are the preflight-scope counterparts of `S04.*`. Preflight cites
+these, never `S04.*`.
+
+| # | Predicate |
+|---|---|
+| P02.1 | Every `fixer_return` from preflight dispatch has a matching `preflight_findings[].id` referenced in its `feedback_id`. Unmatched returns indicate a drift between dispatch input and return. |
+| P02.2 | If a `fixer_return.verdict` is `fixed` or `fixed-differently`, either (a) the working-tree diff is non-empty, OR (b) the return carries `no_diff_needed: true` (e.g., the fixer determined the finding was already addressed). |
+| P02.3 | For every rolled-back fixer return, the files listed in its `changed_files` are absent from the current working-tree diff. Rollback must be effective. |
+| P02.4 | The state file is still named `branch-<slug>.json` at preflight time. No `pr-<N>.json` writes may occur in preflight — the PR number does not exist yet; the state-rename happens in step 04. |
+
+If the preflight dispatch also performs an overlap re-verify (same
+semantics as `S04.7`), add a preflight-scoped version here later. For β,
+preflight dispatch is rare and single-shot; overlap only matters in the
+comment loop where parallel fixers are typical.
 
 ## How to check an invariant
 
