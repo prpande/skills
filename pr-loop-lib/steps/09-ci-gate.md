@@ -56,6 +56,12 @@ The three state values have distinct meanings:
 
 ## Routing
 
+- `context.ci_results` is **empty** after detection (GitHub: `gh pr
+  checks` returned no checks; AzDO: no pipeline runs associated with
+  this PR within the lookback window) → no CI is configured for this
+  repo. Proceed to step 11 with
+  `context.termination_reason = "ci-skipped"`. Do NOT treat as
+  vacuously-green — that misleads the operator.
 - All green → proceed to step 11 (final report) with
   `context.termination_reason = "ci-green"`.
 - Any red → proceed to step 10 (classify + possibly re-enter the loop).

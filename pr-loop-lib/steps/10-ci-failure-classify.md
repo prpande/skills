@@ -63,3 +63,10 @@ step 11 with `context.termination_reason = "ci-reentry-cap"`.
 - All red checks are Flake and reruns succeed → re-enter step 09 (do not
   count against the outer cap; flake-reruns are not fixes).
 - Cap reached → step 11 with `context.termination_reason = "ci-reentry-cap"`.
+- One or more red checks **cannot be classified** (name matches none of
+  the lint/compile/test regexes, is not flake, and is not pre-existing
+  main-fail) → step 11 with `context.termination_reason = "ci-red"`.
+  This distinguishes a genuine "CI is red and we don't know how to
+  move it forward" exit from the cap exit. The per-check detail in the
+  final report identifies which checks were unclassifiable so the
+  operator can investigate.
