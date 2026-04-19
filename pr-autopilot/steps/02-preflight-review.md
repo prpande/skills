@@ -97,10 +97,18 @@ hashes (not a re-normalization round-trip):
 5. Truncate to 200 characters.
 6. SHA-1.
 
-Store the resulting hex string as `preflight_findings[].description_hash`.
+Store the resulting hex string as
+`context.preflight_passes.merged[].description_hash` (NOT a separate
+`preflight_findings[]` — that name doesn't exist in the schema and
+would trip G2). Each `merged[]` entry also gets a stable `id` field
+(e.g., `preflight-<N>` indexed by finding position) so that P02.1's
+predicate "every `fixer_return.feedback_id` matches a
+`merged[].id`" is mechanically checkable.
+
 See `pr-loop-lib/steps/03-triage.md#filter-b5` for the receiving-side
 normalization — the two must stay in lock-step. Step 04g's internal
-`/code-review` dedup (see `04-open-pr.md`) also relies on this hash.
+`/code-review` dedup (see `04-open-pr.md`) also reads from
+`preflight_passes.merged[].description_hash`.
 
 ## Review-summary artifact
 

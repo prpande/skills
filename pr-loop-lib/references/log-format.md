@@ -50,7 +50,7 @@ Rules:
 | `lock_lease_refreshed` | `{session_id}` |
 | `comments_fetched` | `{surface_counts: {inline, issue, review, thread}, total}` — `thread` is the AzDO surface; GitHub runs will have `thread: 0` |
 | `triage_result` | `{actionable, suspicious, filtered_self, filtered_known_bot, filtered_pre_push}` |
-| `triage_dedup_hit` | `{feedback_id, preflight_match_id}` |
+| `triage_dedup_hit` | `{feedback_id, preflight_match_id, source}` — `source` is `"triage"` when the dedup came from iter-1 Filter B.5 on a real PR comment (feedback_id references `context.actionable[].id`) or `"code-review"` when step 04g internal dispatch deduped a synthetic `/code-review` finding (feedback_id is the synthetic `code-review:finding-N`, registered in `context.internal_review_findings[].fixer_feedback_id`). Consumers look up `feedback_id` in the array indicated by `source`. |
 | `cluster_gate_fired` | `{items, clusters_formed}` |
 | `subagent_dispatch` | `{role, model, prompt_first_200_chars, feedback_id?, timeout_s}` |
 | `subagent_return` | `{role, feedback_id?, verdict, files_changed, reason_first_200_chars, duration_ms}` |
@@ -64,7 +64,7 @@ Rules:
 | `invariant_fail` | `{step, invariant, observed, expected}` |
 | `error` | `{stage, error_type, message}` |
 | `git_commit_argv` | `{argv}` — flat space-joined string of `git commit` arguments; emitted by step 06 immediately before the commit runs. Lossy for args that contain spaces; the predicate S06.3 only cares about flag presence (`--no-verify`, `--no-gpg-sign`, `-c commit.gpgsign=false`), so lossiness is acceptable |
-| `fixer_reverify` | `{survivor_id, rolled_back_id, overlap_files, new_verdict}` — emitted by step 04's policy ladder after a rollback, for each surviving fixer whose `changed_files` intersect the rolled-back fixer's `changed_files`. `new_verdict` is one of `fixed`, `fixed-differently`, `feedback-wrong`, `skipped-empty-diff`, or `error` |
+| `fixer_reverify` | `{survivor_id, rolled_back_id, overlap_files, new_verdict}` — emitted by step 04's policy ladder after a rollback, for each surviving fixer whose `files_changed` intersect the rolled-back fixer's `files_changed`. `new_verdict` is the re-verified **verifier judgement** — one of `addresses`, `partial`, `not-addresses`, `feedback-wrong`, plus the two bookkeeping values `skipped-empty-diff` (survivor's diff wiped by the rollback; no verifier call made) and `error` (verifier errored out). Matches the verifier judgement enum plus the two bookkeeping extensions — not the fixer-verdict enum. |
 | `code_review_rescue_failed` | `{author, body_prefix}` — emitted by Filter B.5 in step 03 when a top-level comment whose author matches the known-bots list fails the tolerant rescue regex; `body_prefix` is the first 200 chars of the body |
 | `triage_dedup_miss` | `{candidate_lead, closest_preflight_lead, author}` — emitted by Filter B.5 when a candidate does NOT dedup against any preflight finding but its author matches a preflight-finding author. Both leads are the normalized-and-truncated lead-paragraph strings (not their hashes) so the miss is diagnosable |
 | `verifier_nonce_collision` | `{slot, body_sample}` — emitted by the verifier prompt renderer when raw content in one of the untrusted slots contains the nonce literal. `slot` is `feedback` / `reason` / `diff`; `body_sample` is the first 200 chars of the offending input. First collision triggers nonce regeneration; a second collision aborts the verifier call |

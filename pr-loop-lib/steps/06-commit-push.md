@@ -85,26 +85,43 @@ hook-skipping / signing-bypass flag was used — checking the commit
 message (as the α version did) is meaningless because those flags live
 in argv, never in the message.
 
-```bash
-COMMIT_ARGV="-m <heredoc-message-placeholder>"  # populated with the exact
-                                                # flags about to be passed
-                                                # to `git commit`
-TS=$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)
-printf '%s\n' "{\"ts\":\"$TS\",\"pr\":${PR:-0},\"session_id\":\"$SESSION_ID\",\"iteration\":${ITERATION:-0},\"step\":\"06-commit-push\",\"event\":\"git_commit_argv\",\"data\":{\"argv\":\"$COMMIT_ARGV\"}}" >> "$LOG"
+Build the commit-flag list in a Bash array used as the single source of
+truth for **both** the log event and the real `git commit`. Any future
+flag addition MUST update this array — that's the point: the log is
+honest about what git actually received.
 
-git commit -m "$(cat <<EOF
-...
-EOF
-)"
+```bash
+# Source-of-truth flag list. If a future revision adds a flag, append
+# it here so both the log and the commit see it.
+# Forbidden by orchestrator hard rule (do NOT add): --no-verify,
+# --no-gpg-sign, -c commit.gpgsign=false.
+COMMIT_ARGS=(-m "$COMMIT_MSG")
+
+# Flat space-joined string for the log event. Includes the message
+# arg — S06.3's grep targets known forbidden-flag tokens which will
+# never appear in a legitimate commit message, so lossiness is fine.
+COMMIT_ARGV_STR="${COMMIT_ARGS[*]}"
+
+# Second-precision UTC timestamp. %3N (millisecond) is GNU-date
+# specific and prints a literal "%3N" on macOS BSD date — use the
+# portable second-precision form instead. context-schema.md's
+# validation rule #5 accepts both precisions.
+TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+printf '%s\n' "{\"ts\":\"$TS\",\"pr\":${PR:-0},\"session_id\":\"$SESSION_ID\",\"iteration\":${ITERATION:-0},\"step\":\"06-commit-push\",\"event\":\"git_commit_argv\",\"data\":{\"argv\":\"$COMMIT_ARGV_STR\"}}" >> "$LOG"
+
+# Invoke git with the exact same argv we just logged.
+git commit "${COMMIT_ARGS[@]}"
 ```
 
 `argv` is a flat space-joined string, not a JSON array — avoids
-requiring `jq` for construction. Lossy for args with embedded spaces
-(the commit message itself is the obvious such arg); for S06.3's
-flag-presence grep this is fine. Do NOT interpolate the commit message
-into the logged `argv` — keep `argv` to the flag tokens only, or use a
-placeholder like `<heredoc-message-placeholder>` in place of the
-message, so the event stays small and predictable.
+requiring `jq` for construction. The commit message ends up in the
+string; S06.3's grep targets (`--no-verify`, `--no-gpg-sign`,
+`-c commit.gpgsign=false`) should never appear in legitimate commit
+content. If a future commit message must legitimately discuss those
+flags (e.g., "document --no-verify behavior"), quote the argv-detection
+regex with word boundaries in S06.3 and escape accordingly — not a
+problem in practice for automated fix commits.
 
 This event fires once per `git commit` invocation in this step. If
 this step retries a commit, emit a fresh event per retry.

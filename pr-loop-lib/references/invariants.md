@@ -84,7 +84,7 @@ equivalent predicates live in `P02.*`.
 | S04.3 | Every entry in `verifier_judgements` has a matching entry in `agent_returns` (by `feedback_id`), AND every `feedback_id` whose fixer invocation produced a `fixed`/`fixed-differently` verdict (recorded via the `subagent_return` log event) has an entry in `verifier_judgements`. Demotion in the policy ladder does NOT excuse a missing verifier_judgement — judgements are keyed off the fixer's ORIGINAL verdict, not the post-ladder one. |
 | S04.4 | `files_changed_this_iteration` equals the union of `files_changed` across all returns |
 | S04.5 | No file in `files_changed_this_iteration` has a path outside `context.repo_root` |
-| S04.7 | After the policy ladder resolves for the current dispatch, no surviving fixer's `changed_files` contains an entry that also appears in any rolled-back fixer's `changed_files` unless a `fixer_reverify` log event for that survivor exists this step with the overlapping files listed in `overlap_files`. See `04-dispatch-fixers.md` — "Overlap re-verify". |
+| S04.7 | After the policy ladder resolves for the current dispatch, no surviving fixer's `files_changed` contains an entry that also appears in any rolled-back fixer's `files_changed` unless a `fixer_reverify` log event for that survivor exists this step with the overlapping files listed in `overlap_files`. See `04-dispatch-fixers.md` — "Overlap re-verify". |
 
 ### Step 04.5 — local-verify
 
@@ -145,9 +145,9 @@ these, never `S04.*`.
 
 | # | Predicate |
 |---|---|
-| P02.1 | Every `fixer_return` from preflight dispatch has a matching `preflight_findings[].id` referenced in its `feedback_id`. Unmatched returns indicate a drift between dispatch input and return. |
+| P02.1 | Every `fixer_return` from preflight dispatch has a `feedback_id` that matches an `id` on an entry in `context.preflight_passes.merged[]`. Preflight findings are written to `preflight_passes.merged[]` by step 02 with a generated `id` field (step 02 assigns stable ids such as `preflight-N`). Unmatched returns indicate a drift between dispatch input and return. |
 | P02.2 | If a `fixer_return.verdict` is `fixed` or `fixed-differently`, either (a) the working-tree diff is non-empty, OR (b) the return carries `no_diff_needed: true` (e.g., the fixer determined the finding was already addressed). |
-| P02.3 | For every rolled-back fixer return, the files listed in its `changed_files` are absent from the current working-tree diff. Rollback must be effective. |
+| P02.3 | For every rolled-back fixer return, the files listed in its `files_changed` are absent from the current working-tree diff. Rollback must be effective. |
 | P02.4 | The state file is still named `branch-<slug>.json` at preflight time. No `pr-<N>.json` writes may occur in preflight — the PR number does not exist yet; the state-rename happens in step 04. |
 
 If the preflight dispatch also performs an overlap re-verify (same

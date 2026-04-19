@@ -226,12 +226,16 @@ On first entry (no state file yet), write a minimal initial state:
 }
 ```
 
-**Log-replay recovery (NTFS mitigation).** If a state file is missing
-when it should exist (next step entry after a previous state_write),
-reconstruct the most recent state by replaying the log from the start
-and re-applying each `state_write` event's changes. The log is
-append-only and not subject to the rename-atomicity limitation of
-Primitive C.
+**State-file loss (NTFS).** If a crash strikes between `mv`'s delete
+and rename on NTFS, the state file may be missing on next step entry.
+Log replay is NOT a recovery path: `state_write` events record
+`changed_keys` only (no values — see `log-format.md`), so the log is a
+change-audit, not a state snapshot. A missing state file is treated as
+an unrecoverable crash: the skill halts on next step entry with a
+clear diagnostic instructing the user to delete `.pr-autopilot/`
+artifacts and re-invoke. The operator re-runs; the skill starts fresh.
+This is an accepted limitation of the zero-dependency constraint and
+is vanishingly rare outside mid-OS-crash scenarios.
 
 ## Writing state
 
@@ -264,19 +268,38 @@ Before step 04 assigns `pr_number`:
 - Review-summary file (β) is at `<repo_root>/.pr-autopilot/branch-<branch-slug>-review-summary.md` (see `pr-autopilot/steps/02-preflight-review.md` "Review-summary artifact")
 
 After step 04's `gh pr create` succeeds and the PR number is assigned:
+
 ```bash
 cd "<repo_root>/.pr-autopilot"
+
+# Pre-flight: fail fast if any destination already exists (residual
+# from a prior crashed session on the same PR number). Doing a partial
+# rename mid-batch would leave state/log/lock in inconsistent states.
+for dest in "pr-<PR>.json" "pr-<PR>.lock" "pr-<PR>.log" "pr-<PR>-review-summary.md"; do
+  if [ -e "$dest" ]; then
+    echo "HALT state_rename: destination '$dest' already exists."
+    echo "Residual from a previous crashed session? Investigate and"
+    echo "delete manually before re-invoking."
+    exit 1
+  fi
+done
+
 mv "branch-<slug>.json"               "pr-<PR>.json"
-mv "branch-<slug>.lock"               "pr-<PR>.lock"          # directory mv; git-bash handles atomically
+mv "branch-<slug>.lock"               "pr-<PR>.lock"          # directory mv; git-bash handles atomically when target is absent
 mv "branch-<slug>.log"                "pr-<PR>.log"
 if [ -f "branch-<slug>-review-summary.md" ]; then
   mv "branch-<slug>-review-summary.md" "pr-<PR>-review-summary.md"
 fi
+
+# Update the $LOG environment variable in-memory for subsequent log
+# writes (including the state_rename event itself). Failing to do this
+# will append the state_rename record to the now-nonexistent old path.
+LOG="<repo_root>/.pr-autopilot/pr-<PR>.log"
 ```
 
 Update `pr_number` and `internal_review_summary_path` fields inside
-the state file after the rename. Log a `state_rename` event listing
-every renamed artifact.
+the state file after the rename. Log a `state_rename` event to the
+newly-pointed `$LOG` listing every renamed artifact (old → new pairs).
 
 ## Host-platform detection (called from step 01)
 

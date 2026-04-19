@@ -205,9 +205,9 @@ Scenario: two parallel fixers A and B both touch `foo.py`. The policy ladder rol
 
 New policy, added to `pr-loop-lib/steps/04-dispatch-fixers.md` "Policy Ladder" section:
 
-> After any rollback, compute `overlap_set = { survivor : changed_files ∩ rolled_back.changed_files ≠ ∅ }`. For each survivor in `overlap_set`, examine the survivor's *current* working-tree diff for the overlap file(s). If the current diff is empty (the survivor's change was entirely redundant with the rolled-back change), skip re-verify and cascade-rollback the survivor directly. Otherwise re-dispatch the verifier with the current diff. If re-verify drops the survivor's verdict from `fixed`/`fixed-differently` to `feedback-wrong`, cascade-rollback. If re-verify fails to complete (verifier error), escalate the survivor to `needs-human`.
+> After any rollback, compute `overlap_set = { survivor : files_changed ∩ rolled_back.files_changed ≠ ∅ }`. For each survivor in `overlap_set`, examine the survivor's *current* working-tree diff for the overlap file(s). If the current diff is empty (the survivor's change was entirely redundant with the rolled-back change), skip re-verify and cascade-rollback the survivor directly. Otherwise re-dispatch the verifier with the current diff. If re-verify drops the survivor's verdict from `fixed`/`fixed-differently` to `feedback-wrong`, cascade-rollback. If re-verify fails to complete (verifier error), escalate the survivor to `needs-human`.
 
-New invariant `S04.7`: *"After the policy ladder resolves, no survivor's `changed_files` contains an entry that was also in a rolled-back fixer's `changed_files` unless the log contains a `fixer_reverify` event for that survivor."*
+New invariant `S04.7`: *"After the policy ladder resolves, no survivor's `files_changed` contains an entry that was also in a rolled-back fixer's `files_changed` unless the log contains a `fixer_reverify` event for that survivor."*
 
 `log-format.md` gains one event:
 

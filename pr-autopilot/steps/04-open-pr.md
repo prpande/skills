@@ -222,9 +222,9 @@ normalization in `pr-autopilot/steps/02-preflight-review.md`
 strip fences/HTML → lead paragraph → lowercase+whitespace-collapse →
 truncate 200 → SHA-1).
 
-If the hash equals any `preflight_findings[].description_hash`:
+If the hash equals any `preflight_passes.merged[].description_hash`:
 - Log a `triage_dedup_hit` event with
-  `{feedback_id: "code-review:finding-<N>", preflight_match_id: <id>}`.
+  `{feedback_id: "code-review:finding-<N>", preflight_match_id: <merged[].id>, source: "code-review"}`.
 - Skip dispatching this finding (preflight already handled it).
 - Append to `context.internal_review_findings` with
   `status: "captured-only"` and a note linking to the preflight entry.
@@ -271,9 +271,16 @@ non-empty after dispatch):
      reason.
    - Same secret scan, main-branch guard, `git_commit_argv` emission,
      and signing rules as the loop's step 06.
-2. After successful push, update `context.last_push_timestamp` and
-   `context.last_push_sha` — step 03's Filter A in iter 1 will use
-   these to skip already-addressed content.
+2. After successful push, update `context.last_push_sha` to the new
+   HEAD SHA.
+3. **Do NOT update `context.last_push_timestamp`** in 04g. `last_push_
+   timestamp` is the cursor iter 1's Filter A uses to decide which
+   comments are "new enough" to process. External reviewer bots
+   (Copilot, SonarCloud) can post their own review comments in the
+   seconds between `gh pr create` and 04g's push; bumping the cursor
+   to 04g's push timestamp would drop those comments silently. The
+   cursor stays at the PR-create commit's timestamp (set in 4e) until
+   loop step 06 performs its own push in response to real PR comments.
 
 If no fixer produced a diff (all `replied`, `not-addressing`, or
 `needs-human`), do not commit. Continue to hand-off.
@@ -284,13 +291,35 @@ After step 04g completes, verify per
 `pr-loop-lib/references/invariants.md`:
 
 - **S04g.1** — No top-level PR comment authored by
-  `context.self_login` has a body matching
-  `^\s*#{1,6}\s*code[\s-]*review\b` (case-insensitive). Checked via:
+  `context.self_login` has a **first-line** body matching
+  `^\s*#{1,6}\s*code[\s-]*review\b` (case-insensitive). Checked via
+  the paginating REST endpoint (required because `gh pr view --json
+  comments` does not paginate and can miss comments past the first
+  page on busy PRs):
 
   ```bash
-  gh pr view "$PR" --json comments --jq '.comments[] | select(.author.login == "'"$SELF_LOGIN"'") | .body' \
-    | grep -iE '^\s*#{1,6}\s*code[\s-]*review\b' && exit 1 || exit 0
+  OWNER_REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+  gh api "repos/${OWNER_REPO}/issues/${PR}/comments" --paginate \
+    --jq '.[] | select(.user.login == "'"$SELF_LOGIN"'") | .body' \
+    | awk 'BEGIN{RS="\0"} {
+         # Extract first non-blank line of each body.
+         split($0, lines, "\n")
+         for (i=1; i<=length(lines); i++) {
+           line = lines[i]
+           gsub(/^[[:space:]]+/, "", line)
+           if (line != "") { print line; break }
+         }
+       }' \
+    | grep -iE '^#{1,6}[[:space:]]*code[[:space:]-]*review\b' \
+    && { echo "HALT S04g.1: self-authored code-review comment found"; exit 1; } \
+    || true
   ```
+
+  Matching only the first non-blank line avoids a false positive when
+  an unrelated comment quotes the heading in the middle of its body
+  (e.g., a user discussing what the skill does). Use `gh api
+  --paginate` rather than `gh pr view --json comments` to see all
+  pages on PRs with long comment threads.
 
   A hit means the orchestrator regressed into α's posting behavior
   (the `gh pr comment` call from α crept back in somehow). Hard halt

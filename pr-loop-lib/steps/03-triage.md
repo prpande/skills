@@ -156,7 +156,7 @@ For each candidate:
    treated as "don't restrict by path"):
    - Skip dispatching this item (preflight already addressed it).
    - Log a `triage_dedup_hit` event with
-     `{feedback_id, preflight_match_id}`.
+     `{feedback_id, preflight_match_id, source: "triage"}`.
    - Do NOT reply to the original comment source via triage — the
      preflight fix already addresses the feedback; iter 1's cycle will
      not post a thread reply.
@@ -164,19 +164,26 @@ For each candidate:
    through to Filter C.
 
 **Miss logging (log-on-near-miss).** If the candidate does NOT dedup
-against any preflight finding, but the candidate's `author` matches
-the `author` field of any preflight finding (i.e., the same reviewer
-is making a point we thought we already addressed), emit a
+against any preflight finding, but the candidate's `author` is in the
+known-bots list (i.e., an automated reviewer is making a point the
+preflight adversarial review *might* have already considered), emit a
 `triage_dedup_miss` event with both normalized lead strings (not their
 hashes — the strings are what makes the miss diagnosable):
 
 ```json
 {"event": "triage_dedup_miss", "data": {
   "candidate_lead": "<normalized lead paragraph string>",
-  "closest_preflight_lead": "<nearest preflight lead by edit distance or just any from same author>",
+  "closest_preflight_lead": "<any preflight lead, or the longest-common-prefix match>",
   "author": "<login>"
 }}
 ```
+
+Note: preflight findings come from our own Sonnet adversarial subagent
+and do not carry a reviewer `author` field. The miss signal we have
+is "candidate is automated" (author in known-bots), not
+"candidate author matches preflight author". If no preflight findings
+exist at all (`preflight_passes.merged` empty), skip the miss log —
+there is nothing to compare against.
 
 Edge cases — a bot posts a table-only comment with no lead text, or a
 single-line comment where the lead paragraph is effectively empty —

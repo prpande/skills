@@ -85,9 +85,13 @@ prints counts to keep the terminal output scannable.
 
 As the last action before the report is printed:
 ```bash
-rm -f "<repo-root>/.pr-autopilot/pr-<N>.lock"
+rm -rf "<repo-root>/.pr-autopilot/pr-<N>.lock"
 ```
-Log a `lock_released` event.
+Log a `lock_released` event. `rm -rf` is required because the lock
+path is a **directory** under Primitive A of `state-protocol.md` —
+`rm -f` on a directory fails ("Is a directory") and would leave S11.2
+violated and every subsequent pr-autopilot run stuck reclaiming a
+stale-but-existing lock.
 
 ## Invariants
 

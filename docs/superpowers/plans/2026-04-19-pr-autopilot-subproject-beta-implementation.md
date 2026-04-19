@@ -239,16 +239,16 @@ git commit -m "03-triage: Filter B.5 tolerant rescue + normalized-lead dedup (β
 
 Insert after the rollback step in the Policy Ladder:
 
-> **Overlap re-verify.** After any rollback, compute `overlap_set = { survivor : changed_files ∩ rolled_back.changed_files ≠ ∅ }`. For each survivor in overlap_set, examine the current working-tree diff for the overlap file(s). If the current diff is empty (survivor's change was redundant with the rolled-back change), skip re-verify and cascade-rollback. Otherwise re-dispatch the verifier with the current diff. On verdict drop to `feedback-wrong`, cascade-rollback. On verifier error, escalate survivor to `needs-human`. Emit `fixer_reverify` for each re-dispatch.
+> **Overlap re-verify.** After any rollback, compute `overlap_set = { survivor : files_changed ∩ rolled_back.files_changed ≠ ∅ }`. For each survivor in overlap_set, examine the current working-tree diff for the overlap file(s). If the current diff is empty (survivor's change was redundant with the rolled-back change), skip re-verify and cascade-rollback. Otherwise re-dispatch the verifier with the current diff. On verdict drop to `feedback-wrong`, cascade-rollback. On verifier error, escalate survivor to `needs-human`. Emit `fixer_reverify` for each re-dispatch.
 
 - [ ] **Step 2 — Add S04.7 reference**
 
-Add near the ladder: *"Invariant S04.7 (invariants.md) — no survivor's `changed_files` contains an entry also present in a rolled-back fixer's `changed_files` without a `fixer_reverify` log event."*
+Add near the ladder: *"Invariant S04.7 (invariants.md) — no survivor's `files_changed` contains an entry also present in a rolled-back fixer's `files_changed` without a `fixer_reverify` log event."*
 
 - [ ] **Step 3 — Update `invariants.md` to add S04.7**
 
 ```markdown
-**S04.7** — After the policy ladder resolves for the current dispatch, no survivor fixer's `changed_files` contains an entry also present in any rolled-back fixer's `changed_files` unless a `fixer_reverify` event for that survivor exists in the log with the overlapping files listed.
+**S04.7** — After the policy ladder resolves for the current dispatch, no survivor fixer's `files_changed` contains an entry also present in any rolled-back fixer's `files_changed` unless a `fixer_reverify` event for that survivor exists in the log with the overlapping files listed.
 ```
 
 - [ ] **Step 4 — Validate and commit**

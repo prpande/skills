@@ -134,25 +134,42 @@ bits, sufficient for delimiter uniqueness in non-adversarial content.
 
 Before rendering, verify that **none** of the three untrusted slot
 contents (`{{FEEDBACK_BODY_VERBATIM}}`, `{{FIXER_REASON}}`,
-`{{FIXER_DIFF}}`) contains the literal string `_${NONCE}`:
+`{{FIXER_DIFF}}`) contains the literal string `_${NONCE}`. Check each
+slot **by name** so the log event can report which slot collided
+(`verifier_nonce_collision.slot` per `log-format.md`):
 
 ```bash
-for slot_body in "$FEEDBACK_BODY" "$FIXER_REASON" "$FIXER_DIFF"; do
-  case "$slot_body" in
-    *"_${NONCE}"*)
-      # collision
-      ;;
+check_slot() {
+  # $1 = slot name ("feedback" | "reason" | "diff")
+  # $2 = slot body
+  case "$2" in
+    *"_${NONCE}"*) echo "$1" ;;   # collision: return slot name
+    *)             echo ""    ;;  # no collision
   esac
+}
+
+collided_slot=""
+for pair in "feedback:$FEEDBACK_BODY" "reason:$FIXER_REASON" "diff:$FIXER_DIFF"; do
+  name="${pair%%:*}"
+  body="${pair#*:}"
+  hit=$(check_slot "$name" "$body")
+  if [ -n "$hit" ]; then collided_slot="$hit"; break; fi
 done
 ```
 
-- **First collision:** regenerate the nonce once and re-check all
-  three slots.
-- **Second collision (very rare — expected frequency ~1/2^60 for
-  arbitrary user content):** log a `verifier_nonce_collision` event
-  with `{slot, body_sample}` and abort this verifier call. Step 04
-  treats an aborted verifier call as a verifier error and escalates
-  the fixer to `needs-human`.
+- **First collision** (`$collided_slot` non-empty on first pass):
+  regenerate the nonce once and re-check all three slots.
+- **Second collision** (collision still present after one regenerate —
+  expected frequency ~1/2^60 for arbitrary user content): log a
+  `verifier_nonce_collision` event with `{slot: "$collided_slot",
+  body_sample: "<first 200 chars of the slot body>"}` and abort this
+  verifier call. Step 04 treats an aborted verifier call as a verifier
+  error and escalates the fixer to `needs-human`.
+
+Note the hardcoded `feedback:…`, `reason:…`, `diff:…` separator
+assumes the slot names themselves don't contain `:` (they don't).
+Slot **bodies** may contain `:` freely — the `${pair%%:*}` /
+`${pair#*:}` pair splits on the **first** colon only.
 
 ### Why nonce delimiters
 

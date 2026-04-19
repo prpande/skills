@@ -137,7 +137,7 @@ The conflict-avoidance graph usually prevents two parallel fixers from
 touching the same file, but edge cases exist (e.g., the graph was built
 from declared files but an agent modified an extra file). When a
 rollback in the policy ladder removes fixer A's changes from a file F,
-any surviving fixer B whose `changed_files` also lists F is now in a
+any surviving fixer B whose `files_changed` also lists F is now in a
 possibly-broken state: B's original diff was computed against a base
 that included A's changes, and B's claim that F is "fixed" may no
 longer hold after A's rollback.
@@ -190,8 +190,8 @@ Procedure, run after **every** rollback in the policy ladder (steps
    verifier_judgements.
 
 4. Invariant S04.7 (invariants.md) is checked at step end: no
-   survivor's changed_files contains a file that was also in a
-   rolled-back fixer's changed_files unless a fixer_reverify event
+   survivor's files_changed contains a file that was also in a
+   rolled-back fixer's files_changed unless a fixer_reverify event
    exists for that survivor with the overlap file listed.
 ```
 
@@ -216,8 +216,8 @@ Per `pr-loop-lib/references/invariants.md`:
   `context.verifier_judgements`. Check this at step end; halt on
   violation.
 - **S04.7** — after the policy ladder resolves, no surviving fixer's
-  `changed_files` contains an entry that was also in a rolled-back
-  fixer's `changed_files` unless a `fixer_reverify` log event for
+  `files_changed` contains an entry that was also in a rolled-back
+  fixer's `files_changed` unless a `fixer_reverify` log event for
   that survivor exists this step with the overlapping files listed in
   `overlap_files`. Enforced by the "Overlap re-verify" procedure above.
 
@@ -244,8 +244,12 @@ demotion, or via overlap re-verify cascade-rollback:
   (step 08 reaches quiescence with `len(context.needs_human_items) > 0`
   and nothing else to do), set
   `context.termination_reason = "user-intervention-needed"` so the
-  final report distinguishes this from `quiescent-clean`. Step 11 reads
-  this field to render an accurate termination reason to the operator.
+  final report distinguishes this from the normal quiescent exit
+  (where `termination_reason` would otherwise be unset or `ci-green`
+  after the CI gate). See `context-schema.md` for the full
+  `termination_reason` enum — only values listed there are valid. Step
+  11 reads this field to render an accurate termination reason to the
+  operator.
 
 ## Output
 
