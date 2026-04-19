@@ -32,7 +32,7 @@ Required fields are marked as such.
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `what_was_built` | string or null | no | Inferred intent summary |
-| `preflight_minor_findings` | array of objects | default `[]` | Minor findings folded into PR body |
+| `preflight_minor_findings` | array of objects | default `[]` | Minor findings captured for the local review summary. Under β these are NOT folded into the PR body (see Section 5 of the β spec); α's "Known minor observations" PR-body section was removed. |
 | `preflight_passes` | object | default `{}` | `{pass2_raw: [...], merged: [...]}` |
 | `spec_updates` | array of objects | default `[]` | Spec file edits made by step 03 |
 | `blocked_drifts` | array of objects | default `[]` | Drifts that caused HALT before PR open |
@@ -45,7 +45,7 @@ Required fields are marked as such.
 | `iteration` | integer | default `0` | Current loop iteration (1-indexed once loop starts) |
 | `user_iteration_cap` | integer | default `10` | Cap from skill argument |
 | `no_wait_first_iteration` | boolean | default `false` | Set by pr-followup |
-| `wait_override_minutes` | integer or null | no | From `--wait N` |
+| `wait_override_minutes` | integer or null | no | From `--wait N`. Interpreted as `max(10, N)` by `pr-loop-lib/steps/01-wait-cycle.md` — the 10-minute floor applies to the *effective* delay, not the raw user input. Values below 10 are accepted at parse time but clamped up in step 01 with a warning log event. |
 | `last_push_timestamp` | string (ISO-8601) or null | no | Committer timestamp of most recent push |
 | `last_handled_timestamp` | string (ISO-8601) or null | no | Set by step 08 after suspicious-only iterations |
 | `last_push_sha` | string (hex) or null | no | HEAD SHA after most recent push |
@@ -71,8 +71,11 @@ Required fields are marked as such.
 |---|---|---|---|
 | `loop_exit_reason` | enum or null | no | `quiescent-zero-actionable` \| `quiescent-no-code-change` \| `iteration-cap` \| `runaway-detected` |
 | `termination_reason` | enum or null | no | `ci-green` \| `ci-red` \| `ci-skipped` \| `ci-timeout` \| `ci-reentry-cap` \| `ci-pre-existing-failures` \| `iteration-cap` \| `runaway-detected` \| `user-intervention-needed` |
-| `code_review_invoked` | boolean | default `false` | True after `/code-review` fires |
+| `code_review_invoked` | boolean | default `false` | True after `/code-review` fires. Under β this means "captured locally and dispatched" — NOT "posted as a PR comment". |
 | `code_review_invoked_at` | string (ISO-8601) or null | no | When `/code-review` was dispatched |
+| `code_review_raw_output` | string | default `""` | Raw rendered output captured from the host's `review` skill. Never written to `gh pr comment` under β. Used as input to the internal parser + fixer dispatch in step 04g. |
+| `internal_review_findings` | array of objects | default `[]` | Per-finding audit trail for the local review summary. Each entry: `{source: "preflight" \| "code-review", severity, file, line?, description, status: "fixed" \| "fixed-differently" \| "captured-only" \| "feedback-wrong" \| "needs-human", fixer_feedback_id?, verifier_judgement?}`. |
+| `internal_review_summary_path` | string or null | no | Path to the markdown summary file at `<repo-root>/.pr-autopilot/pr-<PR>-review-summary.md` (or `branch-<slug>-review-summary.md` pre-PR-assignment). Set by step 02 on first write; renamed by state-protocol at PR-create time alongside the other branch-* files. |
 
 ## Nested schemas
 

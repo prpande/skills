@@ -25,7 +25,12 @@ Every record has these top-level keys:
 ```
 
 Rules:
-- `ts` is UTC ISO-8601 with millisecond precision.
+- `ts` is UTC ISO-8601. Accept either **second precision**
+  (`2026-04-18T07:44:32Z`) or **millisecond precision**
+  (`2026-04-18T07:44:32.123Z`). Step 06's `git_commit_argv` emitter
+  uses second precision for macOS portability (`date -u +%3N` is
+  GNU-specific); other emit sites may use either. Parsers should
+  accept both forms. Matches `context-schema.md` validation rule #5.
 - `pr` is the PR number (integer). Use `0` before step 04 assigns it.
 - `iteration` is `0` for steps outside the comment loop (preflight,
   step 04, final report). Iterations increment starting at 1 inside
@@ -43,14 +48,14 @@ Rules:
 | `step_start` | `{step_name}` |
 | `step_end` | `{step_name, duration_ms?}` |
 | `state_write` | `{changed_keys: [...]}` |
-| `state_rename` | `{from, to}` |
+| `state_rename` | `{renames: [{from, to}, ...]}` — emitted once per state-rename batch (step 04 PR-create assigns the PR number and renames `branch-<slug>.{json,lock,log,review-summary.md}` → `pr-<PR>.*` in a single atomic-ish batch). The `renames` array lists every successfully-renamed artifact as a `{from, to}` pair. Prior revisions declared a single `{from, to}` shape; the batch shape is a superset (a single rename is an array of one) and readers should accept either for backwards compatibility. |
 | `lock_acquired` | `{session_id}` |
 | `lock_released` | `{session_id}` |
 | `lock_stale_reclaimed` | `{old_session_id, age_minutes}` |
 | `lock_lease_refreshed` | `{session_id}` |
 | `comments_fetched` | `{surface_counts: {inline, issue, review, thread}, total}` — `thread` is the AzDO surface; GitHub runs will have `thread: 0` |
 | `triage_result` | `{actionable, suspicious, filtered_self, filtered_known_bot, filtered_pre_push}` |
-| `triage_dedup_hit` | `{feedback_id, preflight_match_id}` |
+| `triage_dedup_hit` | `{feedback_id, preflight_match_id, source}` — `source` is `"triage"` when the dedup came from iter-1 Filter B.5 on a real PR comment (feedback_id references `context.actionable[].id`) or `"code-review"` when step 04g internal dispatch deduped a synthetic `/code-review` finding (feedback_id is the synthetic `code-review:finding-N`, registered in `context.internal_review_findings[].fixer_feedback_id`). Consumers look up `feedback_id` in the array indicated by `source`. |
 | `cluster_gate_fired` | `{items, clusters_formed}` |
 | `subagent_dispatch` | `{role, model, prompt_first_200_chars, feedback_id?, timeout_s}` |
 | `subagent_return` | `{role, feedback_id?, verdict, files_changed, reason_first_200_chars, duration_ms}` |
@@ -63,6 +68,12 @@ Rules:
 | `code_review_invoked` | `{host, skill, invoked_at}` when a review skill is mapped and dispatched, OR `{host, skipped: true}` when no skill is mapped for this host (`skill`/`invoked_at` are omitted in the skipped variant) |
 | `invariant_fail` | `{step, invariant, observed, expected}` |
 | `error` | `{stage, error_type, message}` |
+| `git_commit_argv` | `{argv}` — flat space-joined string of `git commit` arguments; emitted by step 06 immediately before the commit runs. Lossy for args that contain spaces; the predicate S06.3 only cares about flag presence (`--no-verify`, `--no-gpg-sign`, `-c commit.gpgsign=false`), so lossiness is acceptable |
+| `fixer_reverify` | `{survivor_id, rolled_back_id, overlap_files, new_verdict}` — emitted by step 04's policy ladder after a rollback, for each surviving fixer whose `files_changed` intersect the rolled-back fixer's `files_changed`. `new_verdict` is the re-verified **verifier judgement** — one of `addresses`, `partial`, `not-addresses`, `feedback-wrong`, plus the two bookkeeping values `skipped-empty-diff` (survivor's diff wiped by the rollback; no verifier call made) and `error` (verifier errored out). Matches the verifier judgement enum plus the two bookkeeping extensions — not the fixer-verdict enum. |
+| `code_review_rescue_failed` | `{author, body_prefix}` — emitted by Filter B.5 Stage 1 in step 03 when a top-level self-authored comment (Stage 1 is already gated on `author == context.self_login`) fails the tolerant rescue regex BUT contains at least one `github.com/.../blob/<sha>/path#L<n>` finding-anchor URL — the positive heuristic that the body was likely drifted `/code-review` output rather than an ordinary self-reply. `body_prefix` is the first 200 chars of the body. (The α-era "author matches known-bots list" wording was unreachable inside Stage 1's self_login gate — a skill's self_login is by construction not a known-bot login.) |
+| `triage_dedup_miss` | `{candidate_lead, closest_preflight_lead, author}` — emitted by Filter B.5 when a candidate does NOT dedup against any preflight finding AND the candidate's author is in the known-bots list AND `context.preflight_passes.merged` is non-empty. (Preflight findings have no `author` field — they come from our own Sonnet subagent — so the α-era "same author" condition was unfireable; the actual discriminator is "candidate is automated AND preflight had findings worth comparing against".) Both leads are the normalized-and-truncated lead-paragraph strings (not their hashes) so the miss is diagnosable |
+| `verifier_nonce_collision` | `{slot, body_sample}` — emitted by the verifier prompt renderer when raw content in one of the untrusted slots contains the nonce literal. `slot` is `feedback` / `reason` / `diff`; `body_sample` is the first 200 chars of the offending input. First collision triggers nonce regeneration; a second collision aborts the verifier call |
+| `wait_clamped` | `{requested_minutes, effective_minutes, reason}` — emitted by `pr-loop-lib/steps/01-wait-cycle.md` when `context.wait_override_minutes` is less than the 10-minute floor and gets clamped up. `requested_minutes` is the raw user input, `effective_minutes` is always 10. `reason` is a short string explaining the floor (e.g., `"reviewer-bot response window"`). Informational only — the loop continues with the clamped value |
 
 ## Truncation
 

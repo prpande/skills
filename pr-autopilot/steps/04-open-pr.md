@@ -86,8 +86,14 @@ same fill rules.
 | `## Security Impact` | Heuristic classifier (auth/authz, crypto, input validation, new endpoints, DB patterns, logging that could expose data). Append "No security impact." checkbox style or describe the impact |
 | `## Testing` | Test count and type summary from any locally-run suites, plus any spec-referenced test-plan links |
 | `## Related Work` | Auto-linked tickets (`AB#\d+`, `[A-Z]+-\d+`, `#\d+`) + any cross-repo PR URLs found in branch name or commit messages |
-| `## Known minor observations` (only if `context.preflight_minor_findings` non-empty) | Bulleted list of the minor findings with `file:line` refs |
 | `## Spec alignment notes` (only if `context.spec_alignment_notes` non-empty) | Bullet list summarizing spec updates |
+
+**Note (β):** α had a `## Known minor observations` row here that
+folded `context.preflight_minor_findings` into the PR body. β removes
+this entirely — Minor findings from preflight live only in the local
+review-summary artifact at `<repo-root>/.pr-autopilot/pr-<N>-review-
+summary.md`, never on the PR. See `steps/02-preflight-review.md`
+"Review-summary artifact" and Section 5 of the β spec.
 
 ## 4d — Create PR
 
@@ -135,18 +141,22 @@ Entering comment loop. Next fetch in 10 minutes.
 Then hand off to `pr-loop-lib/steps/01-wait-cycle.md` (the wait is on —
 first fetch will happen after the delay).
 
-## 4g — Invoke host-native code-review skill (fire-and-forget)
+## 4g — Invoke host-native code-review skill (internal capture only)
 
 After `gh pr create` (or `az repos pr create`) succeeds and
 `context.pr_number` + `context.pr_url` are recorded, invoke the host's
-native code-review skill. Its output becomes a PR comment that iter 1
-of the comment loop processes.
+native code-review skill. **Under β, the rendered review is captured
+into the orchestrator's context and processed internally — it is NOT
+posted as a PR comment.** Findings are deduped against preflight and
+the non-duplicates are dispatched through the same fixer mechanics
+preflight uses (step 04-dispatch-fixers, scoped to `P02.*`). Any
+resulting fixes are committed + pushed before the comment loop begins.
 
 ### Host-skill table
 
 | `context.host_platform` | Skill name | Invocation | Posts to PR? |
 |---|---|---|---|
-| `claude-code` | `review` | Use the Skill tool: `Skill(skill="review", args="<PR>")` | **No — orchestrator must post** (see below) |
+| `claude-code` | `review` | Use the Skill tool: `Skill(skill="review", args="<PR>")` | **No — captured locally; not posted** |
 | `codex` | (not yet mapped) | Skip; log `code_review_invoked` with `skipped: true` | n/a |
 | `gemini` | (not yet mapped) | Skip; log `code_review_invoked` with `skipped: true` | n/a |
 | `other` | (none) | Skip; log `code_review_invoked` with `skipped: true` | n/a |
@@ -164,32 +174,197 @@ claude-code is `review`.
       current UTC timestamp.
    b. Invoke the skill via the host's skill-dispatch mechanism.
       The claude-code `review` skill renders its review body into the
-      orchestrator's context — **it does not post to the PR itself**.
-      The orchestrator MUST capture the rendered review and post it as
-      a top-level PR comment (`gh pr comment <PR> --body "..."`) so
-      iter 1's Filter B.5 can rescue and process it.
-   c. Convention for the posted body: begin with `### Code review\n`
-      so Filter B.5's rescue pattern matches. Findings follow the
-      numbered-item format documented in
-      `pr-loop-lib/steps/03-triage.md` (Filter B.5 rescue).
+      orchestrator's context.
+   c. **Capture** the rendered review into
+      `context.code_review_raw_output`. **Do NOT call `gh pr
+      comment` / `az repos pr comment` with the rendered body.**
+      No under any branch. The whole point of β's Section 5 is that
+      this output stays private to the invoking user.
    d. Set `context.code_review_invoked = true` and
       `context.code_review_invoked_at = <timestamp>`.
+   e. Parse, dedup, dispatch (next subsection).
 3. If not mapped:
    a. Log `code_review_invoked` with `{host, skipped: true}`.
-   b. Leave `context.code_review_invoked = false`.
+   b. Leave `context.code_review_invoked = false`. Skip the parse /
+      dispatch / commit subsections below.
 
-### Why "post once and continue"
+### Parse the captured output
 
-The `review` skill takes 1-3 minutes to render. We pay that inline
-(it returns to the orchestrator's context), but the orchestrator then
-posts the output and continues without waiting for reviewer-bot
-roundtrips. The loop's step 01 waits 10 minutes before the first
-comment fetch, so the posted `/code-review` comment lands in iter 1
-naturally alongside any Copilot review.
+The `review` skill's output format is the numbered-finding shape
+Filter B.5 Stage 1 expects. Apply the same parser:
+
+```
+N. <description> (<source>)
+
+<https://github.com/owner/repo/blob/SHA/path#L<start>-L<end>>
+```
+
+For each numbered finding, produce a record:
+- `body: "<description>"` (first line of the numbered item, without
+  the trailing `(<source>)`)
+- `path: "<parsed from the SHA URL>"`
+- `line: <start>` — INTEGER, not string; first number in
+  `L<start>-L<end>`. (Same shape rule as Filter B.5 Stage 1 — storing
+  as string trips G3.)
+- `id: "code-review:finding-<N>"` (stable within this session;
+  1-indexed by the order findings appear in
+  `context.code_review_raw_output`)
+- `severity: "important"` — `/code-review` findings are treated as
+  Important by default. The `review` skill does not return a severity
+  field, and preflight's adversarial subagent has already caught
+  Critical-severity issues (dispatched inline in step 02), so what
+  `/code-review` surfaces post-open is by construction Important or
+  less. Operators tuning this default may set `severity: "minor"` at
+  the dispatch site if `/code-review` produces verbose low-priority
+  comments in a given project.
+- `source: "code-review"` — marks the origin for `internal_review_findings`
+
+If parsing fails (malformed numbered section, no `<https://...>` URL,
+missing description):
+- Log an `error` event with `stage: "04g-parse"`.
+- Skip this finding. Do NOT dispatch malformed inputs to a fixer.
+
+**Empty / zero-finding output.** If `context.code_review_raw_output`
+is empty (the host's `review` skill returned nothing — e.g., "no
+issues found") OR if parsing yields zero well-formed findings, skip
+the Dedup, Dispatch, and Commit+push subsections below. Set
+`context.code_review_invoked = true`, append a single
+"no findings" line to the review-summary file's `/code-review`
+section, and hand off to `4f`. This is the happy path — treat it as
+success, not as an error.
+
+### Dedup against preflight findings
+
+For each parsed finding, compute its `description_hash` per the
+normalization in `pr-autopilot/steps/02-preflight-review.md`
+"Per-finding `description_hash`" section (five-step normalization:
+strip fences/HTML → lead paragraph → lowercase+whitespace-collapse →
+truncate 200 → SHA-1).
+
+If the hash equals any `preflight_passes.merged[].description_hash`:
+- Log a `triage_dedup_hit` event with
+  `{feedback_id: "code-review:finding-<N>", preflight_match_id: <merged[].id>, source: "code-review"}`.
+- Skip dispatching this finding (preflight already handled it).
+- Append to `context.internal_review_findings` with
+  `status: "captured-only"` and a note linking to the preflight entry.
+
+### Dispatch non-duplicates
+
+For each non-duplicate finding, dispatch a fixer subagent per the
+procedure in `pr-loop-lib/steps/04-dispatch-fixers.md`. Scope of
+post-dispatch invariants is `P02.*` (same as preflight); S04.* do not
+apply (there is no triage `actionable[]` yet). The verifier procedure,
+policy ladder, and overlap re-verify all apply unchanged — each fixer
+return is verified; `feedback-wrong` verdicts roll back without
+posting a reply to the PR (the reply text is captured for the local
+summary only).
+
+Record each outcome in `context.internal_review_findings`:
+
+```json
+{
+  "source": "code-review",
+  "severity": "important",   // /code-review findings are treated as Important by default
+  "file": "...",
+  "line": 42,
+  "description": "...",
+  "status": "fixed" | "fixed-differently" | "feedback-wrong" | "needs-human",
+  "fixer_feedback_id": "code-review:finding-<N>",
+  "verifier_judgement": "addresses" | "partial" | "not-addresses" | "feedback-wrong"
+}
+```
+
+Append each record to the review-summary file at
+`context.internal_review_summary_path` in a new `## /code-review
+post-open` section (or update an existing one if step 04g is retried).
+
+### Commit + push any resulting fixes
+
+If any fixer landed a diff (`context.files_changed_this_iteration`
+non-empty after dispatch):
+
+1. Apply the `pr-loop-lib/steps/06-commit-push.md` procedure, with:
+   - Commit subject: `Address internal /code-review findings
+     (preflight)`
+   - Body: one bullet per fix with the finding description + fixer
+     reason.
+   - Same secret scan, main-branch guard, `git_commit_argv` emission,
+     and signing rules as the loop's step 06.
+2. After successful push, update `context.last_push_sha` to the new
+   HEAD SHA.
+3. **Do NOT update `context.last_push_timestamp`** in 04g. `last_push_
+   timestamp` is the cursor iter 1's Filter A uses to decide which
+   comments are "new enough" to process. External reviewer bots
+   (Copilot, SonarCloud) can post their own review comments in the
+   seconds between `gh pr create` and 04g's push; bumping the cursor
+   to 04g's push timestamp would drop those comments silently. The
+   cursor stays at the PR-create commit's timestamp (set in 4e) until
+   loop step 06 performs its own push in response to real PR comments.
+
+If no fixer produced a diff (all `replied`, `not-addressing`, or
+`needs-human`), do not commit. Continue to hand-off.
+
+### Invariants
+
+After step 04g completes, verify per
+`pr-loop-lib/references/invariants.md`:
+
+- **S04g.1** — No top-level PR comment authored by
+  `context.self_login` has a **first-line** body matching
+  `^\s*#{1,6}\s*code[\s-]*review\b` (case-insensitive). Checked via
+  the paginating REST endpoint (required because `gh pr view --json
+  comments` does not paginate and can miss comments past the first
+  page on busy PRs):
+
+  ```bash
+  OWNER_REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+  # Extract the first line of each self-authored comment body, one line
+  # per comment to stdout. Uses gh's embedded jq engine only — no
+  # external jq binary, no python runtime dep. grep does the
+  # leading-whitespace tolerance via `^[[:space:]]*`, so jq doesn't
+  # need any regex (avoiding `\S`-style escapes that are fragile
+  # through nested shell quoting).
+  gh api "repos/${OWNER_REPO}/issues/${PR}/comments" --paginate \
+    --jq '.[] | select(.user.login == "'"$SELF_LOGIN"'") | .body | split("\n")[0]' \
+    | grep -iE '^[[:space:]]*#{1,6}[[:space:]]*code[[:space:]-]*review\b' \
+    && { echo "HALT S04g.1: self-authored code-review comment found on PR #${PR}"; exit 1; } \
+    || echo "S04g.1: OK — no self-authored code-review comment on PR #${PR}"
+  ```
+
+  Pure `gh` + its embedded jq engine; no external dep introduced.
+  Breakdown of the `--jq` filter:
+  - `.[] | select(.user.login == "$SELF_LOGIN")` — iterate comments,
+    keep only self-authored.
+  - `.body | split("\n")[0]` — split body on newlines, take the
+    first element (possibly blank).
+  - One line per comment is emitted; `grep -iE` tests each against the
+    code-review heading regex, tolerating leading whitespace via
+    `^[[:space:]]*`.
+
+  Comments that start with a blank first line (rare) produce an empty
+  stdin line to grep, which doesn't match the heading regex — safe.
+  `gh api --paginate` reads every page so the check can't miss a
+  comment past page 1 on busy PRs.
+
+  **Escaping footnote.** An earlier revision of this step used
+  `map(select(test("\\S")))` to drop blank lines inside jq. The
+  `\\S` escape survives single-quoted shell interpolation in isolation
+  but is fragile through several nesting layers (heredocs, `$(…)`
+  substitution, some harnesses), and a broken jq parse silently
+  short-circuits the pipeline — grep gets empty stdin and the `||`
+  branch prints "OK" even though the check didn't run. The
+  `split("\n")[0]` form avoids all of that by not using a regex
+  inside jq at all.
+
+  A hit means the orchestrator regressed into α's posting behavior
+  (the `gh pr comment` call from α crept back in somehow). Hard halt
+  with a diagnostic naming the regressing commit / call-site.
 
 ### Rerun on `pr-followup`
 
 When `pr-followup` re-enters the loop later, do NOT re-invoke
 `/code-review`. The skill's own eligibility check prevents duplicate
-reviews (it checks whether the same user has already posted a review
-comment). `pr-followup` skips step 04g regardless.
+reviews when the review was previously posted, but under β we no
+longer post — so the eligibility signal is the stored
+`context.code_review_invoked = true` flag. `pr-followup` skips step
+04g regardless when that flag is true.

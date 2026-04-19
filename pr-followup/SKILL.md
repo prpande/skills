@@ -33,10 +33,16 @@ Optional positional arguments:
   default 10.
 
 Flags:
-- `--wait <minutes>` — override loop wait delay
-- `--dry-run` — same semantics as pr-autopilot
-- `--no-wait` — default TRUE for pr-followup (comments are presumed already
-  visible). User can pass `--wait <N>` to delay anyway.
+- `--wait <minutes>` — override loop wait delay. **Floor: 10 minutes.**
+  Values less than 10 are clamped up to 10 with a warning log event;
+  the skill never waits less than 10 minutes between iterations (see
+  `pr-loop-lib/steps/01-wait-cycle.md` "Minimum wait"). Applies to
+  second-iteration-onwards even when `--no-wait` / the `pr-followup`
+  default `no_wait_first_iteration = true` skipped the first wait.
+- `--dry-run` — same semantics as pr-autopilot.
+- `--no-wait` — default TRUE for pr-followup (comments are presumed
+  already visible). Skips ONLY the first-iteration wait; the floor
+  still applies to every subsequent iteration.
 
 ## Execution
 

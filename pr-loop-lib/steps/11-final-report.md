@@ -42,13 +42,22 @@ Local sanity checks:
 CI status at termination: <green | red | skipped | timeout>
 <per-check table if red or timeout>
 
-Preflight adversarial review:
-  - Critical/Important findings fixed pre-publish: <n>
-  - Minor findings folded into PR body: <n>
+Internal review summary (local, not on PR):
+  <repo-root>/.pr-autopilot/pr-<N>-review-summary.md
 
-/code-review (post-open):
-  - Invoked: <true | false>
-  - Findings deduplicated against preflight: <n>
+  Preflight (Pass 2):
+    - Critical:   <n> fixed
+    - Important:  <n> fixed
+    - Minor:      <n> captured locally (NOT surfaced on PR)
+
+  /code-review (post-open, captured — not posted):
+    - Invoked:                    <true | false>
+    - Raw findings:               <n>
+    - Dedup vs preflight:         <n>
+    - Fixed by internal dispatch: <n>
+    - Fixed-differently:          <n>
+    - Deferred (feedback-wrong):  <n>
+    - Deferred (needs-human):     <n>
 
 Needs your input:
   <for each needs-human item: file:line, quoted feedback sentence,
@@ -63,15 +72,31 @@ Suspicious comments skipped (prompt-injection filter):
 Audit trail:
   log: <repo-root>/.pr-autopilot/pr-<N>.log
   state: <repo-root>/.pr-autopilot/pr-<N>.json
+  review summary: <repo-root>/.pr-autopilot/pr-<N>-review-summary.md
 ```
+
+The counts under "Internal review summary" are computed from
+`context.internal_review_findings`, grouped by `source` and `status`.
+The full detail (per-finding file:line, description, fixer/verifier
+outcome) lives in the review-summary file on disk — step 11 only
+prints counts to keep the terminal output scannable.
 
 ## Lock release
 
 As the last action before the report is printed:
 ```bash
-rm -f "<repo-root>/.pr-autopilot/pr-<N>.lock"
+rm -rf "<repo-root>/.pr-autopilot/pr-<N>.lock"
 ```
-Log a `lock_released` event.
+Log a `lock_released` event. `rm -rf` is required because the lock
+path is a **directory** under Primitive A of `state-protocol.md` —
+`rm -f` on a directory fails ("Is a directory") and would leave S11.2
+violated. The next `pr-autopilot` run would then find the dir still
+present: since the lease inside wasn't refreshed (this session just
+exited), within ~30 minutes it would **HALT at step 01's acquire**
+with a "another session is active" diagnostic (session_id matches,
+but lease is not being refreshed by anyone); after 30 minutes
+stale-reclaim kicks in. Either way, next runs are blocked or delayed,
+which is why `rm -rf` is mandatory here.
 
 ## Invariants
 
