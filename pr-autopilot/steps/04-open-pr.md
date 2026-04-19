@@ -233,13 +233,33 @@ the Dedup, Dispatch, and Commit+push subsections below. Set
 section, and hand off to `4f`. This is the happy path — treat it as
 success, not as an error.
 
+**Non-empty output with zero parsed findings (format drift).** If
+`context.code_review_raw_output` is non-empty but the parser extracted
+zero well-formed findings (no numbered section matching the expected
+shape), this indicates the `review` skill changed its output format.
+This is a distinct case from "no issues found" (which produces empty
+or explicitly-worded output). Emit a `code_review_parse_failed` log
+event with the first 200 characters of the raw output so the drift is
+observable:
+
+```json
+{"event": "code_review_parse_failed", "data": {
+  "raw_prefix": "<first 200 chars of code_review_raw_output>",
+  "reason": "non-empty output but zero findings parsed — possible format drift"
+}}
+```
+
+Surface this in the final report as a warning (not a hard failure) so the
+operator knows to inspect the raw output. Continue to `4f` without
+dispatching fixers.
+
 ### Dedup against preflight findings
 
 For each parsed finding, compute its `description_hash` per the
 normalization in `pr-autopilot/steps/02-preflight-review.md`
 "Per-finding `description_hash`" section (five-step normalization:
 strip fences/HTML → lead paragraph → lowercase+whitespace-collapse →
-truncate 200 → SHA-1).
+truncate 200 → SHA-256).
 
 If the hash equals any `preflight_passes.merged[].description_hash`:
 - Log a `triage_dedup_hit` event with
@@ -318,17 +338,22 @@ After step 04g completes, verify per
 
   ```bash
   OWNER_REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-  # Extract the first line of each self-authored comment body, one line
-  # per comment to stdout. Uses gh's embedded jq engine only — no
-  # external jq binary, no python runtime dep. grep does the
-  # leading-whitespace tolerance via `^[[:space:]]*`, so jq doesn't
-  # need any regex (avoiding `\S`-style escapes that are fragile
-  # through nested shell quoting).
-  gh api "repos/${OWNER_REPO}/issues/${PR}/comments" --paginate \
-    --jq '.[] | select(.user.login == "'"$SELF_LOGIN"'") | .body | split("\n")[0]' \
-    | grep -iE '^[[:space:]]*#{1,6}[[:space:]]*code[[:space:]-]*review\b' \
-    && { echo "HALT S04g.1: self-authored code-review comment found on PR #${PR}"; exit 1; } \
-    || echo "S04g.1: OK — no self-authored code-review comment on PR #${PR}"
+  # Capture output and exit code separately — piping directly to grep
+  # masks gh api failures: if gh api errors, grep gets empty stdin,
+  # exits 1 (no match), and the || branch falsely prints "OK".
+  SELF_COMMENT_LINES=$(gh api "repos/${OWNER_REPO}/issues/${PR}/comments" --paginate \
+    --jq '.[] | select(.user.login == "'"$SELF_LOGIN"'") | .body | split("\n")[0]' 2>&1)
+  GH_EXIT=$?
+  if [ "$GH_EXIT" -ne 0 ]; then
+    echo "HALT S04g.1: gh api failed (exit ${GH_EXIT}): ${SELF_COMMENT_LINES}"
+    exit 1
+  fi
+  if echo "$SELF_COMMENT_LINES" \
+       | grep -qiE '^[[:space:]]*#{1,6}[[:space:]]*code[[:space:]-]*review\b'; then
+    echo "HALT S04g.1: self-authored code-review comment found on PR #${PR}"
+    exit 1
+  fi
+  echo "S04g.1: OK — no self-authored code-review comment on PR #${PR}"
   ```
 
   Pure `gh` + its embedded jq engine; no external dep introduced.

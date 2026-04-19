@@ -112,14 +112,20 @@ file exceeds 10 MB (check via `wc -c < "<path>"`):
 ```bash
 LOG="<repo_root>/.pr-autopilot/pr-<PR>.log"
 if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 10485760 ]; then
-  # Order matters: rename the compressed backup to its final name BEFORE
-  # truncating the live log. If gzip or mv fails, the live log is
-  # preserved rather than truncated against a missing backup.
-  if gzip -k "$LOG" && mv "$LOG.gz" "$LOG.1.gz"; then
-    : > "$LOG"
+  # Atomic rotation: mv the live log first (POSIX rename is atomic —
+  # after mv, any new printf appends open a fresh inode at $LOG, so no
+  # records are lost). Then compress the moved copy. If gzip fails,
+  # the records are still in $LOG.prev.$$ — warn and leave it for the
+  # operator rather than silently discarding them.
+  mv "$LOG" "$LOG.prev.$$"
+  if gzip -c "$LOG.prev.$$" > "$LOG.1.gz.tmp.$$" \
+       && mv "$LOG.1.gz.tmp.$$" "$LOG.1.gz"; then
+    rm -f "$LOG.prev.$$"
   else
-    echo "log rotation failed; live log preserved" >&2
-    rm -f "$LOG.gz"  # clean up any orphaned intermediate
+    echo "log rotation compression failed; prior log preserved as ${LOG}.prev.$$" >&2
+    rm -f "$LOG.1.gz.tmp.$$"
+    # Do NOT restore $LOG.prev.$$ to $LOG — a new $LOG may already
+    # have started accumulating records. Operator must merge manually.
   fi
 fi
 ```

@@ -110,10 +110,15 @@ When a step first needs to write state:
    SESSION_ID=$(python -c "import uuid; print(uuid.uuid4())" 2>/dev/null \
                 || uuidgen 2>/dev/null \
                 || cat /proc/sys/kernel/random/uuid 2>/dev/null \
-                || echo "$(date +%s)-$$")
+                || echo "$BASHPID-$(date +%s%N 2>/dev/null || date +%s)-$RANDOM")
    ```
-   Pick the first succeeding command. Fall back to timestamp-plus-PID if
-   none available.
+   Pick the first succeeding command. The fallback uses `$BASHPID` (not `$$`)
+   because `$$` expands to the **parent** shell's PID inside subshells —
+   two concurrent invocations launched from the same parent shell in the same
+   second would produce identical IDs. `$BASHPID` always reflects the current
+   subshell's PID. `date +%s%N` adds nanosecond precision (GNU date / Linux);
+   BSD `date` silently echoes literal `%N`, so `$RANDOM` is appended as an
+   extra entropy source for the macOS case.
 
 ## Lock directory structure
 
@@ -160,9 +165,23 @@ the write.
        refresh per step to reduce noise. Proceed.
    - Else compute age_minutes = (current_epoch - held_lease_epoch) / 60.
      - If age_minutes > 30:
-       - Treat as stale. Reclaim by overwriting both files in place:
-           printf '%s\n' "$SESSION_ID"  > "$lock_dir/session"
-           printf '%s\n' "$(date +%s)"  > "$lock_dir/lease"
+       - Treat as stale. Reclaim atomically by removing the old directory
+         and re-creating it with `mkdir` (the same atomic primitive used
+         for first-time acquisition). Overwriting the session/lease files
+         in-place is NOT safe — two sessions that simultaneously detect
+         staleness would both overwrite, causing a split-brain:
+           ```bash
+           rm -rf "$lock_dir"
+           if mkdir "$lock_dir" 2>/dev/null; then
+             printf '%s\n' "$SESSION_ID" > "$lock_dir/session"
+             printf '%s\n' "$(date +%s)" > "$lock_dir/lease"
+             # reclaimed — proceed
+           else
+             # Another session won the mkdir race; treat as a live lock
+             # and halt normally (re-read session/lease to get their id).
+             halt "HALT: concurrent reclaim — another session acquired first"
+           fi
+           ```
        - Log `lock_stale_reclaimed` event with old session_id and age.
        - **Also update `state.session_id` in the state file to the
          new `context.session_id`** and log a `state_write` event

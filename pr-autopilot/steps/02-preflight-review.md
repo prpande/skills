@@ -95,7 +95,11 @@ hashes (not a re-normalization round-trip):
 3. Take the lead paragraph — everything up to the first blank line.
 4. Lowercase and collapse whitespace to single spaces.
 5. Truncate to 200 characters.
-6. SHA-1.
+6. SHA-256 (via `sha256sum | cut -c1-64` on Linux/Git-Bash or
+   `shasum -a 256 | cut -c1-64` on macOS). Must match the helper used
+   in `pr-loop-lib/steps/03-triage.md` Stage 2 — both sides MUST use
+   the same algorithm. SHA-1 is not used here because chosen-prefix
+   collisions could allow a crafted comment to suppress a preflight finding.
 
 Store the resulting hex string as
 `context.preflight_passes.merged[].description_hash` (NOT a separate

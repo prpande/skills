@@ -36,14 +36,30 @@ Batch size within a parallel group: 4.
 For each unit:
 1. Read `references/prompt-injection-defenses.md` (once, cached for all units).
 2. Read `references/fixer-prompt.md`.
-3. Concatenate: defenses text + fixer template (defenses first).
-4. Substitute placeholders: `{{OWNER}}`, `{{REPO}}`, `{{PR_NUMBER}}`,
+3. Generate a per-dispatch **fixer nonce** (8 hex chars) and verify it does not
+   appear in the comment body before interpolating. Uses the same mechanism as
+   the verifier nonce (see "Fixer-output verification" below):
+   ```bash
+   FIXER_NONCE=$(printf '%08x' $(( (RANDOM << 15) | RANDOM )))
+   case "$COMMENT_BODY_VERBATIM" in
+     *"_${FIXER_NONCE}"*)
+       FIXER_NONCE=$(printf '%08x' $(( (RANDOM << 15) | RANDOM )))
+       case "$COMMENT_BODY_VERBATIM" in
+         *"_${FIXER_NONCE}"*) log verifier_nonce_collision slot=fixer; FIXER_NONCE=""; ;;
+       esac ;;
+   esac
+   [ -z "$FIXER_NONCE" ] && escalate_to_needs_human && continue
+   ```
+4. Concatenate: defenses text + fixer template (defenses first). Substitute
+   `{{FIXER_NONCE}}` throughout both texts with the generated nonce.
+5. Substitute remaining placeholders: `{{OWNER}}`, `{{REPO}}`, `{{PR_NUMBER}}`,
    `{{PR_TITLE}}`, `{{BASE_BRANCH}}`, `{{HEAD_SHA}}`, `{{SURFACE_TYPE}}`,
    `{{FILE_PATH}}`, `{{LINE_NUMBER}}`, `{{AUTHOR_LOGIN}}`, `{{AUTHOR_TYPE}}`,
    `{{CREATED_AT}}`, `{{COMMENT_BODY_VERBATIM}}`, `{{FEEDBACK_ID}}`.
-5. For cluster units, additionally substitute the cluster-brief XML block.
-6. Spawn an agent via the host platform's agent-dispatch mechanism (on
-   Claude Code: `Agent` tool with `subagent_type: "general-purpose"`).
+6. For cluster units, additionally substitute the cluster-brief XML block.
+7. Spawn an agent via the host platform's agent-dispatch mechanism (on
+   Claude Code: `Agent` tool with `subagent_type: "general-purpose"`,
+   `timeout_s: 300`).
 
 ## Agent return handling
 
@@ -77,10 +93,11 @@ For each fixer return where `verdict ∈ {fixed, fixed-differently}`:
 3. Generate a per-call **nonce** and verify it doesn't collide with any
    untrusted content:
    ```bash
-   NONCE=$(printf '%08x' $((RANDOM * RANDOM)))
+   NONCE=$(printf '%08x' $(( (RANDOM << 15) | RANDOM )))
    ```
-   `RANDOM * RANDOM` gives ~30 bits of entropy from Bash builtins only
-   — sufficient for non-cryptographic delimiter uniqueness. Before
+   OR-ing two 15-bit `RANDOM` values after a 15-bit left-shift gives
+   30 bits of uniformly distributed entropy using Bash builtins only.
+   Before
    interpolating, verify that no slot body contains the literal string
    `_${NONCE}`. If it does, regenerate the nonce once; if the second
    nonce also collides, log a `verifier_nonce_collision` event with

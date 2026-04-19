@@ -95,6 +95,7 @@ equivalent predicates live in `P02.*`.
 |---|---|
 | S045.1 | If `files_changed_this_iteration` is non-empty, `sanity_check_passed[iteration]` is set (true or false) — absence is a bug |
 | S045.2 | If the rollback branch executed, `files_changed_this_iteration` is now empty |
+| S045.3 | For every entry in `verifier_judgements` whose `fixer_return.files_changed` intersects the rolled-back file set, the entry carries `build_rollback: true`. This prevents step 11's final report from presenting a stale `addresses` verifier verdict for a fixer whose changes were discarded by the build-failure rollback. Step 04.5's rollback logic (second-failure path) MUST set `build_rollback: true` on the affected `verifier_judgements` entries before clearing `files_changed_this_iteration`. |
 
 ### Step 06 — commit-push
 

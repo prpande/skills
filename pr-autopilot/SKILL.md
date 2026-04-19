@@ -70,6 +70,11 @@ Phase 3 — Shared comment loop
    `06-commit-push.md` → `07-reply-resolve.md` → `08-quiescence-check.md`
    until the quiescence check exits.
 
+   **Step numbering note:** Step 05 is intentionally unoccupied. It was
+   reserved for a rate-limit / back-off step deferred post-β. If a future
+   revision adds a step between local-verify and commit-push, use filename
+   `05-<name>.md` — do not renumber 06-11.
+
 Phase 4 — CI gate (if step 08 exited quiescent, not on cap/runaway)
 
 6. Perform `~/.claude/skills/pr-loop-lib/steps/09-ci-gate.md`.
@@ -148,9 +153,21 @@ No library required — JSON-lines is plain text.
 ## Dry-run
 
 When `--dry-run` is set, preserve all side-effecting operations' inputs to
-`/tmp/pr-autopilot-dryrun/` as text files (`pr-body.md`, `commit-msg.txt`,
-per-comment `reply-<id>.md`, etc.) and print their paths instead of
-invoking the corresponding `gh`/`az`/git command.
+a session-scoped temp directory as text files (`pr-body.md`, `commit-msg.txt`,
+per-comment `reply-<id>.md`, etc.) and print their paths instead of invoking
+the corresponding `gh`/`az`/git command.
+
+The directory is scoped to the session ID to prevent concurrent dry-runs
+(on shared CI runners or developer boxes) from overwriting each other's output
+and to avoid information leakage between users:
+
+```bash
+DRYRUN_DIR="/tmp/pr-autopilot-dryrun/${SESSION_ID}"
+mkdir -p "$DRYRUN_DIR"
+```
+
+If `SESSION_ID` is not yet set at dry-run setup time, fall back to
+`/tmp/pr-autopilot-dryrun/$$-$(date +%s)`.
 
 ## Related
 
