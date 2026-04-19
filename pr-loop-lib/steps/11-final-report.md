@@ -90,8 +90,13 @@ rm -rf "<repo-root>/.pr-autopilot/pr-<N>.lock"
 Log a `lock_released` event. `rm -rf` is required because the lock
 path is a **directory** under Primitive A of `state-protocol.md` —
 `rm -f` on a directory fails ("Is a directory") and would leave S11.2
-violated and every subsequent pr-autopilot run stuck reclaiming a
-stale-but-existing lock.
+violated. The next `pr-autopilot` run would then find the dir still
+present: since the lease inside wasn't refreshed (this session just
+exited), within ~30 minutes it would **HALT at step 01's acquire**
+with a "another session is active" diagnostic (session_id matches,
+but lease is not being refreshed by anyone); after 30 minutes
+stale-reclaim kicks in. Either way, next runs are blocked or delayed,
+which is why `rm -rf` is mandatory here.
 
 ## Invariants
 

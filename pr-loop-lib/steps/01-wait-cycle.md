@@ -35,9 +35,16 @@ minutes after the first. The floor prevents that race mechanically.
 2. Otherwise, compute `delay_seconds`:
    - If `context.wait_override_minutes` is set: `delay_seconds =
      max(600, wait_override_minutes * 60)`. If the clamp fires
-     (user asked for less than 10 minutes), log a warning event with
-     the requested and effective values so the operator sees that
-     the floor kicked in. Do not error out.
+     (user asked for less than 10 minutes), emit a `wait_clamped`
+     log event so the operator sees that the floor kicked in:
+     ```json
+     {"event": "wait_clamped", "data": {
+       "requested_minutes": <N>,
+       "effective_minutes": 10,
+       "reason": "reviewer-bot response window"
+     }}
+     ```
+     Do not error out — the clamp is a feature, not a failure.
    - Else use 600 (10 minutes).
 3. Call `ScheduleWakeup`:
    ```
