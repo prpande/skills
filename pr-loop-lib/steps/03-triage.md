@@ -99,10 +99,12 @@ If the regex matches the start of the body:
     unique id)
 - Emit these findings into the actionable candidate list.
 
-**Near-miss logging (log-on-drop).** If the regex does NOT match BUT the
-comment's author matches the known-bots list (or any pattern that would
-typically indicate an automated review comment), emit a
-`code_review_rescue_failed` event:
+**Near-miss logging (log-on-drop).** Stage 1 is already gated by
+`author == context.self_login AND surface == issue`. Within that gate,
+if the regex does NOT match BUT the body looks like it *might* have
+been intended as `/code-review` output (positive heuristic: body
+contains at least one URL matching the finding-anchor pattern
+`https://github\.com/.*/blob/[0-9a-f]+/.*#L\d+`), emit:
 
 ```json
 {"event": "code_review_rescue_failed", "data": {"author": "<login>", "body_prefix": "<first 200 chars>"}}
@@ -112,10 +114,16 @@ so format drift (reviewer changes heading style) is observable in the
 log rather than silently dropped. Then proceed as a normal self-reply
 drop.
 
-If the author does not match either the self-login rescue condition
-or a known-bot pattern, no log event is emitted — this is just a
-regular user comment that doesn't happen to start with a code-review
-heading.
+If the body does NOT contain the finding-anchor URL pattern, no log
+event fires — this is an ordinary self-reply from a prior iteration
+(the normal iteration-7 "posted my refusal message" case), not a
+drifted review.
+
+The old guidance — "author matches known-bots list" — is wrong
+within this gate: Stage 1 has already filtered to
+`author == self_login`, and a skill's self_login is by construction
+not in the known-bots list. The URL-pattern heuristic is the real
+signal.
 
 ### Stage 2 — Preflight dedup via normalized-lead hash
 
@@ -137,7 +145,7 @@ identically on both sides:
 5. SHA-1; hex string.
 
 The preflight side stores this same hash as
-`preflight_findings[].description_hash` in step 02 (see
+`preflight_passes.merged[].description_hash` in step 02 (see
 `pr-autopilot/steps/02-preflight-review.md`, "Per-finding description
 hash"). The two sides MUST stay in lock-step — if you change the
 normalization here, change it there too.

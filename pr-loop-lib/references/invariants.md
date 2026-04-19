@@ -27,8 +27,11 @@ out-of-scope invariant is itself a bug.
 - **`P02.*`** — Preflight-dispatch scope. Applicable in
   `pr-autopilot/steps/02-preflight-review.md` **when preflight performs
   fixer dispatch to address its findings** (mirroring the loop's
-  `S04.*`, but for preflight's `preflight_findings[]` rather than the
-  loop's `actionable[]`).
+  `S04.*`, but keyed off `context.preflight_passes.merged[]` rather
+  than the loop's `actionable[]`). Step 04g's internal `/code-review`
+  dispatch also cites `P02.*` — same semantics, different finding
+  source (the synthetic `code-review:finding-N` ids registered in
+  `context.internal_review_findings[]`).
 
 **Important cross-scope rule:** Preflight MUST NOT cite `S04.*`. The
 post-dispatch predicates in `S04.*` bake in assumptions — keyed off
@@ -134,7 +137,7 @@ equivalent predicates live in `P02.*`.
 
 | # | Predicate |
 |---|---|
-| S04g.1 | After step 04g completes, no top-level PR comment authored by `context.self_login` has a body matching `^\s*#{1,6}\s*code[\s-]*review\b` (case-insensitive). Regression guard against α's posting behavior. Check via `gh pr view <PR> --json comments --jq '.comments[] \| select(.author.login == "<self_login>") \| .body'` and grep the heading regex. A hit = hard halt. |
+| S04g.1 | After step 04g completes, no top-level PR comment authored by `context.self_login` has a **first non-blank line** matching `^\s*#{1,6}\s*code[\s-]*review\b` (case-insensitive). Regression guard against α's posting behavior. Check using `gh api repos/<owner>/<repo>/issues/<PR>/comments --paginate` (paginated — `gh pr view --json comments` does NOT paginate and can miss comments past page 1 on busy PRs). Body-match is on the first non-blank line only so a quoted heading elsewhere in a comment doesn't false-positive. A hit = hard halt. Full check command is in `pr-autopilot/steps/04-open-pr.md#invariants`. |
 
 ## P02 — preflight-dispatch invariants (pr-autopilot step 02)
 

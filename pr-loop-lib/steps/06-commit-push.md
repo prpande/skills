@@ -97,36 +97,38 @@ EOF
 )
 
 # Source-of-truth flag list. If a future revision adds a flag, append
-# it here so both the log and the commit see it.
+# it to BOTH arrays so the log and the commit stay in sync.
 # Forbidden by orchestrator hard rule (do NOT add): --no-verify,
 # --no-gpg-sign, -c commit.gpgsign=false.
-COMMIT_ARGS=(-m "$COMMIT_MSG")
+COMMIT_ARGS=(-m "$COMMIT_MSG")           # real argv for git
+COMMIT_ARGV_FLAGS=(-m "<commit-message>") # flag tokens only for the log
 
-# Flat space-joined string for the log event. Includes the message
-# arg — S06.3's grep targets known forbidden-flag tokens which will
-# never appear in a legitimate commit message, so lossiness is fine.
-COMMIT_ARGV_STR="${COMMIT_ARGS[*]}"
+# Flat space-joined string for the log event — FLAGS ONLY, not the
+# message. Rationale: a real commit message can contain newlines,
+# quotes, backslashes, and other JSON-breaking characters that would
+# corrupt the JSON-lines log. S06.3 only grep-checks for forbidden
+# flag tokens, so dropping the message content is lossless for the
+# predicate's purpose and keeps the log parseable.
+COMMIT_ARGV_STR="${COMMIT_ARGV_FLAGS[*]}"
 
 # Second-precision UTC timestamp. %3N (millisecond) is GNU-date
 # specific and prints a literal "%3N" on macOS BSD date — use the
-# portable second-precision form instead. context-schema.md's
-# validation rule #5 accepts both precisions.
+# portable second-precision form. log-format.md's `ts` rule accepts
+# both second- and millisecond-precision.
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 printf '%s\n' "{\"ts\":\"$TS\",\"pr\":${PR:-0},\"session_id\":\"$SESSION_ID\",\"iteration\":${ITERATION:-0},\"step\":\"06-commit-push\",\"event\":\"git_commit_argv\",\"data\":{\"argv\":\"$COMMIT_ARGV_STR\"}}" >> "$LOG"
 
-# Invoke git with the exact same argv we just logged.
+# Invoke git with the REAL argv (COMMIT_ARGS), not the logging variant.
 git commit "${COMMIT_ARGS[@]}"
 ```
 
-`argv` is a flat space-joined string, not a JSON array — avoids
-requiring `jq` for construction. The commit message ends up in the
-string; S06.3's grep targets (`--no-verify`, `--no-gpg-sign`,
-`-c commit.gpgsign=false`) should never appear in legitimate commit
-content. If a future commit message must legitimately discuss those
-flags (e.g., "document --no-verify behavior"), quote the argv-detection
-regex with word boundaries in S06.3 and escape accordingly — not a
-problem in practice for automated fix commits.
+`argv` in the log is a flat space-joined string of **flag tokens
+only** (the message is replaced with the placeholder
+`<commit-message>`). This keeps the JSON well-formed regardless of
+what the commit message contains. S06.3's grep targets (`--no-verify`,
+`--no-gpg-sign`, `-c commit.gpgsign=false`) appear only in argv flag
+tokens — never as message content — so the predicate is preserved.
 
 This event fires once per `git commit` invocation in this step. If
 this step retries a commit, emit a fresh event per retry.

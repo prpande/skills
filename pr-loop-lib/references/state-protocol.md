@@ -45,8 +45,10 @@ destination share a filesystem; placing the temp file next to the target
 guarantees that. On native Windows / NTFS, `mv` over an existing
 destination is not strictly atomic (the OS performs delete-then-rename)
 — document this as a known limitation. A missing state file on the next
-step entry is recoverable via the log-replay rule ("Reading state"
-below).
+step entry is **not** recoverable (see "State-file loss (NTFS)" under
+"Reading state" below — the log only records `changed_keys`, not
+values); the operator must delete `.pr-autopilot/` artifacts and
+re-invoke. Accepted as a cost of the zero-dependency constraint.
 
 Do NOT use the Write tool directly on the state file — it does not
 guarantee atomic replacement across platforms.
@@ -298,8 +300,12 @@ LOG="<repo_root>/.pr-autopilot/pr-<PR>.log"
 ```
 
 Update `pr_number` and `internal_review_summary_path` fields inside
-the state file after the rename. Log a `state_rename` event to the
-newly-pointed `$LOG` listing every renamed artifact (old → new pairs).
+the state file after the rename. Log a single `state_rename` event
+to the newly-pointed `$LOG` with a `renames: [{from, to}, ...]`
+array containing every artifact that was successfully renamed in the
+batch — see `log-format.md#event-taxonomy` for the event shape. One
+event per batch (not one per file), so a consumer reading the log
+sees the rename as a single atomic state transition.
 
 **Split-brain recovery.** If any `mv` inside the batch fails
 mid-sequence (e.g., git-bash returns non-zero on a directory mv when
