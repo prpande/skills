@@ -3,56 +3,81 @@
 Used by `steps/03-triage.md` filter B. Each row gives a rule that
 classifies a comment as actionable or skip-able.
 
-## Classification table
+## Default classification table (cross-team, ships with the skill)
 
 | Login | Where it posts | Signature (body contains / starts with) | Classification |
 |---|---|---|---|
-| `mindbody-ado-pipelines[bot]` | Top-level PR comment | `# AI Generated Pull Request Summary` | Skip — wrapper text, descriptive only |
-| `mindbody-ado-pipelines[bot]` | Top-level PR comment | `# AI Generated Pull Request Review` | Parse — extract findings inside `<details>` blocks; each finding is actionable |
-| `mergewatch-playlist[bot]` | Top-level PR comment | `<!-- mergewatch-review -->` HTML anchor | Parse — the anchor comment carries the canonical finding list; scores 3/5 or higher are actionable |
-| `mergewatch-playlist[bot]` | Review body | `🟡 N/5 — <text> — [View full review]` or similar pointer-only body | Skip — the review body is a pointer to the anchor; anchor is canonical |
-| `sonarqube-mbodevme[bot]` | Top-level PR comment | `Quality Gate passed` | Skip — status only |
-| `sonarqube-mbodevme[bot]` | Top-level PR comment | `Quality Gate failed` | Actionable — surface listed issues |
 | `Copilot` | Inline review comment | Any body with `path` set on the API response | Actionable |
 | `copilot-pull-request-reviewer[bot]` | Review body | `Copilot reviewed N out of N changed files` | Skip — meta/summary; inline comments carry the findings |
+| `sonarqube[bot]` | Top-level PR comment | `Quality Gate passed` | Skip — status only |
+| `sonarqube[bot]` | Top-level PR comment | `Quality Gate failed` | Actionable — surface listed issues |
+| `sonarqubecloud[bot]` | Top-level PR comment | `Quality Gate passed` | Skip — status only |
+| `sonarqubecloud[bot]` | Top-level PR comment | `Quality Gate failed` | Actionable — surface listed issues |
 | `github-actions[bot]` | Top-level PR comment | Any | Usually skip; check if body contains failure details (then actionable) |
 | `dependabot[bot]` | Top-level PR comment | Any | Skip for this skill's scope (dependency updates are out of scope) |
 
+The default list is deliberately short. Only bots that are well-known
+across teams ship as defaults.
+
 ## Unknown-bot fallback
 
-If the commenter is not in the table, apply these rules:
+If the commenter is not in the table above, apply these rules:
 
 1. **Skip** if body is an approval: matches `/^(LGTM|👍|✅|approved|looks good)[\s.!]*$/i`, or body is empty.
 2. **Skip** if body is only HTML comments (matches `/\A\s*(<!--.*?-->\s*)+\z/s`).
 3. **Skip** if body is a `<details>` summary with no actionable text inside (detect by stripping `<details>/<summary>` tags and checking if remaining text is empty or a single link).
 4. Otherwise **treat as actionable**. Safer default for unknown sources.
 
-## Parsing rules for bots marked "Parse"
+## Adding team-specific bots
 
-### `mindbody-ado-pipelines[bot]` — "AI Generated Pull Request Review"
+Teams often run internal review bots that aren't in the default list.
+Extend by appending rows to the default table.
 
-Findings live inside `<details>` blocks. Each `<summary>` is a finding title;
-the block body contains the evidence + proposed change. Extract one
-actionable item per `<details>` block whose summary does not start with
-"Pull request overview" or "Summary" (those are wrappers).
+### Example 1 — scorecard-style review bot with anchor comment
 
-### `mergewatch-playlist[bot]` — anchor comment
+A review bot that posts a canonical anchor comment and pointer-only
+review submissions.
 
-The anchor body contains a findings list, often as a table or bullets.
-Extract each finding as one item. The score line (e.g.,
-`🟡 3/5 — Review recommended`) indicates severity:
-- `5/5` — blocker
-- `4/5` — important
-- `3/5` — review recommended (actionable unless the finding text is trivial)
-- `2/5` or lower — may skip
+Add:
 
-### `sonarqube-mbodevme[bot]` — Quality Gate failed
+| `<your-bot>[bot]` | Top-level PR comment | `<!-- your-review-id -->` HTML anchor | Parse — the anchor comment carries the canonical finding list; scores 3/5 or higher are actionable |
+| `<your-bot>[bot]` | Review body | `🟡 N/5 — <text> — [View full review]` or similar pointer-only body | Skip — the review body is a pointer to the anchor; anchor is canonical |
 
-Extract the list of failing conditions. Each is one actionable item whose
-fix is to address that specific SonarQube rule violation in the code.
+Parsing rule for the anchor:
+- The anchor body contains a findings list (table or bullets). Extract
+  each finding as one item. The score line indicates severity:
+  - `5/5` — blocker
+  - `4/5` — important
+  - `3/5` — review recommended (actionable unless trivial)
+  - `2/5` or lower — skip
 
-## Adding new bots
+### Example 2 — AI-generated summary + review bot
 
-Append a row to the table above. Each row needs: login, surface (top-level /
-review body / inline), body signature (substring or regex), classification.
-If the bot needs custom parsing, add a subsection under "Parsing rules".
+A bot that posts "AI Generated Pull Request Summary" (wrapper,
+descriptive) and "AI Generated Pull Request Review" (parse).
+
+Add:
+
+| `<your-bot>[bot]` | Top-level PR comment | `# AI Generated Pull Request Summary` | Skip — wrapper text, descriptive only |
+| `<your-bot>[bot]` | Top-level PR comment | `# AI Generated Pull Request Review` | Parse — extract findings inside `<details>` blocks; each finding is actionable |
+
+Parsing rule for "AI Generated Pull Request Review":
+- Findings live inside `<details>` blocks. Each `<summary>` is a
+  finding title; the block body contains the evidence + proposed
+  change. Extract one actionable item per `<details>` block whose
+  summary does not start with "Pull request overview" or "Summary"
+  (those are wrappers).
+
+## Rules for adding new rows
+
+When adding a team-specific bot rule:
+1. **Login** — exact match. Use the GitHub/AzDO login that appears in
+   the comment author field.
+2. **Where it posts** — one of `inline` (review comments),
+   `top-level PR comment` (issue comments), or `review body`.
+3. **Signature** — either a substring the body starts with, or a
+   distinctive HTML anchor comment (e.g., `<!-- my-bot-id -->`).
+   Keep it specific enough to not false-match other bots.
+4. **Classification** — one of `Skip`, `Actionable`, `Parse`.
+   `Parse` requires a parsing subsection explaining how to extract
+   individual findings from the comment body.

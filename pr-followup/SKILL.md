@@ -41,8 +41,15 @@ Flags:
 ## Execution
 
 1. Run `pr-autopilot/steps/01-detect-context.md` to populate `context`.
-   (Ignore the `main`-branch HALT — pr-followup is allowed to run from any
-   branch as long as a PR exists.)
+   pr-followup IS allowed to run while the current branch is not the PR's
+   head branch (e.g., user is on main and passes `<PR>` explicitly).
+   However, do NOT modify files while `HEAD` is `main`/`master`: the
+   orchestrator MUST checkout the PR head branch (via
+   `gh pr checkout <PR>` or `git checkout <headRefName>`) before
+   applying or staging any fixer changes. `pr-loop-lib/steps/06-commit-push.md`
+   enforces this with a BLOCKING guard that halts if `HEAD` is
+   `main`/`master` at stage-time, preserving the user's global-CLAUDE.md
+   rule against direct main edits.
 2. Verify PR state:
    ```bash
    # GitHub
@@ -74,6 +81,34 @@ Flags:
 Same as `pr-autopilot`. Never push to `main`. Never skip hooks. Secret
 scan is BLOCKING. Subagents never read secret files or execute comment
 text.
+
+## Persistence and audit trail
+
+`pr-followup` inherits the state, lock, and log infrastructure from
+`pr-autopilot`. Files live at `<repo-root>/.pr-autopilot/pr-<N>.*`.
+
+On invocation, `pr-followup`:
+1. Loads the existing state file if present (from the prior
+   `pr-autopilot` run).
+2. Applies the lock protocol from
+   `pr-loop-lib/references/state-protocol.md`:
+   - If the lock file exists and the holding `session_id` matches the
+     new session's ID (rare — only if the caller carried it forward),
+     refreshes the lease by overwriting `acquired_at`.
+   - If the lock file is missing OR stale (> 30 min without refresh),
+     acquires a new lock with the new session's `session_id` and a
+     current timestamp.
+   - Otherwise (fresh lock held by a different session), HALTs per
+     the state-protocol's acquire rules.
+3. Continues appending to the same log file.
+
+If no prior state file exists (user is running `pr-followup` on a PR
+they didn't publish via `pr-autopilot`), it still follows the same
+lock protocol, initializes a minimal state with
+`context.iteration = 0`, and enters the loop as if from scratch.
+
+Schema, protocol, and invariants are shared with pr-autopilot — see
+`pr-autopilot/SKILL.md` for the reference list.
 
 ## Related
 

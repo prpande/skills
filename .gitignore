@@ -1,0 +1,5 @@
+# Claude Code local session settings (user-specific, not shared)
+.claude/
+
+# pr-autopilot ephemeral state
+.pr-autopilot/
