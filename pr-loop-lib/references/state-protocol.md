@@ -29,9 +29,16 @@ slug=$(printf '%s' "$branch" | sed -e 's/%/%25/g' -e 's|/|%2F|g')
 
 This is reversible and collision-free: `feature/a-b` → `feature%2Fa-b`,
 `feature-a/b` → `feature-a%2Fb`, where the old `/`→`-` scheme produced
-the same string `feature-a-b` for both and corrupted state. The order
-matters: `%` must be escaped before `/` or a subsequent pass on `/` →
-`%2F` would re-encode the freshly-produced `%25`.
+the same string `feature-a-b` for both and corrupted state.
+
+**Order matters: escape `%` before `/`.** If you encoded `/` first, it
+would introduce new `%` characters (inside the freshly-produced
+`%2F`). A subsequent `%` → `%25` pass would then **double-encode**
+those `%2F` tokens into `%252F`, breaking reversibility (the decoder
+would turn `%252F` back into `%2F`, not into `/`). Escaping `%` first
+preserves a clean invariant: after step 1, no `%` remains that wasn't
+in the original input; step 2's `/` → `%2F` then introduces `%`
+characters that are safe because step 1 is already complete.
 
 **Primitive C — Atomic state writes (tmp + mv).** State files are
 written via a temp-then-rename dance in Bash, not via the Write tool:

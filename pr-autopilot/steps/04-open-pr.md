@@ -318,27 +318,57 @@ After step 04g completes, verify per
 
   ```bash
   OWNER_REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-  gh api "repos/${OWNER_REPO}/issues/${PR}/comments" --paginate \
-    --jq '.[] | select(.user.login == "'"$SELF_LOGIN"'") | .body' \
-    | awk 'BEGIN{RS="\0"} {
-         # Extract first non-blank line of each body.
-         split($0, lines, "\n")
-         for (i=1; i<=length(lines); i++) {
-           line = lines[i]
-           gsub(/^[[:space:]]+/, "", line)
-           if (line != "") { print line; break }
-         }
-       }' \
-    | grep -iE '^#{1,6}[[:space:]]*code[[:space:]-]*review\b' \
-    && { echo "HALT S04g.1: self-authored code-review comment found"; exit 1; } \
-    || true
+  # Fetch all self-authored comment bodies as a JSON array, then use
+  # python3 to iterate correctly over multi-line bodies. The earlier
+  # awk/jq/RS="\0" pipeline was structurally broken — `gh api --jq`
+  # does not NUL-separate records, so `RS="\0"` treated the entire
+  # stream as a single record and only the first comment's first line
+  # was ever checked.
+  python3 -c '
+import json, re, subprocess, sys
+
+owner_repo = subprocess.check_output(
+    ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+    text=True,
+).strip()
+pr = "'"$PR"'"
+self_login = "'"$SELF_LOGIN"'"
+
+# gh api --paginate yields one JSON value per page; --slurp combines
+# them into one array of arrays which we flatten.
+raw = subprocess.check_output(
+    ["gh", "api", f"repos/{owner_repo}/issues/{pr}/comments", "--paginate",
+     "--slurp"],
+    text=True,
+)
+pages = json.loads(raw)
+bodies = [c["body"] for page in pages for c in page
+          if c.get("user", {}).get("login") == self_login]
+
+regex = re.compile(r"^\s*#{1,6}\s*code[\s-]*review\b", re.IGNORECASE)
+for body in bodies:
+    first = next((ln.lstrip() for ln in body.splitlines() if ln.strip()), "")
+    if regex.match(first):
+        print("HALT S04g.1: self-authored code-review comment found:")
+        print("  first line: " + first[:120])
+        sys.exit(1)
+print("S04g.1: OK — no self-authored code-review comment on PR #" + pr)
+'
   ```
+
+  Using `python3` here is consistent with `scripts/validate.py` — it
+  is already a build-time dependency of the skill, so no new runtime
+  dep is introduced. The earlier awk/jq pipeline was broken: it tried
+  to NUL-separate via `RS="\0"` but `gh api --jq` concatenates bodies
+  with only a newline, making the entire stream one awk record. The
+  Python version loads the JSON directly, iterates per comment, and
+  extracts the first non-blank line per body correctly.
 
   Matching only the first non-blank line avoids a false positive when
   an unrelated comment quotes the heading in the middle of its body
-  (e.g., a user discussing what the skill does). Use `gh api
-  --paginate` rather than `gh pr view --json comments` to see all
-  pages on PRs with long comment threads.
+  (e.g., a user discussing what the skill does). `--paginate --slurp`
+  ensures every page is read so the check can't miss a comment past
+  page 1 on busy PRs.
 
   A hit means the orchestrator regressed into α's posting behavior
   (the `gh pr comment` call from α crept back in somehow). Hard halt
