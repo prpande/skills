@@ -42,13 +42,22 @@ Local sanity checks:
 CI status at termination: <green | red | skipped | timeout>
 <per-check table if red or timeout>
 
-Preflight adversarial review:
-  - Critical/Important findings fixed pre-publish: <n>
-  - Minor findings folded into PR body: <n>
+Internal review summary (local, not on PR):
+  <repo-root>/.pr-autopilot/pr-<N>-review-summary.md
 
-/code-review (post-open):
-  - Invoked: <true | false>
-  - Findings deduplicated against preflight: <n>
+  Preflight (Pass 2):
+    - Critical:   <n> fixed
+    - Important:  <n> fixed
+    - Minor:      <n> captured locally (NOT surfaced on PR)
+
+  /code-review (post-open, captured — not posted):
+    - Invoked:                    <true | false>
+    - Raw findings:               <n>
+    - Dedup vs preflight:         <n>
+    - Fixed by internal dispatch: <n>
+    - Fixed-differently:          <n>
+    - Deferred (feedback-wrong):  <n>
+    - Deferred (needs-human):     <n>
 
 Needs your input:
   <for each needs-human item: file:line, quoted feedback sentence,
@@ -63,7 +72,14 @@ Suspicious comments skipped (prompt-injection filter):
 Audit trail:
   log: <repo-root>/.pr-autopilot/pr-<N>.log
   state: <repo-root>/.pr-autopilot/pr-<N>.json
+  review summary: <repo-root>/.pr-autopilot/pr-<N>-review-summary.md
 ```
+
+The counts under "Internal review summary" are computed from
+`context.internal_review_findings`, grouped by `source` and `status`.
+The full detail (per-finding file:line, description, fixer/verifier
+outcome) lives in the review-summary file on disk — step 11 only
+prints counts to keep the terminal output scannable.
 
 ## Lock release
 

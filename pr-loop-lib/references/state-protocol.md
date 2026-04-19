@@ -259,19 +259,24 @@ Protocol:
 
 Before step 04 assigns `pr_number`:
 - State file is at `<repo_root>/.pr-autopilot/branch-<branch-slug>.json`
-- Lock file is at `<repo_root>/.pr-autopilot/branch-<branch-slug>.lock`
+- Lock directory is at `<repo_root>/.pr-autopilot/branch-<branch-slug>.lock` (see "Lock directory structure")
 - Log file is at `<repo_root>/.pr-autopilot/branch-<branch-slug>.log`
+- Review-summary file (β) is at `<repo_root>/.pr-autopilot/branch-<branch-slug>-review-summary.md` (see `pr-autopilot/steps/02-preflight-review.md` "Review-summary artifact")
 
 After step 04's `gh pr create` succeeds and the PR number is assigned:
 ```bash
 cd "<repo_root>/.pr-autopilot"
-mv "branch-<slug>.json" "pr-<PR>.json"
-mv "branch-<slug>.lock" "pr-<PR>.lock"
-mv "branch-<slug>.log"  "pr-<PR>.log"
+mv "branch-<slug>.json"               "pr-<PR>.json"
+mv "branch-<slug>.lock"               "pr-<PR>.lock"          # directory mv; git-bash handles atomically
+mv "branch-<slug>.log"                "pr-<PR>.log"
+if [ -f "branch-<slug>-review-summary.md" ]; then
+  mv "branch-<slug>-review-summary.md" "pr-<PR>-review-summary.md"
+fi
 ```
 
-Update `pr_number` field inside the state file after the rename.
-Log a `state_rename` event.
+Update `pr_number` and `internal_review_summary_path` fields inside
+the state file after the rename. Log a `state_rename` event listing
+every renamed artifact.
 
 ## Host-platform detection (called from step 01)
 

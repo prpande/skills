@@ -130,6 +130,12 @@ equivalent predicates live in `P02.*`.
 | S11.1 | `termination_reason` is set |
 | S11.2 | Lock file has been removed by the time this step completes |
 
+### Step 04g — post-open /code-review invocation (pr-autopilot)
+
+| # | Predicate |
+|---|---|
+| S04g.1 | After step 04g completes, no top-level PR comment authored by `context.self_login` has a body matching `^\s*#{1,6}\s*code[\s-]*review\b` (case-insensitive). Regression guard against α's posting behavior. Check via `gh pr view <PR> --json comments --jq '.comments[] \| select(.author.login == "<self_login>") \| .body'` and grep the heading regex. A hit = hard halt. |
+
 ## P02 — preflight-dispatch invariants (pr-autopilot step 02)
 
 Preflight runs an adversarial reviewer and may dispatch fixers to address
