@@ -67,4 +67,11 @@ atomic_write_json(run_dir / "06-report.json", report)
 
 ## What the matrix should contain
 
-One row per (Figma frame, code screen) pair from Stage 5 Pass 1. Missing-in-figma-only rows show `android_screen: null`; missing-in-code-only rows show the code screen and status `missing`.
+The matrix is **keyed by Figma frame** (schema requires `figma_frame` to be a non-null string). It contains one row per Figma frame appearing in Stage 5 Pass 1. Mapping from Stage 5 statuses:
+
+- `status: "present"` — `figma_frame` + matching `android_screen`.
+- `status: "new-in-figma"` (Figma frame has no matching code screen) — `figma_frame` filled, `android_screen: null`.
+- `status: "restructured"` — `figma_frame` + the matched `android_screen`; status preserves the Stage 5 judgment about structural change.
+- `status: "missing"` (code screen has no matching Figma frame) — **not represented in the matrix**, since there is no `figma_frame` to key on. These appear in the `summary` section only (with `screen: <the code screen>` and a severity per Stage 5's rules).
+
+If a deployment needs `missing` rows on a matrix (e.g., for a code-first coverage view), that is a follow-up schema change; day one is Figma-keyed only.

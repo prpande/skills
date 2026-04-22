@@ -11,7 +11,7 @@ Build a structured inventory of the Figma design's screens, states, actions, and
 ## Inputs
 
 - `<run_dir>/01-flow-mapping.json` (Stage 1) — tells you which Figma frames are in-scope.
-- Figma MCP tools: `get_design_context` and `get_screenshot` (paired per frame).
+- Figma MCP tools: `mcp__plugin_figma_figma__get_design_context` and `mcp__plugin_figma_figma__get_screenshot` (paired per frame).
 
 ## Output
 
@@ -34,8 +34,8 @@ Then regenerate `<run_dir>/04-figma-inventory.md` via the inline pattern shown i
 
 For each in-scope top-level Figma frame:
 
-1. Call Figma MCP `get_design_context(fileKey, nodeId=frame_id)` to get structured data (layers, components, text, design tokens, annotations, Code Connect mappings).
-2. Call `get_screenshot(fileKey, nodeId=frame_id)`.
+1. Call `mcp__plugin_figma_figma__get_design_context(fileKey, nodeId=frame_id)` to get structured data (layers, components, text, design tokens, annotations, Code Connect mappings).
+2. Call `mcp__plugin_figma_figma__get_screenshot(fileKey, nodeId=frame_id)`.
 3. Extract `InventoryItem` rows for the frame itself (`kind: "screen"`) plus each meaningful state/action/field inside it. Use stable slug IDs rooted at the frame (e.g., `appt-details.header.save-button`). Set `parent_id` to build the screen → state → action/field hierarchy.
 4. Compare structured data against the screenshot. Set `screenshot_cross_check`:
    - `agreed` — structured data and screenshot tell the same story.

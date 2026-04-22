@@ -116,7 +116,10 @@ def validate_hint_file(path: pathlib.Path) -> list[str]:
             f"{path}: frontmatter 'confidence' must be one of "
             f"{sorted(VALID_CONFIDENCE)}, got {conf!r}"
         )
-    body_lines = {line.strip() for line in body.splitlines()}
+    # Mask fenced code blocks so a hint can't satisfy the lint by mentioning
+    # `## 01 Flow locator` inside ```…``` without an actual header outside.
+    body_for_headers = _mask_code_blocks(body)
+    body_lines = {line.strip() for line in body_for_headers.splitlines()}
     for section in REQUIRED_HINT_SECTIONS:
         if section not in body_lines:
             errors.append(
