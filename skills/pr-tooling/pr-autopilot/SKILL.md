@@ -106,6 +106,19 @@ Phase 5 — Report
   always use `--paginate` (or the equivalent for the platform).
   Default page sizes silently truncate long lists; missing a page
   means missing feedback.
+- **Never skip or shorten the wait cycle on the basis of repo
+  inspection.** The 10-minute `ScheduleWakeup` (or manual-sleep
+  equivalent) between iterations is MANDATORY. It cannot be bypassed
+  because the repo has no visible `.github/workflows/`, because
+  prior PRs show no bot activity, because the repo is personal or a
+  fork, because the only PR comment is the orchestrator's own
+  `/code-review` post, or because the session is interactive.
+  Reviewer latency — Copilot code review, org-level policies,
+  SonarCloud, human reviewers — is invisible until a comment lands.
+  The only legitimate bypasses are the explicit user flags
+  `--no-wait` (on `pr-autopilot`) or the `no_wait_first_iteration`
+  set by `pr-followup`. See `pr-loop-lib/steps/01-wait-cycle.md`
+  "No assumption-based skip".
 
 ## Security
 

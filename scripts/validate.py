@@ -1,22 +1,30 @@
 #!/usr/bin/env python3
-"""Structural validation for the pr-autopilot / pr-followup skill files.
+"""Structural validation for the installable skill files in this repo.
 
 Checks:
-  1. Every .md file under pr-autopilot/, pr-followup/, pr-loop-lib/ parses as
-     valid UTF-8. Placeholder-marker scan flags unfinished section markers
-     appearing at the **start of a line** (outside fenced code blocks):
-     `[TBD]`, `TODO: `, `[fill in ...`, `XXX `. Inline prose mentioning
-     those strings (e.g., describing what the validator rejects) is not
-     flagged — the check targets markers left behind in an actual draft.
+  1. Every .md file under every discovered skill root parses as valid UTF-8.
+     Placeholder-marker scan flags unfinished section markers appearing at
+     the **start of a line** (outside fenced code blocks): `[TBD]`, `TODO: `,
+     `[fill in ...`, `XXX `. Inline prose mentioning those strings
+     (e.g., describing what the validator rejects) is not flagged — the
+     check targets markers left behind in an actual draft.
   2. Every SKILL.md starts with YAML frontmatter containing at least `name`
      and `description` fields. Frontmatter detection tolerates both LF and
      CRLF line endings (Windows checkouts).
   3. Relative file references inside each .md that look like skill-internal
      includes — `steps/NN-*.md`, `references/*.md`, `platform/*.md`, or the
-     repo-relative form `pr-(autopilot|followup|loop-lib)/...` — actually
-     resolve to a real file on disk, and the resolved path is contained
-     within the repo root (`..` traversal that escapes the repo is a bug).
-     Absolute `~/.claude/skills/...` references are validated the same way.
+     repo-relative form `<skill-root-name>/...` — actually resolve to a real
+     file on disk, and the resolved path is contained within the repo root
+     (`..` traversal that escapes the repo is a bug). Absolute
+     `~/.claude/skills/...` references are validated the same way.
+
+Skill roots are discovered dynamically: any directory under `skills/**` that
+contains at least one `.md` file *directly* (not only in subdirectories) is
+a skill root. Umbrella directories that only contain subdirectories (like
+`skills/pr-tooling/`) are transparent — the walk descends through them.
+This covers both real skills (which have `SKILL.md` plus step/reference
+files) and skill-support libs like `pr-loop-lib` (which have step/reference
+files but no `SKILL.md`). Adding a new skill requires zero validator edits.
 
 Exit non-zero on any failure with a per-file diagnostic.
 """
@@ -26,7 +34,7 @@ import re
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-SKILL_ROOTS = ["pr-autopilot", "pr-followup", "pr-loop-lib"]
+SKILLS_DIR = REPO / "skills"
 # Spec/plan documents are also scanned for placeholder and reference rot.
 # They do not have SKILL.md frontmatter requirements but share the same
 # placeholder and relative-reference checks.
@@ -43,13 +51,6 @@ PLACEHOLDER_PATTERNS = [
 ]
 # Exclude matches inside fenced code blocks (``` ... ```).
 FENCED_BLOCK = re.compile(r"```.*?```", re.DOTALL)
-REL_REF = re.compile(
-    r"`("
-    r"(?:steps|references|platform)/[A-Za-z0-9._/-]+\.md"   # skill-root-relative
-    r"|"
-    r"pr-(?:autopilot|followup|loop-lib)/[A-Za-z0-9._/-]+\.md"  # repo-relative
-    r")`"
-)
 HOME_REF = re.compile(
     r"`(~/\.claude/skills/[A-Za-z0-9._/-]+\.md)`"
 )
@@ -61,6 +62,44 @@ FRONTMATTER = re.compile(
     r"\A---\s*\r?\n(.*?\r?\n)---\s*(?:\r?\n|\Z)", re.DOTALL
 )
 
+
+def discover_skill_roots() -> dict[str, pathlib.Path]:
+    """Walk `skills/**` and return a mapping of skill-root-name -> absolute path.
+
+    A skill root is the topmost directory under `skills/` that directly
+    contains at least one `.md` file. Umbrella dirs (only subdirs, no
+    `.md` files directly) are transparent — the walk descends through
+    them. Once a directory qualifies as a skill root, the walk does NOT
+    descend into it — subdirectories like `steps/`, `references/`, and
+    `platform/` belong to the skill, they are not peer skills.
+    """
+    roots: dict[str, pathlib.Path] = {}
+    if not SKILLS_DIR.exists():
+        return roots
+
+    def walk(path: pathlib.Path) -> None:
+        if any(c.suffix == ".md" and c.is_file() for c in path.iterdir()):
+            # Ambiguity guard: two skills with the same basename would
+            # shadow each other in repo-relative reference resolution.
+            # That is a layout bug, not a validator bug — refuse to
+            # silently pick one.
+            if path.name in roots and roots[path.name] != path:
+                raise SystemExit(
+                    f"duplicate skill-root name {path.name!r}: "
+                    f"{roots[path.name]} and {path}"
+                )
+            roots[path.name] = path
+            return
+        for child in path.iterdir():
+            if child.is_dir():
+                walk(child)
+
+    for child in SKILLS_DIR.iterdir():
+        if child.is_dir():
+            walk(child)
+    return roots
+
+
 def _mask_code_blocks(text: str) -> str:
     """Replace fenced code-block content with equivalent-length whitespace
     so offsets (line numbers) are preserved but code contents are not scanned."""
@@ -69,7 +108,32 @@ def _mask_code_blocks(text: str) -> str:
         return re.sub(r"[^\n]", " ", s)
     return FENCED_BLOCK.sub(repl, text)
 
-def check_file(path: pathlib.Path) -> list[str]:
+
+def build_rel_ref_pattern(skill_root_names: list[str]) -> re.Pattern[str]:
+    """Build the REL_REF regex from the discovered skill-root names."""
+    # Alternation must be regex-safe; sort longest-first so "pr-loop-lib"
+    # wins over a hypothetical prefix match. Escape for literal matching.
+    alternation = "|".join(
+        re.escape(n) for n in sorted(skill_root_names, key=len, reverse=True)
+    )
+    if not alternation:
+        # No skills discovered — match nothing rather than `(?:)/...` which
+        # would accidentally match any path.
+        alternation = "(?!x)x"  # never matches
+    return re.compile(
+        r"`("
+        r"(?:steps|references|platform)/[A-Za-z0-9._/-]+\.md"   # skill-root-relative
+        r"|"
+        rf"(?:{alternation})/[A-Za-z0-9._/-]+\.md"              # repo-relative
+        r")`"
+    )
+
+
+def check_file(
+    path: pathlib.Path,
+    skill_roots: dict[str, pathlib.Path],
+    rel_ref: re.Pattern[str],
+) -> list[str]:
     errors: list[str] = []
     try:
         text = path.read_text(encoding="utf-8")
@@ -92,12 +156,12 @@ def check_file(path: pathlib.Path) -> list[str]:
             if "description:" not in fm:
                 errors.append(f"{path}: frontmatter missing `description`")
     # Walk up from the current file to find the nearest skill-root
-    # (pr-autopilot / pr-followup / pr-loop-lib). References like
-    # `steps/...`, `references/...`, `platform/...` resolve against this
-    # root, not against the current file's directory.
+    # directory (by name). References like `steps/...`, `references/...`,
+    # `platform/...` resolve against this root, not against the current
+    # file's directory.
     skill_root = None
     for ancestor in path.parents:
-        if ancestor.name in SKILL_ROOTS:
+        if ancestor.name in skill_roots and skill_roots[ancestor.name] == ancestor:
             skill_root = ancestor
             break
     repo_resolved = REPO.resolve()
@@ -107,21 +171,22 @@ def check_file(path: pathlib.Path) -> list[str]:
             return True
         except ValueError:
             return False
-    for m in REL_REF.finditer(text):
+    for m in rel_ref.finditer(text):
         rel = m.group(1)
-        # If the reference already starts with a skill root name, resolve it
-        # from the repo root. Otherwise try relative to the current skill
-        # root, the current file's dir, and each other skill root.
+        # If the reference already starts with a skill-root name, resolve it
+        # against that skill's actual location under `skills/**`. Otherwise
+        # try relative to the current skill root, the current file's dir,
+        # and each other skill root.
         candidates = []
-        first_segment = rel.split("/", 1)[0]
-        if first_segment in SKILL_ROOTS:
-            candidates.append((REPO / rel).resolve())
+        first_segment, _, remainder = rel.partition("/")
+        if first_segment in skill_roots:
+            candidates.append((skill_roots[first_segment] / remainder).resolve())
         else:
             if skill_root is not None:
                 candidates.append((skill_root / rel).resolve())
             candidates.append((path.parent / rel).resolve())
-            for other_root_name in SKILL_ROOTS:
-                candidates.append((REPO / other_root_name / rel).resolve())
+            for other_root_path in skill_roots.values():
+                candidates.append((other_root_path / rel).resolve())
         # Only accept a candidate that both exists AND lives inside the repo.
         # References with enough `..` segments to escape the repo root are
         # always rejected as an out-of-tree reference.
@@ -136,32 +201,39 @@ def check_file(path: pathlib.Path) -> list[str]:
                 errors.append(f"{path}:{line} missing reference: {rel}")
     for m in HOME_REF.finditer(text):
         ref = m.group(1).replace("~/.claude/skills/", "")
-        target = (REPO / ref).resolve()
+        first_segment, _, remainder = ref.partition("/")
+        if first_segment in skill_roots:
+            target = (skill_roots[first_segment] / remainder).resolve()
+        else:
+            # Not a name we know about — report as missing rather than
+            # silently accepting.
+            target = (REPO / ref).resolve()
         if not target.exists() or not _is_within_repo(target):
             line = text[: m.start()].count("\n") + 1
             errors.append(f"{path}:{line} missing home-ref: {m.group(1)}")
     return errors
 
+
 def main() -> int:
+    skill_roots = discover_skill_roots()
+    rel_ref = build_rel_ref_pattern(list(skill_roots.keys()))
     all_errors: list[str] = []
-    for root_name in SKILL_ROOTS:
-        root = REPO / root_name
-        if not root.exists():
-            continue
-        for path in sorted(root.rglob("*.md")):
-            all_errors.extend(check_file(path))
+    for root_path in skill_roots.values():
+        for path in sorted(root_path.rglob("*.md")):
+            all_errors.extend(check_file(path, skill_roots, rel_ref))
     for root_name in DOC_ROOTS:
         root = REPO / root_name
         if not root.exists():
             continue
         for path in sorted(root.rglob("*.md")):
-            all_errors.extend(check_file(path))
+            all_errors.extend(check_file(path, skill_roots, rel_ref))
     if all_errors:
         for e in all_errors:
             print(e, file=sys.stderr)
         return 1
     print("OK")
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())
