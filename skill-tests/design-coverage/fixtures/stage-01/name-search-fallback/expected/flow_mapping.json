@@ -1,0 +1,10 @@
+{
+  "figma_url": "https://figma.com/example",
+  "locator_method": "name-search",
+  "confidence": "medium",
+  "refused_reason": null,
+  "mappings": [
+    {"figma_frame_id": "F1", "android_destination": "ClientProfileScreen", "score": 2},
+    {"figma_frame_id": "F2", "android_destination": "ClientProfileScreen", "score": 2}
+  ]
+}

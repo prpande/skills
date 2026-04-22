@@ -1,0 +1,10 @@
+{
+  "summary": [
+    {"severity": "error", "message": "AppointmentNotes screen missing", "screen": "AppointmentNotes"},
+    {"severity": "info", "message": "AppointmentDetails covered", "screen": "AppointmentDetails"}
+  ],
+  "matrix": [
+    {"figma_frame": "F1-AppointmentDetails", "android_screen": "AppointmentDetails", "status": "present"},
+    {"figma_frame": "F2-AppointmentNotes", "android_screen": null, "status": "missing"}
+  ]
+}

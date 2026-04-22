@@ -1,0 +1,7 @@
+{
+  "figma_url": "https://figma.com/example",
+  "locator_method": "refused",
+  "confidence": "low",
+  "refused_reason": "Figma frames are all default-named; rename frames or pass --old-flow",
+  "mappings": []
+}

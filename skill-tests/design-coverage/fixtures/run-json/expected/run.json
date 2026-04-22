@@ -1,0 +1,27 @@
+{
+  "flow_slug": "appointment-details",
+  "started_at": "2026-04-14T10:00:00Z",
+  "stages": {
+    "1": {
+      "status": "completed"
+    },
+    "2": {
+      "status": "completed"
+    },
+    "3": {
+      "status": "completed"
+    },
+    "4": {
+      "status": "in_progress"
+    },
+    "5": {
+      "status": "pending"
+    },
+    "6": {
+      "status": "refused"
+    }
+  },
+  "platform": "agnostic",
+  "hint_source": "agnostic",
+  "skill_version": "test-sha"
+}

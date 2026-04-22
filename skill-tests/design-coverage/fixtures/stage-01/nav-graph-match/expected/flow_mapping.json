@@ -1,0 +1,11 @@
+{
+  "figma_url": "https://figma.com/example",
+  "locator_method": "nav-graph",
+  "confidence": "high",
+  "refused_reason": null,
+  "mappings": [
+    {"figma_frame_id": "F1", "android_destination": "appointmentDetails", "score": 2},
+    {"figma_frame_id": "F2", "android_destination": "appointmentDetails", "score": 2},
+    {"figma_frame_id": "F3", "android_destination": "appointmentDetails", "score": 2}
+  ]
+}

@@ -1,0 +1,4 @@
+[
+  {"symbol": "ClientProfileScreen", "file": "ClientProfileScreen.kt", "kind": "composable"},
+  {"symbol": "ClientProfileFragment", "file": "ClientProfileFragment.kt", "kind": "fragment"}
+]

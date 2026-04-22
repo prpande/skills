@@ -1,0 +1,6 @@
+{
+  "frames": [
+    {"id": "F1", "name": "ClientProfileHeader"},
+    {"id": "F2", "name": "ClientProfileBody"}
+  ]
+}

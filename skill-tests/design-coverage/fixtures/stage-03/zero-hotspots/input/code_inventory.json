@@ -1,0 +1,8 @@
+{
+  "items": [
+    {"id": "s1", "kind": "screen", "title": "A", "parent_id": null,
+     "source": {"surface": "compose", "file": "a.kt", "line": 1, "symbol": "A"},
+     "hotspot": null, "confidence": "high", "notes": null}
+  ],
+  "unwalked_destinations": []
+}
