@@ -3,3 +3,7 @@
 
 # pr-autopilot ephemeral state
 .pr-autopilot/
+
+# Python bytecode
+__pycache__/
+*.pyc
