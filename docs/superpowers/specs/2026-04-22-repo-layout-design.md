@@ -1,7 +1,7 @@
 # Repo layout: type-first reorganization
 
 **Date:** 2026-04-22
-**Status:** Approved design, pending implementation plan
+**Status:** Approved design, implementation plan present, implemented
 **Author:** @prpande
 
 ## Problem
