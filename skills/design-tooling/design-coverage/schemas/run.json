@@ -1,0 +1,63 @@
+{
+  "$id": "run.json",
+  "type": "object",
+  "required": ["flow_slug", "started_at", "stages", "platform", "hint_source", "skill_version"],
+  "properties": {
+    "flow_slug": {"type": "string", "minLength": 1},
+    "started_at": {"type": "string", "minLength": 1},
+    "platform": {"type": "string", "minLength": 1},
+    "hint_source": {
+      "type": "string",
+      "enum": ["detection", "flag", "user-prompt", "scout-generated", "agnostic"]
+    },
+    "skill_version": {"type": "string", "minLength": 1},
+    "stages": {
+      "type": "object",
+      "required": ["1", "2", "3", "4", "5", "6"],
+      "properties": {
+        "1": {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "refused", "failed"]}
+          }
+        },
+        "2": {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "refused", "failed"]}
+          }
+        },
+        "3": {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "refused", "failed"]}
+          }
+        },
+        "4": {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "refused", "failed"]}
+          }
+        },
+        "5": {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "refused", "failed"]}
+          }
+        },
+        "6": {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "refused", "failed"]}
+          }
+        }
+      }
+    }
+  }
+}

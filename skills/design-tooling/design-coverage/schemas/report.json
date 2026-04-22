@@ -1,0 +1,31 @@
+{
+  "$id": "report.json",
+  "type": "object",
+  "required": ["summary", "matrix"],
+  "properties": {
+    "summary": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "message"],
+        "properties": {
+          "severity": {"type": "string", "enum": ["info", "warn", "error"]},
+          "message": {"type": "string", "minLength": 1},
+          "screen": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "matrix": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["figma_frame", "android_screen", "status"],
+        "properties": {
+          "figma_frame": {"type": "string", "minLength": 1},
+          "android_screen": {"type": ["string", "null"]},
+          "status": {"type": "string", "enum": ["present", "missing", "new-in-figma", "restructured"]}
+        }
+      }
+    }
+  }
+}
