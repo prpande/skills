@@ -75,8 +75,9 @@ for hint in sorted(platforms_dir.glob("*.md")):
         elif line.startswith("detect:"):
             in_detect = True
         elif in_detect:
-            if line.startswith("- "):
-                detect_globs.append(line[2:].strip().strip('"'))
+            stripped = line.lstrip()
+            if stripped.startswith("- "):
+                detect_globs.append(stripped[2:].strip().strip('"'))
             elif line and not line[0].isspace():
                 in_detect = False
     for g in detect_globs:
