@@ -8,6 +8,8 @@ User-level Claude Code skills maintained by @prpande.
 |---|---|
 | [`pr-autopilot`](./skills/pr-tooling/pr-autopilot/SKILL.md) | Autonomously publish a PR and drive it through the reviewer-bot feedback loop until CI is green. |
 | [`pr-followup`](./skills/pr-tooling/pr-followup/SKILL.md) | Re-enter the same comment loop later when human or late bot comments arrive. |
+| [`design-coverage`](./skills/design-tooling/design-coverage/SKILL.md) | Compare an existing in-code UI flow against a new Figma design and produce an auditable discrepancy report. |
+| [`design-coverage-scout`](./skills/design-tooling/design-coverage-scout/SKILL.md) | Companion skill that inspects an unfamiliar repo and emits a new `platforms/<name>.md` hint file for `design-coverage`. |
 
 ## Supporting library
 
@@ -26,23 +28,29 @@ Standalone prompts you can paste into a Claude conversation — no install step.
 
 - [2026-04-17 pr-autopilot skill design](./docs/superpowers/specs/2026-04-17-pr-autopilot-skill-design.md)
 - [2026-04-17 pr-autopilot skill implementation plan](./docs/superpowers/plans/2026-04-17-pr-autopilot-skill-implementation.md)
+- [2026-04-22 design-coverage platform-agnostic design](./docs/superpowers/specs/2026-04-22-design-coverage-platform-agnostic-design.md)
+- [2026-04-22 design-coverage platform-agnostic implementation plan](./docs/superpowers/plans/2026-04-22-design-coverage-platform-agnostic.md)
 
 ## Installation
 
 Symlink (or copy) each skill folder into `~/.claude/skills/`:
 
 ```bash
-ln -s "$PWD/skills/pr-tooling/pr-autopilot"  "$HOME/.claude/skills/pr-autopilot"
-ln -s "$PWD/skills/pr-tooling/pr-followup"   "$HOME/.claude/skills/pr-followup"
-ln -s "$PWD/skills/pr-tooling/pr-loop-lib"   "$HOME/.claude/skills/pr-loop-lib"
+ln -s "$PWD/skills/pr-tooling/pr-autopilot"              "$HOME/.claude/skills/pr-autopilot"
+ln -s "$PWD/skills/pr-tooling/pr-followup"               "$HOME/.claude/skills/pr-followup"
+ln -s "$PWD/skills/pr-tooling/pr-loop-lib"               "$HOME/.claude/skills/pr-loop-lib"
+ln -s "$PWD/skills/design-tooling/design-coverage"       "$HOME/.claude/skills/design-coverage"
+ln -s "$PWD/skills/design-tooling/design-coverage-scout" "$HOME/.claude/skills/design-coverage-scout"
 ```
 
 On Windows with Git Bash, use `cmd //c mklink /D` or copy:
 
 ```bash
-cp -r skills/pr-tooling/pr-autopilot   "$HOME/.claude/skills/pr-autopilot"
-cp -r skills/pr-tooling/pr-followup    "$HOME/.claude/skills/pr-followup"
-cp -r skills/pr-tooling/pr-loop-lib    "$HOME/.claude/skills/pr-loop-lib"
+cp -r skills/pr-tooling/pr-autopilot              "$HOME/.claude/skills/pr-autopilot"
+cp -r skills/pr-tooling/pr-followup               "$HOME/.claude/skills/pr-followup"
+cp -r skills/pr-tooling/pr-loop-lib               "$HOME/.claude/skills/pr-loop-lib"
+cp -r skills/design-tooling/design-coverage       "$HOME/.claude/skills/design-coverage"
+cp -r skills/design-tooling/design-coverage-scout "$HOME/.claude/skills/design-coverage-scout"
 ```
 
 After installation, restart your Claude Code session. The skills appear in
