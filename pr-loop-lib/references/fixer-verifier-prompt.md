@@ -123,12 +123,16 @@ substituted into every `{{NONCE}}` occurrence in the template above.
 ### Generation
 
 ```bash
-NONCE=$(printf '%08x' $((RANDOM * RANDOM)))
+NONCE=$(printf '%08x' $(( (RANDOM << 15) | RANDOM )))
 ```
 
 Uses Bash builtins only — no `uuidgen`, no `jq`, no external dependency.
-Bash's `RANDOM` provides ~15 bits per call; squaring two gives ~30
-bits, sufficient for delimiter uniqueness in non-adversarial content.
+Bash's `RANDOM` provides ~15 bits per call; OR-ing two 15-bit values after a
+15-bit left-shift gives 30 bits of **uniformly distributed** entropy across the
+full `[0, 2^30)` range. The previous `RANDOM * RANDOM` formulation also gave
+~30 bits but with a skewed product distribution (more mass near zero) and the
+additional constraint that the top 2 hex digits were always `00`–`3f`. The new
+form fills all 30 bits uniformly, making the nonce harder to enumerate.
 
 ### Collision check (pre-interpolation)
 
@@ -166,7 +170,7 @@ collided_slot=$(scan_slots)
 if [ -n "$collided_slot" ]; then
   # First collision — regenerate the nonce once and re-scan all three
   # slots with the new nonce.
-  NONCE=$(printf '%08x' $((RANDOM * RANDOM)))
+  NONCE=$(printf '%08x' $(( (RANDOM << 15) | RANDOM )))
   collided_slot=$(scan_slots)
 fi
 

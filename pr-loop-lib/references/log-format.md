@@ -73,6 +73,7 @@ Rules:
 | `code_review_rescue_failed` | `{author, body_prefix}` — emitted by Filter B.5 Stage 1 in step 03 when a top-level self-authored comment (Stage 1 is already gated on `author == context.self_login`) fails the tolerant rescue regex BUT contains at least one `github.com/.../blob/<sha>/path#L<n>` finding-anchor URL — the positive heuristic that the body was likely drifted `/code-review` output rather than an ordinary self-reply. `body_prefix` is the first 200 chars of the body. (The α-era "author matches known-bots list" wording was unreachable inside Stage 1's self_login gate — a skill's self_login is by construction not a known-bot login.) |
 | `triage_dedup_miss` | `{candidate_lead, closest_preflight_lead, author}` — emitted by Filter B.5 when a candidate does NOT dedup against any preflight finding AND the candidate's author is in the known-bots list AND `context.preflight_passes.merged` is non-empty. (Preflight findings have no `author` field — they come from our own Sonnet subagent — so the α-era "same author" condition was unfireable; the actual discriminator is "candidate is automated AND preflight had findings worth comparing against".) Both leads are the normalized-and-truncated lead-paragraph strings (not their hashes) so the miss is diagnosable |
 | `verifier_nonce_collision` | `{slot, body_sample}` — emitted by the verifier prompt renderer when raw content in one of the untrusted slots contains the nonce literal. `slot` is `feedback` / `reason` / `diff`; `body_sample` is the first 200 chars of the offending input. First collision triggers nonce regeneration; a second collision aborts the verifier call |
+| `fixer_nonce_collision` | `{}` — emitted by the fixer dispatch when the comment body contains the fixer nonce literal. Distinct from `verifier_nonce_collision` (which covers the verifier's three slots). First collision triggers nonce regeneration; a second collision escalates the dispatch unit to `needs-human` |
 | `wait_clamped` | `{requested_minutes, effective_minutes, reason}` — emitted by `pr-loop-lib/steps/01-wait-cycle.md` when `context.wait_override_minutes` is less than the 10-minute floor and gets clamped up. `requested_minutes` is the raw user input, `effective_minutes` is always 10. `reason` is a short string explaining the floor (e.g., `"reviewer-bot response window"`). Informational only — the loop continues with the clamped value |
 
 ## Truncation
@@ -112,14 +113,20 @@ file exceeds 10 MB (check via `wc -c < "<path>"`):
 ```bash
 LOG="<repo_root>/.pr-autopilot/pr-<PR>.log"
 if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 10485760 ]; then
-  # Order matters: rename the compressed backup to its final name BEFORE
-  # truncating the live log. If gzip or mv fails, the live log is
-  # preserved rather than truncated against a missing backup.
-  if gzip -k "$LOG" && mv "$LOG.gz" "$LOG.1.gz"; then
-    : > "$LOG"
+  # Atomic rotation: mv the live log first (POSIX rename is atomic —
+  # after mv, any new printf appends open a fresh inode at $LOG, so no
+  # records are lost). Then compress the moved copy. If gzip fails,
+  # the records are still in $LOG.prev.$$ — warn and leave it for the
+  # operator rather than silently discarding them.
+  mv "$LOG" "$LOG.prev.$$"
+  if gzip -c "$LOG.prev.$$" > "$LOG.1.gz.tmp.$$" \
+       && mv "$LOG.1.gz.tmp.$$" "$LOG.1.gz"; then
+    rm -f "$LOG.prev.$$"
   else
-    echo "log rotation failed; live log preserved" >&2
-    rm -f "$LOG.gz"  # clean up any orphaned intermediate
+    echo "log rotation compression failed; prior log preserved as ${LOG}.prev.$$" >&2
+    rm -f "$LOG.1.gz.tmp.$$"
+    # Do NOT restore $LOG.prev.$$ to $LOG — a new $LOG may already
+    # have started accumulating records. Operator must merge manually.
   fi
 fi
 ```

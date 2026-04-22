@@ -6,8 +6,18 @@ iteration.
 
 ## Filter A — New since last push
 
-Keep a comment only if
-`max(created_at, updated_at) > max(context.last_push_timestamp, context.last_handled_timestamp)`.
+All timestamps are **Unix epoch integers** (seconds) as stored by step 02.
+Keep a comment only if:
+
+```
+max(created_at, updated_at ?? 0) > max(last_push_timestamp, last_handled_timestamp)
+```
+
+String comparison is NOT used — epoch integers are compared numerically.
+`context.last_push_timestamp` and `context.last_handled_timestamp` are also
+epoch integers; see `pr-loop-lib/steps/06-commit-push.md` (set from
+`git log -1 --format=%ct`) and `pr-loop-lib/steps/08-quiescence-check.md`
+(set from `date +%s`).
 
 `last_push_timestamp` advances when step 06 pushes a fix commit.
 `last_handled_timestamp` advances when step 07 posts refusal replies for
@@ -63,6 +73,16 @@ self-replies. This sub-step rescues legitimate reviewer output, then
 deduplicates its findings against preflight.
 
 ### Stage 1 — Tolerant rescue
+
+**Precondition:** Only run Stage 1 if `context.code_review_invoked == false`.
+When `code_review_invoked` is true, the `/code-review` output was captured
+internally by step 04g and never posted to the PR — so a self-authored comment
+matching the heading regex is a genuine regression (S04g.1 should have caught
+it). Do NOT rescue it; log a `code_review_rescue_skipped` event instead and
+treat the comment as an ordinary self-reply drop. This prevents double-dispatch:
+findings already processed by 04g would not be in `preflight_passes.merged`,
+so Stage 2's dedup would not catch them, and they would be re-dispatched to
+fixers a second time.
 
 For each comment where `author == context.self_login` AND `surface ==
 issue`, test the body against a **case-insensitive heading regex**
@@ -142,7 +162,21 @@ identically on both sides:
 2. Take the lead paragraph — everything up to the first blank line.
 3. Lowercase and collapse whitespace to single spaces.
 4. Truncate to 200 characters.
-5. SHA-1; hex string.
+5. SHA-256; hex string. Use `sha256sum` (Linux/Git-Bash) with `shasum -a 256`
+   (macOS) as a portable fallback — both ship with their respective OS and
+   require no extra installation:
+   ```bash
+   _desc_hash() {
+     if command -v sha256sum >/dev/null 2>&1; then
+       printf '%s' "$1" | sha256sum | cut -c1-64
+     else
+       printf '%s' "$1" | shasum -a 256 | cut -c1-64
+     fi
+   }
+   ```
+   SHA-1 is avoided here because chosen-prefix collisions (~2^61 ops) could
+   let an adversary craft a bot comment that hashes to the same value as a
+   preflight finding, silently suppressing it via a false dedup hit.
 
 The preflight side stores this same hash as
 `preflight_passes.merged[].description_hash` in step 02 (see

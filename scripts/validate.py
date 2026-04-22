@@ -27,6 +27,10 @@ import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 SKILL_ROOTS = ["pr-autopilot", "pr-followup", "pr-loop-lib"]
+# Spec/plan documents are also scanned for placeholder and reference rot.
+# They do not have SKILL.md frontmatter requirements but share the same
+# placeholder and relative-reference checks.
+DOC_ROOTS = ["docs"]
 # Placeholder patterns should only fire on *unfinished section markers*,
 # not on the strings when they appear as literal content being discussed
 # (e.g., "PR Author TODO:" is a repo convention we reject, not a placeholder
@@ -141,6 +145,12 @@ def check_file(path: pathlib.Path) -> list[str]:
 def main() -> int:
     all_errors: list[str] = []
     for root_name in SKILL_ROOTS:
+        root = REPO / root_name
+        if not root.exists():
+            continue
+        for path in sorted(root.rglob("*.md")):
+            all_errors.extend(check_file(path))
+    for root_name in DOC_ROOTS:
         root = REPO / root_name
         if not root.exists():
             continue

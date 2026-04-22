@@ -144,8 +144,16 @@ this step retries a commit, emit a fresh event per retry.
 ## Push
 
 ```bash
-git push
+git push origin HEAD
 ```
+
+Explicit `origin HEAD` is required. Bare `git push` is configuration-dependent:
+with `push.default=matching` (Git 1.x default) it pushes ALL matching local
+branches; with `push.default=nothing` it exits non-zero with no refspec pushed;
+with `push.default=simple` it errors if no tracking upstream is set. `git push
+origin HEAD` is safe regardless of configuration and does not require the
+tracking upstream to be set (which may not be true when `pr-followup` re-enters
+without going through step 04's `git push -u origin <branch>`).
 
 No `--force`. No `--no-verify`.
 
@@ -153,9 +161,10 @@ No `--force`. No `--no-verify`.
 
 After successful push:
 ```
-context.last_push_timestamp = <committer timestamp of new commit>
-context.last_push_sha = <HEAD SHA after push>
+context.last_push_timestamp = $(git log -1 --format=%ct)  # Unix epoch seconds
+context.last_push_sha = $(git rev-parse HEAD)
 ```
 
-This is how step 03's Filter A distinguishes "new since last push" on the
-next iteration.
+`%ct` gives the committer timestamp as a Unix epoch integer — the same format
+step 02 stores for comment timestamps. Filter A in step 03 compares all
+timestamps numerically (epoch integers); never store ISO-8601 strings here.

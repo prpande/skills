@@ -102,7 +102,7 @@ printf '%s' "$payload" > "$state.tmp.$$" && mv "$state.tmp.$$" "$state"
 
 On POSIX filesystems (ext4, APFS, NTFS-via-Linux-WSL), `rename(2)` is atomic when source and destination are on the same filesystem; keeping the temp file next to the target guarantees that. On native Windows / NTFS, `mv` over an existing file is not strictly atomic (the OS performs delete-then-rename), but it is the best portable approximation and is strictly better than a half-finished Write-tool call.
 
-Honest caveat to include in the doc: *"On Windows / NTFS this sequence is not strictly atomic; a crash between delete and rename can leave the state file missing. The recovery path — detect a missing state file on next step entry, restore from the latest log record — is already covered by the state-protocol's `log-replay` rule."*
+Honest caveat to include in the doc: *"On Windows / NTFS this sequence is not strictly atomic; a crash between delete and rename can leave the state file missing. A missing state file is NOT recoverable via log replay — `state_write` log events record only `changed_keys`, not field values, so the log is a change-audit trail, not a state snapshot. The skill halts on next step entry with a diagnostic instructing the operator to delete `.pr-autopilot/` and re-invoke from scratch."*
 
 ### Migration
 
