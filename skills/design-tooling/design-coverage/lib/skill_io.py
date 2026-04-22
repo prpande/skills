@@ -28,7 +28,7 @@ def read_json(path: Path) -> Optional[Any]:
     path = Path(path)
     if not path.exists():
         return None
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 def new_run_dir(base: Path, date: str, slug: str) -> Path:
     d = Path(base) / f"{date}-{slug}"

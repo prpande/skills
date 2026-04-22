@@ -9,7 +9,7 @@ structural chars inert without losing the content.
 import re
 
 _HR_LINE = re.compile(r"^\s*---\s*$")
-_STAGE_HEADER = re.compile(r"^##\s+0[1-3]\s")
+_STAGE_HEADER = re.compile(r"^##\s+0[1-3](\s|$)")
 
 
 def sanitize_section(text: str) -> str:

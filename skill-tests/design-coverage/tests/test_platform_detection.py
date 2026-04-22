@@ -104,3 +104,31 @@ def test_detects_none(tmp_path: pathlib.Path) -> None:
     repo.mkdir()
     (repo / "README.md").write_text("")
     assert detect_platforms(repo, platforms) == []
+
+
+def test_anchored_multi_segment_glob_matches(tmp_path: pathlib.Path) -> None:
+    """An anchored multi-segment glob like `app/build.gradle` (no leading `**/`)
+    should match when the nested file exists. Pre-fix, detect_match bailed at
+    depth>0 for any anchored pattern, so multi-segment anchored patterns
+    silently never matched.
+    """
+    platforms = tmp_path / "platforms"
+    make_hint(platforms, "android-anchored", ["app/build.gradle"])
+    repo = tmp_path / "repo"
+    (repo / "app").mkdir(parents=True)
+    (repo / "app" / "build.gradle").write_text("")
+    assert detect_platforms(repo, platforms) == ["android-anchored"]
+
+
+def test_anchored_multi_segment_glob_misses_when_nested_file_absent(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Anchored multi-segment pattern must only match at the declared depth,
+    not opportunistically somewhere deeper."""
+    platforms = tmp_path / "platforms"
+    make_hint(platforms, "android-anchored", ["app/build.gradle"])
+    repo = tmp_path / "repo"
+    # Nested deeper than the anchor — should NOT match.
+    (repo / "modules" / "app" / "build.gradle").parent.mkdir(parents=True)
+    (repo / "modules" / "app" / "build.gradle").write_text("")
+    assert detect_platforms(repo, platforms) == []

@@ -126,7 +126,9 @@ Ask the user, directly in this session:
 
 ```bash
 cd ~/.claude/skills/design-coverage/
-FLOW_SLUG=$(python -c "import sys; sys.path.insert(0, 'lib'); from slugify import slugify; print(slugify('<flow-name>'))")
+# Pass the flow name via env var so apostrophes / quotes / `$` in the value
+# don't break the inline `python -c` invocation.
+FLOW_SLUG=$(FLOW_NAME="<flow-name>" python -c "import sys, os; sys.path.insert(0, 'lib'); from slugify import slugify; print(slugify(os.environ['FLOW_NAME']))")
 RUN_DIR="<output-dir>/docs/design-coverage/$(date +%Y-%m-%d)-$FLOW_SLUG"
 mkdir -p "$RUN_DIR"
 ```
