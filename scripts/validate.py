@@ -29,11 +29,19 @@ files but no `SKILL.md`). Adding a new skill requires zero validator edits.
 Exit non-zero on any failure with a per-file diagnostic.
 """
 from __future__ import annotations
+import os
 import pathlib
 import re
 import sys
 
-REPO = pathlib.Path(__file__).resolve().parent.parent
+# Tests can point the validator at a temporary repo tree via this env var.
+# Without it, REPO is resolved from this file's location.
+_REPO_OVERRIDE = os.environ.get("SKILLS_REPO_OVERRIDE")
+REPO = (
+    pathlib.Path(_REPO_OVERRIDE).resolve()
+    if _REPO_OVERRIDE
+    else pathlib.Path(__file__).resolve().parent.parent
+)
 SKILLS_DIR = REPO / "skills"
 # Spec/plan documents are also scanned for placeholder and reference rot.
 # They do not have SKILL.md frontmatter requirements but share the same
@@ -61,6 +69,59 @@ FRONTMATTER = re.compile(
     #     ends with the delimiter followed only by whitespace / EOF)
     r"\A---\s*\r?\n(.*?\r?\n)---\s*(?:\r?\n|\Z)", re.DOTALL
 )
+
+
+REQUIRED_HINT_SECTIONS = [
+    "## 01 Flow locator",
+    "## 02 Code inventory",
+    "## 03 Clarification",
+]
+REQUIRED_HINT_FM_KEYS = {"name", "detect", "description", "confidence"}
+VALID_CONFIDENCE = {"high", "medium", "low"}
+
+
+def validate_hint_file(path: pathlib.Path) -> list[str]:
+    """Return list of error strings for a platforms/*.md hint file.
+
+    Enforces: frontmatter present with required keys (name, detect,
+    description, confidence); `confidence` is one of high/medium/low;
+    body contains the three required section headers.
+    """
+    errors: list[str] = []
+    text = path.read_text(encoding="utf-8")
+    m = FRONTMATTER.match(text)
+    if not m:
+        return [f"{path}: missing frontmatter block"]
+    fm_text = m.group(1)
+    body = text[m.end():]
+    # Minimal frontmatter key extraction — only scalar keys at column 0.
+    keys: dict[str, str] = {}
+    for line in fm_text.splitlines():
+        if not line or line[0].isspace() or line.startswith("-"):
+            continue
+        if ":" in line:
+            k, _, v = line.partition(":")
+            k = k.strip()
+            v = v.strip()
+            if k:
+                keys[k] = v
+    missing = REQUIRED_HINT_FM_KEYS - set(keys)
+    if missing:
+        errors.append(
+            f"{path}: frontmatter missing keys: {sorted(missing)}"
+        )
+    conf = keys.get("confidence", "")
+    if conf and conf not in VALID_CONFIDENCE:
+        errors.append(
+            f"{path}: frontmatter 'confidence' must be one of "
+            f"{sorted(VALID_CONFIDENCE)}, got {conf!r}"
+        )
+    for section in REQUIRED_HINT_SECTIONS:
+        if section not in body:
+            errors.append(
+                f"{path}: missing required section header {section!r}"
+            )
+    return errors
 
 
 def discover_skill_roots() -> dict[str, pathlib.Path]:
@@ -221,6 +282,14 @@ def main() -> int:
     for root_path in skill_roots.values():
         for path in sorted(root_path.rglob("*.md")):
             all_errors.extend(check_file(path, skill_roots, rel_ref))
+    # Hint-frontmatter lint: any .md under platforms/ inside a skill root
+    # (conventionally the design-coverage skill) must satisfy the hint contract.
+    for root_path in skill_roots.values():
+        platforms = root_path / "platforms"
+        if not platforms.is_dir():
+            continue
+        for hint_file in sorted(platforms.glob("*.md")):
+            all_errors.extend(validate_hint_file(hint_file))
     for root_name in DOC_ROOTS:
         root = REPO / root_name
         if not root.exists():
