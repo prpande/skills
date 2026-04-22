@@ -1,6 +1,6 @@
 import hashlib
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 DO_NOT_EDIT_BANNER = "<!-- DO NOT EDIT — regenerated from JSON source of truth -->"
 

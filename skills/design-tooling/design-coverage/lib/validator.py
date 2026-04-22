@@ -13,7 +13,9 @@ class Validator:
     def _load_ref(self, ref: str) -> Dict[str, Any]:
         if ref not in self._cache:
             target = (self.schemas_dir / ref).resolve()
-            if not str(target).startswith(str(self.schemas_dir.resolve())):
+            try:
+                target.relative_to(self.schemas_dir.resolve())
+            except ValueError:
                 raise ValidationError(f"$ref {ref!r} escapes schemas dir")
             try:
                 self._cache[ref] = json.loads(target.read_text())

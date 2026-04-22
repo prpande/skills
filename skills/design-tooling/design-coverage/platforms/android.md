@@ -102,7 +102,7 @@ phases; the concrete patterns are below.
   this; treat identically to StateFlow.
 - **SavedStateHandle.** Grep `SavedStateHandle` and `savedStateHandle.get(`.
   Rows backed by `SavedStateHandle` survive process-death — tag with
-  `hotspot: "process-death"`.
+  `hotspot: {"type": "process-death", "question": "Does this row's post-restore appearance match the Figma?"}`.
 - **sealed class UiState / State.** Grep
   `sealed\s+(class|interface)\s+\w*(UiState|State)\b`. Enumerate the
   subclasses (`Loading`, `Error`, `Content`, `Empty`, ...) as distinct
@@ -131,7 +131,8 @@ phases; the concrete patterns are below.
   `android:text` / `android:src` it renders.
 - **RecyclerView rows.** Grep `class\s+\w+ViewHolder\b`, `onBindViewHolder`,
   `getItemViewType`. A single RecyclerView with multiple view types yields
-  multiple field rows — tag each with `hotspot: "view-type"`.
+  multiple field rows — tag each with
+  `hotspot: {"type": "view-type", "question": "Which view-type variant does the Figma frame represent?"}`.
 - **Compose content blocks.** The body of any `@Composable` is a container
   of fields; emit one row per semantically distinct UI element rendered from
   state (not per Composable call — `Row { Text(); Text() }` is two fields,
@@ -140,18 +141,18 @@ phases; the concrete patterns are below.
 ### Hotspots (tag during discovery)
 
 Set `hotspot` on any row whose anchor implies a runtime branch stage 3 will
-need to resolve:
+need to resolve. `hotspot` is an object `{"type": "<enum>", "question": "<prompt>"}` per `inventory_item.json`; the `type` values below are the full accepted enum (`feature-flag`, `permission`, `server-driven`, `config-qualifier`, `form-factor`, `process-death`, `view-type`, `viewpager-tab`, `sheet-dialog`).
 
 - `feature-flag` — match `FeatureFlags`, `Flags\.`, `isEnabled\(`, `FlagKey`,
   or whatever pattern the host repo actually uses. Discover the repo's own
-  helper names by grepping at stage start; do not hard-code.
-- `permission` — `checkSelfPermission`, `registerForActivityResult\(.*RequestPermission`.
+  helper names by grepping at stage start; do not hard-code. Example emission: `{"type": "feature-flag", "question": "Is flag X on/off for the flows you care about?"}`.
+- `permission` — `checkSelfPermission`, `registerForActivityResult\(.*RequestPermission`. Example: `{"type": "permission", "question": "Assume permission X is granted — is there a denied-branch design?"}`.
 - `server-driven` — fields populated from `Retrofit` / `OkHttp` responses,
-  list adapters backed by paged network data.
+  list adapters backed by paged network data. Example: `{"type": "server-driven", "question": "What variants of response field X does the backend actually return today?"}`.
 - `config-qualifier` — branches that read `Configuration.uiMode`, resources
-  under `values-night/`, `values-ldrtl/`, `values-sw600dp/`.
+  under `values-night/`, `values-ldrtl/`, `values-sw600dp/`. Example: `{"type": "config-qualifier", "question": "Which qualifier is in scope for the Figma frame?"}`.
 - `form-factor` — `resources.configuration.smallestScreenWidthDp`,
-  `isTablet()` helpers.
+  `isTablet()` helpers. Example: `{"type": "form-factor", "question": "Phone or tablet layout?"}`.
 - `process-death` — state backed by `SavedStateHandle`.
 - `view-type` — RecyclerView with multiple `getItemViewType` branches.
 - `viewpager-tab` — `ViewPager2` + `FragmentStateAdapter` where tabs are

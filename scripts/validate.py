@@ -116,8 +116,9 @@ def validate_hint_file(path: pathlib.Path) -> list[str]:
             f"{path}: frontmatter 'confidence' must be one of "
             f"{sorted(VALID_CONFIDENCE)}, got {conf!r}"
         )
+    body_lines = {line.strip() for line in body.splitlines()}
     for section in REQUIRED_HINT_SECTIONS:
-        if section not in body:
+        if section not in body_lines:
             errors.append(
                 f"{path}: missing required section header {section!r}"
             )

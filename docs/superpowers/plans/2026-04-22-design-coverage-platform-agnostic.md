@@ -382,9 +382,9 @@ mkdir -p "$DEST"
 cp "$SRC"/*.json "$DEST/"
 ```
 
-- [ ] **Step 2: Extend `run.json` with new top-level fields**
+- [ ] **Step 2: Extend `run.json` schema with new top-level fields (schema-only; orchestrator does not write this file on day one)**
 
-Read the ported `run.json` and add the three new required fields. Open `skills/design-tooling/design-coverage/schemas/run.json` and add to the `required` array and `properties` block:
+The ported `run.json` schema still describes a stages-tracking file, but on day one the orchestrator does not write this file to disk — stage resume is artifact-based (see spec "Run config artifact (day-one shape)"). We still extend the schema with the three new fields so it stays documentation-true for a future restore of stage-status persistence. Open `skills/design-tooling/design-coverage/schemas/run.json` and add to the `required` array and `properties` block:
 
 ```jsonc
 {
@@ -685,7 +685,7 @@ Store in `context.args`.
 ```python
 import pathlib, re
 platforms_dir = pathlib.Path.home() / ".claude" / "skills" / "design-coverage" / "platforms"
-fm_pat = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+fm_pat = re.compile(r"\A---\s*\r?\n(.*?)\r?\n---\s*\r?\n", re.DOTALL)
 matches = []
 for hint in platforms_dir.glob("*.md"):
     text = hint.read_text(encoding="utf-8")
@@ -714,7 +714,7 @@ print(matches)
 ```
 
 3. Branch on the match count:
-   - **Exactly one** → set `context.platform = matches[0]`, `context.hint_source = "detection"`, log to `run.json`.
+   - **Exactly one** → set `context.platform = matches[0]`, `context.hint_source = "detection"`, log to `00-run-config.json`.
    - **Multiple** → refuse loudly: `"Multiple platform hints match CWD: {matches}. Pass --platform <name> to disambiguate."`
    - **Zero** → unknown-stack branch below.
 
@@ -775,7 +775,7 @@ else:
     lines = hint_text.splitlines()
     start = next(i for i, l in enumerate(lines) if l.strip() == header)
     end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ") and lines[i].strip() != header), len(lines))
-    hint_section = "\n".join(lines[start + 1:end]).strip()
+    hint_section = "\n".join(lines[start + 1:end]).strip("\n")
     injected = f"\n## Platform-specific hints ({platform})\n\n{hint_section}\n"
     composed = core.replace("<!-- PLATFORM_HINTS -->", injected)
 (run_dir / f"{stage_file.stem}-prompt.md").write_text(composed)
@@ -956,7 +956,7 @@ def detect_platforms(cwd: pathlib.Path, platforms_dir: pathlib.Path) -> list[str
     """Replica of the detection logic from SKILL.md — glob each hint's detect
     patterns against cwd and return matching platform names."""
     import re
-    fm_pat = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+    fm_pat = re.compile(r"\A---\s*\r?\n(.*?)\r?\n---\s*\r?\n", re.DOTALL)
     matches = []
     for hint in sorted(platforms_dir.glob("*.md")):
         text = hint.read_text(encoding="utf-8")
@@ -1063,7 +1063,7 @@ def inject_hint(core_prompt: str, hint_text: str, platform: str, stage_num: str)
     lines = hint_text.splitlines()
     start = next(i for i, l in enumerate(lines) if l.strip() == header)
     end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ") and lines[i].strip() != header), len(lines))
-    hint_section = "\n".join(lines[start + 1:end]).strip()
+    hint_section = "\n".join(lines[start + 1:end]).strip("\n")
     injected = f"\n## Platform-specific hints ({platform})\n\n{hint_section}\n"
     return core_prompt.replace("<!-- PLATFORM_HINTS -->", injected)
 

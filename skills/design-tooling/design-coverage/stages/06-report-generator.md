@@ -6,17 +6,17 @@ Join the Stage 5 comparison into a developer-facing report: a coverage matrix (r
 
 ## Resumability
 
-**First action:** read `<run_dir>/run.json`. Skip if `stages["6"].status == "completed"`.
+**First action:** check whether `<run_dir>/06-report.json` already exists. If it does, skip (day-one stage resume is artifact-based; see spec "Run config artifact").
 
 ## Inputs
 
-- `<run_dir>/comparison.json` (Stage 5)
-- `<run_dir>/flow_mapping.json` (Stage 1) — for framing the summary header
-- `<run_dir>/figma_inventory.json` (Stage 4) — for `screenshot_cross_check` references
+- `<run_dir>/05-comparison.json` (Stage 5)
+- `<run_dir>/01-flow-mapping.json` (Stage 1) — for framing the summary header
+- `<run_dir>/04-figma-inventory.json` (Stage 4) — for `screenshot_cross_check` references
 
 ## Output
 
-Write `<run_dir>/report.json`. Schema: [`schemas/report.json`](../schemas/report.json).
+Write `<run_dir>/06-report.json`. Schema: [`schemas/report.json`](../schemas/report.json).
 
 Shape:
 
@@ -31,7 +31,7 @@ Shape:
 }
 ```
 
-Then regenerate `<run_dir>/report.md` via `lib/renderer.py:render_report`. The renderer orders the summary errors-first and prints the matrix as a Markdown table.
+Then regenerate `<run_dir>/06-report.md` via `lib/renderer.py:render_report`. The renderer orders the summary errors-first and prints the matrix as a Markdown table.
 
 ## Python environment note — `cd` before importing `lib.renderer`
 
@@ -51,16 +51,12 @@ from skill_io import atomic_write_json, read_json
 from renderer import render_report
 
 run_dir = Path("<absolute path to run dir>")
-comparison = read_json(run_dir / "comparison.json")
+comparison = read_json(run_dir / "05-comparison.json")
 
 report = build_report(comparison)  # join Stage 5 rows into summary + matrix
 
-atomic_write_json(run_dir / "report.json", report)
-(run_dir / "report.md").write_text(render_report(report))
-
-run = read_json(run_dir / "run.json")
-run["stages"]["6"]["status"] = "completed"
-atomic_write_json(run_dir / "run.json", run)
+atomic_write_json(run_dir / "06-report.json", report)
+(run_dir / "06-report.md").write_text(render_report(report))
 ```
 
 ## What the summary should contain

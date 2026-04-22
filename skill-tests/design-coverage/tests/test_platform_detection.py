@@ -2,12 +2,17 @@
 from __future__ import annotations
 import pathlib
 import re
+import sys
 import textwrap
+
+_LIB = pathlib.Path(__file__).resolve().parents[3] / "skills" / "design-tooling" / "design-coverage" / "lib"
+sys.path.insert(0, str(_LIB))
+from detect import detect_match  # noqa: E402
 
 
 def detect_platforms(cwd: pathlib.Path, platforms_dir: pathlib.Path) -> list[str]:
     """Replica of the detection logic from SKILL.md."""
-    fm_pat = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+    fm_pat = re.compile(r"\A---\s*\r?\n(.*?)\r?\n---\s*\r?\n", re.DOTALL)
     matches: list[str] = []
     for hint in sorted(platforms_dir.glob("*.md")):
         text = hint.read_text(encoding="utf-8")
@@ -31,7 +36,7 @@ def detect_platforms(cwd: pathlib.Path, platforms_dir: pathlib.Path) -> list[str
                 elif line and not line[0].isspace():
                     in_detect = False
         for g in detect_globs:
-            if list(cwd.glob(g)):
+            if detect_match(cwd, g):
                 matches.append(name)
                 break
     return matches

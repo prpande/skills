@@ -6,17 +6,17 @@ Compare the code inventory (from Stage 2, clarified by Stage 3) against the Figm
 
 ## Resumability
 
-**First action:** read `<run_dir>/run.json`. Skip if `stages["5"].status == "completed"`.
+**First action:** check whether `<run_dir>/05-comparison.json` already exists. If it does, skip (day-one stage resume is artifact-based; see spec "Run config artifact").
 
 ## Inputs
 
-- `<run_dir>/code_inventory.json` (Stage 2)
-- `<run_dir>/clarifications.json` (Stage 3)
-- `<run_dir>/figma_inventory.json` (Stage 4)
+- `<run_dir>/02-code-inventory.json` (Stage 2)
+- `<run_dir>/03-clarifications.json` (Stage 3)
+- `<run_dir>/04-figma-inventory.json` (Stage 4)
 
 ## Output
 
-Write `<run_dir>/comparison.json`. Schema: [`schemas/comparison.json`](../schemas/comparison.json).
+Write `<run_dir>/05-comparison.json`. Schema: [`schemas/comparison.json`](../schemas/comparison.json).
 
 Shape:
 
@@ -35,7 +35,7 @@ Shape:
 }
 ```
 
-Then regenerate `<run_dir>/comparison.md` via `lib/renderer.py:render_comparison`.
+Then regenerate `<run_dir>/05-comparison.md` via the inline pattern shown in "Atomic write pattern" below.
 
 ## Pass 1 — flow-level
 
@@ -60,9 +60,9 @@ Severity **must** be set on every row (including `present` and `new-in-figma`). 
 - `warn` — `restructured` without loss, or `missing` where a Stage 3 clarification says the branch is out of scope (record that justification in `evidence`).
 - `info` — `present` and `new-in-figma`.
 
-**Cross-check bump:** if the row references a Figma frame with `screenshot_cross_check: "disagreed"` in `figma_inventory.json`, bump severity one level (`info` → `warn`, `warn` → `error`).
+**Cross-check bump:** if the row references a Figma frame with `screenshot_cross_check: "disagreed"` in `04-figma-inventory.json`, bump severity one level (`info` → `warn`, `warn` → `error`).
 
-**Stage 1 low-confidence downgrade:** if `flow_mapping.json.confidence == "low"`, every row's severity downgrades one step toward `warn` **only when the locator's low confidence could plausibly be the cause** — prefer over-reporting to silence.
+**Stage 1 low-confidence downgrade:** if `01-flow-mapping.json.confidence == "low"`, every row's severity downgrades one step toward `warn` **only when the locator's low confidence could plausibly be the cause** — prefer over-reporting to silence.
 
 ## Atomic write pattern
 
@@ -75,8 +75,8 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd() / "lib"))
 from skill_io import atomic_write_json
+from renderer import render_comparison
 
-atomic_write_json(run_dir / "comparison.json", comparison)
+atomic_write_json(run_dir / "05-comparison.json", comparison)
+(run_dir / "05-comparison.md").write_text(render_comparison(comparison))
 ```
-
-Then render Markdown and update `run.json` stage 5 status to `"completed"`.

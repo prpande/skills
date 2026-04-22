@@ -20,7 +20,7 @@ def inject_hint(core_prompt: str, hint_text: str, platform: str, stage_num: str)
          if lines[i].startswith("## ") and lines[i].strip() != header),
         len(lines),
     )
-    hint_section = "\n".join(lines[start + 1:end]).strip()
+    hint_section = "\n".join(lines[start + 1:end]).strip("\n")
     injected = f"\n## Platform-specific hints ({platform})\n\n{hint_section}\n"
     return core_prompt.replace("<!-- PLATFORM_HINTS -->", injected)
 

@@ -13,23 +13,37 @@ the user in the live session, and on explicit approval move `.draft` →
 
 ## Method
 
-1. **Resolve target path.**
+1. **Resolve target path.** The `__file__`-based install-path arithmetic lives in a real `.py` module (`lib/target_path.py`) because `__file__` is undefined in `python -c` blocks. Import it from inline Python:
 
    ```python
-   import os, pathlib
-   scout_realpath = pathlib.Path(os.path.realpath(__file__)).parent.parent
-   target_dir = scout_realpath.parent / "design-coverage" / "platforms"
-   if not target_dir.exists():
-       # Fallback — user installed via copy instead of symlink.
-       target_dir = pathlib.Path.home() / ".claude" / "skills" / "design-coverage" / "platforms"
-   target_dir.mkdir(parents=True, exist_ok=True)
+   import sys
+   from pathlib import Path
+   sys.path.insert(0, str(Path.home() / ".claude" / "skills" / "design-coverage-scout" / "lib"))
+   from target_path import resolve_target_dir
+   target_dir = resolve_target_dir()
    ```
 
 2. **Refuse-overwrite.** If `<target_dir>/<name>.md` exists and `--force` was
    NOT passed, refuse loudly and tell the user to pass `--force` or choose a
    different `--platform-name`.
 
-3. **Render to draft.** Read `hint-draft.json`. Emit `<name>.md.draft`:
+3. **Sanitize harvested section content before substitution.** Pass each
+   `<sections.*>` string through `sanitize_section` to neutralize `---` and
+   duplicate `## 0N …` lines that would corrupt the enclosing hint's
+   frontmatter or confuse the section-header validator:
+
+   ```python
+   import sys
+   from pathlib import Path
+   sys.path.insert(0, str(Path.home() / ".claude" / "skills" / "design-coverage-scout" / "lib"))
+   from sanitize import sanitize_section
+
+   flow = sanitize_section(draft["sections"]["flow_locator"])
+   code = sanitize_section(draft["sections"]["code_inventory"])
+   clar = sanitize_section(draft["sections"]["clarification"])
+   ```
+
+4. **Render to draft.** Read `hint-draft.json`. Emit `<name>.md.draft`:
 
    ```markdown
    ---
@@ -42,13 +56,13 @@ the user in the live session, and on explicit approval move `.draft` →
    ---
 
    ## 01 Flow locator
-   <sections.flow_locator>
+   <sanitized flow>
 
    ## 02 Code inventory
-   <sections.code_inventory>
+   <sanitized code>
 
    ## 03 Clarification
-   <sections.clarification>
+   <sanitized clar>
 
    ## Unresolved questions
    <unresolved_questions bullets, if any>
@@ -57,7 +71,14 @@ the user in the live session, and on explicit approval move `.draft` →
    Drop the `## Unresolved questions` section entirely if the array is empty
    or absent.
 
-4. **Live preview.** Print the drafted file to the user with a header:
+5. **Pre-preview validation.** Run `python scripts/validate.py` against the
+   `.draft` file (the draft is already written at step 4 but not yet moved).
+   If the validator refuses, print its errors, delete the `.draft`, and
+   report which `<sections.*>` was the likely source — the sanitizer in
+   step 3 is not exhaustive; any novel structural char the user reports
+   should be added to `lib/sanitize.py`.
+
+6. **Live preview.** Print the drafted file to the user with a header:
 
    ```
    === DRAFT PLATFORM HINT ===
@@ -66,14 +87,11 @@ the user in the live session, and on explicit approval move `.draft` →
    Approve writing this to platforms/<name>.md? (yes / no / edit)
    ```
 
-5. **Branch on response:**
+7. **Branch on response:**
    - `yes` → move `.draft` → `<name>.md`; run `python scripts/validate.py`
-     against the parent skills repo (resolved from `target_dir`) to sanity-check;
-     print success message including the final path; tell the user to commit and push.
+     once more against the final file (belt + suspenders with step 5);
+     print success message including the final path; tell the user to
+     commit and push. If this final validate fails, move `<name>.md` back
+     to `<name>.md.draft` so the repo stays clean.
    - `no` → delete `.draft`; exit.
    - `edit` → ask the user what to change, apply the change, re-preview.
-
-6. **Post-rendering sanity check.** After the move, run `python scripts/validate.py`
-   against the parent repo. If it fails, print the validator errors and refuse
-   to finalize — move `<name>.md` back to `<name>.md.draft` so the repo stays
-   clean, and ask the user to fix the issues before approving again.

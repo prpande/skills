@@ -233,18 +233,29 @@ Scout resolves its own install path with `os.path.realpath(__file__)` and writes
 
 Eight schemas survive from the Android PR. `inventory_item.json` remains shared between `code_inventory.json` and `figma_inventory.json` via `$ref`. The hand-rolled validator is carried over unchanged.
 
-### `run.json` additions
+### Run config artifact (day-one shape)
+
+The orchestrator writes a single run-config artifact to the run dir on init,
+named `00-run-config.json`:
 
 ```jsonc
 {
+  "figma_url": "<from args>",
+  "old_flow_hint": "<from args or null>",
   "platform": "ios | android | agnostic | <hint-name>",
   "hint_source": "detection | flag | user-prompt | scout-generated | agnostic",
-  "skill_version": "<git-sha-of-C:/src/skills>",
-  // ...existing stage-status block unchanged
+  "skill_version": "<git-sha-of-C:/src/skills>"
 }
 ```
 
 `hint_source` makes every run honest about the basis of its report.
+
+The ported `run.json` schema (from the Android PR) additionally carries a
+`stages["1"…"6"].status` block for stage-level resume. On day one the
+orchestrator does **not** write `run.json` to disk — stage resume is
+artifact-based (skip stages whose output file exists in the run dir).
+Restoring stage-status persistence to `run.json` is a known follow-up
+(see Known limitations).
 
 ### Scout-only schema
 
@@ -347,6 +358,13 @@ A short note to the iOS and Android teams (Slack or equivalent) announcing the m
 - **No automated dogfood run in CI.** Same as both existing PRs. Smoke runs are a manual check before internal announcement.
 - **Scout can refuse to profile exotic stacks.** If stage-1 can't characterize the UI layer at all, it refuses and points the user at `hint-template.md` for manual authoring.
 - **`skill_version` is a git SHA, not a semver tag.** Fine for this repo's pattern; may want semver later.
+- **Day-one schemas retain Android-specific field names and enum values** — inherited from the verbatim port of stages 4–6. Specifically:
+  - `flow_mapping.json` requires `mappings[].android_destination`; iOS runs populate this Android-named field without apology.
+  - `report.json` uses `matrix[].android_screen` for the code-side column; same.
+  - `inventory_item.json` `source.surface` enum is `[compose, xml, hybrid, nav-xml, nav-compose]` — Android-only; iOS runs emit the nearest match (typically `compose` for SwiftUI and `xml` for UIKit/storyboard/XIB) until the enum is generalized. Platform-neutral rename to `{destination, code_screen, surface ∈ open-string}` (or a platform-union enum) is a follow-up tracked with the other schema-rename tasks below.
+- **`code_inventory.json` requires `unwalked_destinations`.** Only the Android nav-graph walk produces meaningful entries; iOS runs emit `[]`. Relaxing to optional or renaming to a platform-neutral "unmatched Figma frames" concept is follow-up.
+- **Stage resume is artifact-based, not status-tracked.** The ported `run.json` schema ships with a stages-status block but nothing writes the file on day one. Artifact-presence (does `01-flow-mapping.json` exist in the run dir?) is the sole resume signal. Restoring persistence is follow-up.
+- **Schemas follow the Android PR's shape, not the iOS PR's.** Two architecturally different data models exist across the two source PRs: Android embeds `hotspot: {type, question}` per `inventory_item` and uses `flow_mapping.json` keyed on `{locator_method, confidence, mappings[]}`; iOS uses a top-level `hotspots[]` array with items referencing via `related_hotspot`, and `flow_mapping.schema.json` keyed on `{status, detected_flow, old_flow_entry_points, figma_frames}`. This PR inherits the Android shape verbatim for lib, schemas, and stages 4-6. Switching to the iOS shape (which is the better-tested of the two) is a potential follow-up but out of scope here — it would require rewriting schemas, stages, renderer, fixtures, and tests.
 
 ## Open questions
 

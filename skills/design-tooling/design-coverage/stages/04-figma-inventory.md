@@ -6,16 +6,16 @@ Build a structured inventory of the Figma design's screens, states, actions, and
 
 ## Resumability
 
-**First action:** read `<run_dir>/run.json`. Skip if `stages["4"].status == "completed"`. Otherwise, re-read `figma_inventory.json` — frames already processed are skipped.
+**First action:** check whether `<run_dir>/04-figma-inventory.json` already exists. If it does, re-read it and skip frames already processed (day-one stage resume is artifact-based; see spec "Run config artifact").
 
 ## Inputs
 
-- `<run_dir>/flow_mapping.json` (Stage 1) — tells you which Figma frames are in-scope.
+- `<run_dir>/01-flow-mapping.json` (Stage 1) — tells you which Figma frames are in-scope.
 - Figma MCP tools: `get_design_context` and `get_screenshot` (paired per frame).
 
 ## Output
 
-Write `<run_dir>/figma_inventory.json`. Schema: [`schemas/figma_inventory.json`](../schemas/figma_inventory.json).
+Write `<run_dir>/04-figma-inventory.json`. Schema: [`schemas/04-figma-inventory.json`](../schemas/04-figma-inventory.json).
 
 Shape:
 
@@ -28,7 +28,7 @@ Shape:
 }
 ```
 
-Then regenerate `<run_dir>/figma_inventory.md` via `lib/renderer.py:render_figma_inventory`.
+Then regenerate `<run_dir>/04-figma-inventory.md` via the inline pattern shown in "Atomic write pattern" below (extend with `(run_dir / "04-figma-inventory.md").write_text(render_figma_inventory(inventory))`).
 
 ## Per-frame procedure
 
@@ -44,7 +44,7 @@ For each in-scope top-level Figma frame:
 
 ## Refuse-loud condition
 
-If a **specific** frame's MCP call fails, record the failure on that frame's entry (`error: "<reason>"`, `screenshot_cross_check: "n/a"`) and continue. If **every** frame fails, refuse: set `run.json` stage 4 status to `"refused"`, render the Markdown view with the reason, and exit.
+If a **specific** frame's MCP call fails, record the failure on that frame's entry (`error: "<reason>"`, `screenshot_cross_check: "n/a"`) and continue. If **every** frame fails, refuse: write `04-figma-inventory.json` with an empty `items: []` and every frame carrying `error`, render the Markdown view, and exit.
 
 ## Atomic write pattern
 
@@ -58,9 +58,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path.cwd() / "lib"))
 from skill_io import atomic_write_json, read_json
 
-inventory = read_json(run_dir / "figma_inventory.json") or {"items": [], "frames": []}
+inventory = read_json(run_dir / "04-figma-inventory.json") or {"items": [], "frames": []}
 # append new items + frame entry
-atomic_write_json(run_dir / "figma_inventory.json", inventory)
+atomic_write_json(run_dir / "04-figma-inventory.json", inventory)
 ```
 
 Write incrementally — after each frame — so an interrupted session resumes without re-querying frames already processed.

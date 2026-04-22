@@ -175,18 +175,34 @@ destination; feed that back into navigation walking in stage 1 scope.
 
 **Hotspots to record alongside inventory items.**
 
+Each emission must match the shared `inventory_item.json` schema — a
+non-null `hotspot` is an object `{"type": "<enum>", "question": "<short prompt for stage 3>"}`. Use these mappings from iOS patterns to the schema's `hotspot.type` enum:
+
 - `feature-flag` — any branch keyed on `FeatureFlagType`,
   `FeatureFlagManager`, `ImplementationSwitch`, `RemoteConfig`,
-  or `LaunchDarkly`.
-- `permission-branch` — `if staff.can*`, `if user.hasRole(`,
+  or `LaunchDarkly`. Emit `{"type": "feature-flag", "question": "..."}`.
+- `permission` — `if staff.can*`, `if user.hasRole(`,
   `AVCaptureDevice.authorizationStatus(`, `CLLocationManager` auth,
   `UNUserNotificationCenter` requests, `PHPhotoLibrary` requests.
-- `server-driven-list` — `for item in response.items`,
+  Emit `{"type": "permission", "question": "..."}`.
+- `server-driven` — `for item in response.items`,
   `UICollectionViewCompositionalLayout` with dynamic section provider,
   any cell type chosen by a runtime `switch` on a server enum.
-- `dynamic-cell` — `tableView.dequeueReusableCell` with an identifier
+  Emit `{"type": "server-driven", "question": "..."}`.
+- `view-type` — `tableView.dequeueReusableCell` with an identifier
   chosen at runtime, or a cell-provider closure that branches on item
-  type.
+  type; also `UIHostingController` or `UIViewControllerRepresentable`
+  variants whose wrapped view is chosen at runtime.
+  Emit `{"type": "view-type", "question": "..."}`.
+- `form-factor` — compact vs regular `horizontalSizeClass`, iPhone vs
+  iPad layout branches, `UIDevice.current.userInterfaceIdiom`.
+  Emit `{"type": "form-factor", "question": "..."}`.
+
+The schema's enum also accepts `config-qualifier`, `process-death`,
+`viewpager-tab`, `sheet-dialog`; only `process-death` has a clear iOS
+analogue (state-restoration flows via `NSUserActivity` / `restorationID`
+/ `SceneDelegate.stateRestorationActivity`). Emit those when the iOS
+pattern cleanly matches; otherwise prefer the five above.
 
 ## 03 Clarification
 

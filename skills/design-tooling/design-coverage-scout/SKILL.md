@@ -42,7 +42,12 @@ final hint file still writes to the design-coverage install — see
 # Anchor to the Git root of CWD so re-runs from subdirectories land in the
 # same place. Fall back to CWD if we're not inside a Git repo.
 OUTPUT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-RUN_DIR="$OUTPUT_DIR/docs/design-coverage-scout/$(date +%Y-%m-%d)-<name>"
+# Resolve the run-dir slug: prefer the user's --platform-name if passed,
+# else fall back to the repo directory name. This slug is for operator
+# organization of scout runs on disk only — the final hint filename can
+# differ if stage 01 picks a more specific name.
+NAME="${PLATFORM_NAME:-$(basename "$OUTPUT_DIR")}"
+RUN_DIR="$OUTPUT_DIR/docs/design-coverage-scout/$(date +%Y-%m-%d)-$NAME"
 mkdir -p "$RUN_DIR"
 ```
 

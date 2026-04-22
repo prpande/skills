@@ -30,6 +30,17 @@ Resolve hotspots — decision points whose rendered UI depends on runtime data t
 
 ## Output
 
-Write `03-clarifications.json` conforming to `~/.claude/skills/design-coverage/schemas/clarifications.json`. Regenerate via `python -m lib.renderer --render 3 <run-dir>`.
+Write `03-clarifications.json` to the run dir conforming to `~/.claude/skills/design-coverage/schemas/clarifications.json`, then regenerate the Markdown view:
+
+```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd() / "lib"))
+from skill_io import atomic_write_json
+from renderer import render_clarifications
+
+atomic_write_json(run_dir / "03-clarifications.json", clarifications)
+(run_dir / "03-clarifications.md").write_text(render_clarifications(clarifications))
+```
 
 <!-- PLATFORM_HINTS -->

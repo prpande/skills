@@ -35,6 +35,19 @@ Use the **Discovery → Focused-reads → Cross-linking** approach:
 
 ## Output
 
-Write `02-code-inventory.json` and regenerate the Markdown view via `python -m lib.renderer --render 2 <run-dir>`.
+Write `02-code-inventory.json` to the run dir, then regenerate the Markdown view:
+
+```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd() / "lib"))
+from skill_io import atomic_write_json, read_json
+from renderer import render_code_inventory
+
+inventory = read_json(run_dir / "02-code-inventory.json") or {"items": [], "unwalked_destinations": []}
+# ...populate inventory...
+atomic_write_json(run_dir / "02-code-inventory.json", inventory)
+(run_dir / "02-code-inventory.md").write_text(render_code_inventory(inventory))
+```
 
 <!-- PLATFORM_HINTS -->

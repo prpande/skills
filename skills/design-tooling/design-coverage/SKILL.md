@@ -55,9 +55,12 @@ Store in `context.args`.
    `detect` patterns against CWD:
 
 ```python
-import pathlib, re
+import sys, pathlib, re
+sys.path.insert(0, str(pathlib.Path.home() / ".claude" / "skills" / "design-coverage" / "lib"))
+from detect import detect_match
+
 platforms_dir = pathlib.Path.home() / ".claude" / "skills" / "design-coverage" / "platforms"
-fm_pat = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+fm_pat = re.compile(r"\A---\s*\r?\n(.*?)\r?\n---\s*\r?\n", re.DOTALL)
 matches = []
 for hint in sorted(platforms_dir.glob("*.md")):
     text = hint.read_text(encoding="utf-8")
@@ -80,12 +83,18 @@ for hint in sorted(platforms_dir.glob("*.md")):
                 detect_globs.append(stripped[2:].strip().strip('"'))
             elif line and not line[0].isspace():
                 in_detect = False
+    cwd = pathlib.Path.cwd()
     for g in detect_globs:
-        if list(pathlib.Path.cwd().glob(g)):
+        if detect_match(cwd, g):
             matches.append(name)
             break
 print(matches)
 ```
+
+`detect_match` bounds the walk at a max depth and excludes common large
+directories (`node_modules`, `Pods`, `DerivedData`, `build`, `.git`, …) —
+see `lib/detect.py`. An unbounded `Path.cwd().glob("**/…")` would scan
+the whole tree on every invocation, which is unacceptable in monorepos.
 
 3. Branch on the match count:
    - **Exactly one** → `context.platform = matches[0]`,
@@ -116,14 +125,16 @@ Ask the user, directly in this session:
 ## Run directory
 
 ```bash
-RUN_DIR="<output-dir>/docs/design-coverage/$(date +%Y-%m-%d)-$(python -m lib.slugify <flow-name>)"
+cd ~/.claude/skills/design-coverage/
+FLOW_SLUG=$(python -c "import sys; sys.path.insert(0, 'lib'); from slugify import slugify; print(slugify('<flow-name>'))")
+RUN_DIR="<output-dir>/docs/design-coverage/$(date +%Y-%m-%d)-$FLOW_SLUG"
 mkdir -p "$RUN_DIR"
 ```
 
 Where `<output-dir>` is `--output-dir <path>` if provided, else the Git root
 of CWD.
 
-Write `00-run-config.json` conforming to `schemas/run.json`:
+Write `00-run-config.json` (see spec "Run config artifact (day-one shape)" — this captures args + platform resolution; the ported `schemas/run.json` describes a stages-status file that day-one orchestrator does NOT write):
 
 ```json
 {
@@ -166,7 +177,7 @@ else:
          if lines[i].startswith("## ") and lines[i].strip() != header),
         len(lines),
     )
-    hint_section = "\n".join(lines[start + 1:end]).strip()
+    hint_section = "\n".join(lines[start + 1:end]).strip("\n")
     injected = f"\n## Platform-specific hints ({platform})\n\n{hint_section}\n"
     composed = core.replace("<!-- PLATFORM_HINTS -->", injected)
 (run_dir / f"{stage_file.stem}-prompt.md").write_text(composed)
@@ -177,7 +188,9 @@ Dispatch a subagent with the composed prompt for each stage.
 ## Stage pipeline
 
 Run stages 01 → 06 in sequence. Each stage writes its JSON artifact and
-regenerates the Markdown view with `python -m lib.renderer --render <N> <run-dir>`.
+regenerates the matching Markdown view by importing the appropriate
+`lib.renderer.render_*` function from inline Python (see each stage's
+Output section for the exact snippet).
 
 - **01 — Flow locator** (hint-injected): `stages/01-flow-locator.md`
 - **02 — Code inventory** (hint-injected): `stages/02-code-inventory.md`
@@ -191,4 +204,4 @@ exists in the run directory.
 
 ## Final output
 
-After stage 6, print the path to `<run-dir>/06-summary.md` to the user.
+After stage 6, print the path to `<run-dir>/06-report.md` to the user.
