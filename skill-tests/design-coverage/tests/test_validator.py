@@ -83,3 +83,27 @@ def test_code_inventory_ref_through_items():
         "unwalked_destinations": []
     }
     v().validate(good, schema)
+
+
+def test_inventory_item_accepts_modes_and_ambiguity():
+    """The `modes[]`, `ambiguous`, `ambiguity_reason` fields are optional
+    dogfood follow-up additions; items with and without them must validate."""
+    schema = json.loads((SCHEMAS / "inventory_item.json").read_text())
+    with_optionals = {
+        "id": "appt.details",
+        "kind": "screen",
+        "title": "Appointment Details",
+        "parent_id": None,
+        "source": {"surface": "compose", "file": "x.kt", "line": 1, "symbol": "AppointmentDetails"},
+        "hotspot": None,
+        "confidence": "high",
+        "notes": None,
+        "modes": ["light", "dark"],
+        "ambiguous": False,
+        "ambiguity_reason": None,
+    }
+    v().validate(with_optionals, schema)
+    ambiguous = {**with_optionals,
+                 "ambiguous": True,
+                 "ambiguity_reason": "only appears in the Haptics demo"}
+    v().validate(ambiguous, schema)

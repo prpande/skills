@@ -192,7 +192,11 @@ non-null `hotspot` is an object `{"type": "<enum>", "question": "<short prompt f
 - `view-type` — `tableView.dequeueReusableCell` with an identifier
   chosen at runtime, or a cell-provider closure that branches on item
   type; also `UIHostingController` or `UIViewControllerRepresentable`
-  variants whose wrapped view is chosen at runtime.
+  variants whose wrapped view is chosen at runtime; also any
+  `switch` / `if-else` on a status or state enum (e.g., appointment
+  status Booked/Confirmed/Arrived/…) that renders a different UI
+  per case — treat each case as a candidate state row whose presence
+  in Figma stage 5 can verify.
   Emit `{"type": "view-type", "question": "..."}`.
 - `form-factor` — compact vs regular `horizontalSizeClass`, iPhone vs
   iPad layout branches, `UIDevice.current.userInterfaceIdiom`.
@@ -231,6 +235,12 @@ Hotspot topics to ask about when present in the inventory:
   Dynamic Type size; confirm intended behaviors on each axis.
 - **Appearance / theme branches** — `colorScheme == .dark`,
   `traitCollection.userInterfaceStyle`; confirm dark mode is in scope
-  and which Figma frame represents it.
+  and which Figma frame represents it. When dark mode IS in scope,
+  emit inventory items with `modes: ["light", "dark"]` (one row per
+  logical item, not one per appearance) — stage 5 will verify each
+  mode on the same row instead of counting them as two separate
+  rows. When dark mode is explicitly out of scope, emit
+  `modes: ["light"]` so the comparator can skip dark-mode figma
+  frames with `status: "new-in-figma"` severity `info` automatically.
 - **A/B test hooks** — if present; confirm which variant the Figma
   represents and whether the other variant also needs a coverage pass.

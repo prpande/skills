@@ -26,6 +26,12 @@
       }
     },
     "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-    "notes": {"type": ["string", "null"]}
+    "notes": {"type": ["string", "null"]},
+    "ambiguous": {"type": "boolean"},
+    "ambiguity_reason": {"type": ["string", "null"]},
+    "modes": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    }
   }
 }

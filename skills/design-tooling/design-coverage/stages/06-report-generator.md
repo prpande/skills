@@ -75,3 +75,7 @@ The matrix is **keyed by Figma frame** (schema requires `figma_frame` to be a no
 - `status: "missing"` (code screen has no matching Figma frame) — **not represented in the matrix**, since there is no `figma_frame` to key on. These appear in the `summary` section only (with `screen: <the code screen>` and a severity per Stage 5's rules).
 
 If a deployment needs `missing` rows on a matrix (e.g., for a code-first coverage view), that is a follow-up schema change; day one is Figma-keyed only.
+
+## Narrative summary (NOT this stage)
+
+This stage writes the deterministic audit view (`06-report.md`). The verdict-first narrative summary at `06-report.json` → `06-summary.md` is rendered by the **main session**, not a subagent, once this stage returns. See SKILL.md § "Final output" for the required structure. Keeping the narrative render out-of-stage means this stage stays deterministic and testable; the narrative is explicitly labeled non-deterministic.

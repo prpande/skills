@@ -188,7 +188,10 @@ Hotspot topics to ask about when present in the inventory:
   which variants the design covers (empty, single, many, error).
 - **Config qualifiers** — `values-night/` (dark mode), RTL (`values-ldrtl/`),
   `sw600dp/` (tablets), density qualifiers (`hdpi` / `xhdpi` / `xxhdpi`);
-  confirm which qualifiers the design explicitly covers.
+  confirm which qualifiers the design explicitly covers. When dark mode
+  (or another appearance mode) is in scope, emit inventory items with
+  `modes: ["light", "dark"]` (one row per logical item) — stage 5
+  verifies each mode on the same row rather than counting it as two.
 - **Phone / tablet branches** — if the code branches on
   `smallestScreenWidthDp` or uses `sw600dp` resources, confirm both layouts
   are in the Figma file.

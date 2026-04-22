@@ -29,13 +29,25 @@ def render_code_inventory(data: Dict[str, Any]) -> str:
 
     lines.append("\n## Items\n")
     rendered_ids: set = set()
+
+    def _item_suffix(node: Dict[str, Any]) -> str:
+        """Trailing annotations: modes list, ambiguity marker."""
+        parts: list[str] = []
+        modes = node.get("modes") or []
+        if modes:
+            parts.append(f"modes: {', '.join(modes)}")
+        if node.get("ambiguous"):
+            reason = node.get("ambiguity_reason")
+            parts.append(f"⚠ ambiguous{f': {reason}' if reason else ''}")
+        return f" ({'; '.join(parts)})" if parts else ""
+
     def _walk(node, depth, seen=None):
         seen = seen if seen is not None else set()
         if node["id"] in seen:
             return [f"{'  ' * depth}- ⚠ cycle at `{node['id']}`"]
         seen = seen | {node["id"]}
         rendered_ids.add(node["id"])
-        out = [f"{'  ' * depth}- **{node['kind']}** `{node['id']}` — {node['title']}"]
+        out = [f"{'  ' * depth}- **{node['kind']}** `{node['id']}` — {node['title']}{_item_suffix(node)}"]
         for child in items:
             if child.get("parent_id") == node["id"]:
                 out.extend(_walk(child, depth + 1, seen))
@@ -78,7 +90,15 @@ def render_figma_inventory(data: Dict[str, Any]) -> str:
         lines.append(f"- `{f['frame_id']}` — cross-check: **{f['screenshot_cross_check']}**{err}")
     lines.append("\n## Items\n")
     for it in data.get("items", []):
-        lines.append(f"- `{it['id']}` ({it['kind']}) — {it['title']}")
+        annotations: list[str] = []
+        modes = it.get("modes") or []
+        if modes:
+            annotations.append(f"modes: {', '.join(modes)}")
+        if it.get("ambiguous"):
+            reason = it.get("ambiguity_reason")
+            annotations.append(f"⚠ ambiguous{f': {reason}' if reason else ''}")
+        suffix = f" ({'; '.join(annotations)})" if annotations else ""
+        lines.append(f"- `{it['id']}` ({it['kind']}) — {it['title']}{suffix}")
     return "\n".join(lines) + "\n"
 
 def render_comparison(data: Dict[str, Any]) -> str:

@@ -30,7 +30,8 @@ Use the **Discovery → Focused-reads → Cross-linking** approach:
 ## Rules
 
 - **Preserve orphaned items.** If a state/action/field has a `parent_id` that doesn't resolve to a listed screen, keep it with its orphan `parent_id` intact. The renderer will surface these under an "Orphaned items" section. Never drop them silently.
-- **One row per item.** Do not duplicate inventory items across modes; represent mode-dependence as a field on the item (`modes: ["admin", "user"]`).
+- **One row per item.** Do not duplicate inventory items across visual modes; represent mode-dependence via the optional `modes: [...]` list on the item. For a screen that exists only in light + dark modes at the code level, emit one row with `modes: ["light", "dark"]` — not two separate rows. For a screen with a role-based variant, use `modes: ["admin", "user"]`.
+- **Tag ambiguity loudly.** When a state/action/field's presence or behavior can't be determined statically (e.g., only visible in a demo harness, shown as deprecated but not removed), set `ambiguous: true` and a one-sentence `ambiguity_reason` so stage 5's comparator can cite it.
 - **No speculation.** Only include items present in code. If a comment references a feature that isn't implemented, do not record it.
 
 ## Output

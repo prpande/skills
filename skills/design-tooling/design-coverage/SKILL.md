@@ -206,4 +206,18 @@ exists in the run directory.
 
 ## Final output
 
-After stage 6, print the path to `<run-dir>/06-report.md` to the user.
+After stage 6 writes the deterministic `<run-dir>/06-report.md` (audit view), run the **stage-6 narrative render** in the main session — do NOT dispatch a subagent for this step. Read `<run-dir>/06-report.json` and render a verdict-first summary to `<run-dir>/06-summary.md` with this structure:
+
+1. **One-line verdict** at the top: `> **Verdict:** 🟢 Ready to ship` / `🟡 Caveats below` / `🔴 Not ready to ship: <one-sentence reason>`. Pick color by highest-severity summary entry: any `error` → red; any `warn` (no error) → yellow; else green.
+2. **Severity tally table** (counts of error / warn / info summary entries + counts of matrix statuses: `missing`, `new-in-figma`, `restructured`, `present`).
+3. **Sections per severity bucket** — start with 🔴 errors, each as a concise paragraph citing `code_ref` / `figma_ref` / evidence. Then 🟠 warnings, grouped by screen. Then 🟡 restructured rows (if any) under an optional "verify intent, don't fix" banner. `new-in-figma` counts get a collapsed summary, not an enumeration.
+4. **Where to start** section at the bottom — 2-4 bullets prioritizing errors over warnings.
+
+Write the summary via a simple Bash heredoc or `Write` call. The rendered file has a header comment noting it is non-deterministic (re-running may produce different prose). The deterministic audit view remains at `06-report.md`.
+
+Then print the path to **both** files:
+
+```
+Audit view:     <run-dir>/06-report.md
+Narrative view: <run-dir>/06-summary.md   ← start here
+```

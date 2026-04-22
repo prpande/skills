@@ -36,7 +36,7 @@ For each in-scope top-level Figma frame:
 
 1. Call `mcp__plugin_figma_figma__get_design_context(fileKey, nodeId=frame_id)` to get structured data (layers, components, text, design tokens, annotations, Code Connect mappings).
 2. Call `mcp__plugin_figma_figma__get_screenshot(fileKey, nodeId=frame_id)`.
-3. Extract `InventoryItem` rows for the frame itself (`kind: "screen"`) plus each meaningful state/action/field inside it. Use stable slug IDs rooted at the frame (e.g., `appt-details.header.save-button`). Set `parent_id` to build the screen → state → action/field hierarchy.
+3. Extract `InventoryItem` rows for the frame itself (`kind: "screen"`) plus each meaningful state/action/field inside it. Use stable slug IDs rooted at the frame (e.g., `appt-details.header.save-button`). Set `parent_id` to build the screen → state → action/field hierarchy. When a Figma frame has sibling light/dark (or other appearance-variant) twins of the same logical screen, emit **one** inventory item with `modes: ["light", "dark"]` — not two separate rows. This prevents the comparison matrix from doubling up on visual variants. When a frame's intent is unclear from metadata alone (e.g., it's labelled as a demo or coachmark), set `ambiguous: true` with a one-sentence `ambiguity_reason` — stage 5 will surface it in the report.
 4. Compare structured data against the screenshot. Set `screenshot_cross_check`:
    - `agreed` — structured data and screenshot tell the same story.
    - `disagreed` — they differ meaningfully (e.g., a button labelled "Save" in metadata shows as "Continue" in the pixels). Stage 5 will bump severity on any comparison row referencing this frame.

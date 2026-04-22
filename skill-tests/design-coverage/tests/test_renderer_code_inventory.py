@@ -49,3 +49,36 @@ def test_cycle_does_not_recurse():
     }
     md = render_code_inventory(cyclic)
     assert "cycle" in md
+
+
+def test_modes_list_renders_when_present():
+    """Items with `modes: [...]` should surface the mode list inline so a
+    dark-mode-aware run doesn't get double-counted at stage 5."""
+    inv = {
+        "items": [
+            {"id": "scr", "kind": "screen", "title": "Home", "parent_id": None,
+             "source": {"surface": "compose", "file": "a.kt", "line": 1, "symbol": "HomeScreen"},
+             "hotspot": None, "confidence": "high", "notes": None,
+             "modes": ["light", "dark"]},
+        ],
+        "unwalked_destinations": [],
+    }
+    md = render_code_inventory(inv)
+    assert "modes: light, dark" in md
+
+
+def test_ambiguous_item_renders_warning_and_reason():
+    inv = {
+        "items": [
+            {"id": "cell", "kind": "state", "title": "Apply Payment cell",
+             "parent_id": None,
+             "source": {"surface": "compose", "file": "a.kt", "line": 142, "symbol": "ApplyPayCell"},
+             "hotspot": None, "confidence": "medium", "notes": None,
+             "ambiguous": True,
+             "ambiguity_reason": "only appears in the Haptics demo frame, not a real cell state"},
+        ],
+        "unwalked_destinations": [],
+    }
+    md = render_code_inventory(inv)
+    assert "⚠ ambiguous" in md
+    assert "Haptics demo frame" in md
