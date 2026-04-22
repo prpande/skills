@@ -14,6 +14,14 @@ User-level Claude Code skills maintained by @prpande.
 [`pr-loop-lib/`](./pr-loop-lib/README.md) — shared per-step markdown
 library imported by both skills. Not a skill itself (no `SKILL.md`).
 
+## Prompts
+
+Standalone prompts you can paste into a Claude conversation — no install step.
+
+| Prompt | Purpose |
+|---|---|
+| [`attention-status-page`](./prompts/attention-status-page.md) | Build a live "What needs your attention" HTML artifact that pulls from your connected tools (Slack, Notion, Asana, Linear, Jira, email) and groups items by work item. |
+
 ## Design docs
 
 - [2026-04-17 pr-autopilot skill design](./docs/superpowers/specs/2026-04-17-pr-autopilot-skill-design.md)
