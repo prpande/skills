@@ -5,6 +5,6 @@
   ],
   "matrix": [
     {"figma_frame": "F1-AppointmentDetails", "android_screen": "AppointmentDetails", "status": "present"},
-    {"figma_frame": "F2-AppointmentNotes", "android_screen": null, "status": "missing"}
+    {"figma_frame": "F2-AppointmentNotes", "android_screen": null, "status": "new-in-figma"}
   ]
 }

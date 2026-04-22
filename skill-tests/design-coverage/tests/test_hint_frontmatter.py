@@ -97,3 +97,26 @@ def test_invalid_confidence_fails(tmp_path: pathlib.Path) -> None:
     r = run_validator(tmp_path)
     assert r.returncode != 0
     assert "confidence" in (r.stdout + r.stderr).lower()
+
+
+def test_empty_detect_block_fails(tmp_path: pathlib.Path) -> None:
+    """A hint with a `detect:` key but zero glob entries should fail lint —
+    otherwise it passes the required-keys check but is silently undetectable
+    at runtime."""
+    make_skill_with_hint(tmp_path, textwrap.dedent("""\
+        ---
+        name: ios
+        detect:
+        description: iOS.
+        confidence: high
+        ---
+        ## 01 Flow locator
+        x
+        ## 02 Code inventory
+        x
+        ## 03 Clarification
+        x
+    """))
+    r = run_validator(tmp_path)
+    assert r.returncode != 0
+    assert "detect" in (r.stdout + r.stderr).lower()

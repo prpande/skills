@@ -52,11 +52,14 @@ def detect_match(root: Path, glob_pat: str, max_depth: int = MAX_DEPTH,
         dirs[:] = [d for d in dirs if d not in excludes]
         # Single-segment anchored patterns match only at root; descending
         # doesn't help. Multi-segment anchored patterns like `app/build.gradle`
-        # MUST descend to check the nested path, but only within the first
-        # pat-part's subtree.
+        # MUST descend to check the nested path, but only within subtrees
+        # whose first component matches pat_parts[0] — pruning other dirs
+        # avoids unnecessary traversal on large monorepos.
         if anchored and len(pat_parts) == 1 and depth > 0:
             dirs.clear()
             continue
+        if anchored and len(pat_parts) > 1 and depth == 0:
+            dirs[:] = [d for d in dirs if fnmatch.fnmatch(d, pat_parts[0])]
         for name in list(files) + list(dirs):
             if len(pat_parts) == 1:
                 if fnmatch.fnmatch(name, pat_parts[0]):

@@ -95,8 +95,23 @@ def validate_hint_file(path: pathlib.Path) -> list[str]:
     fm_text = m.group(1)
     body = text[m.end():]
     # Minimal frontmatter key extraction — only scalar keys at column 0.
+    # `detect:` is a list, so we also count any `- "…"` lines that
+    # immediately follow it as its entries.
     keys: dict[str, str] = {}
+    detect_entries: list[str] = []
+    in_detect = False
     for line in fm_text.splitlines():
+        if line.startswith("detect:"):
+            keys["detect"] = line.partition(":")[2].strip()
+            in_detect = True
+            continue
+        if in_detect:
+            stripped = line.lstrip()
+            if stripped.startswith("- "):
+                detect_entries.append(stripped[2:].strip().strip('"').strip("'"))
+                continue
+            if line and not line[0].isspace():
+                in_detect = False
         if not line or line[0].isspace() or line.startswith("-"):
             continue
         if ":" in line:
@@ -109,6 +124,10 @@ def validate_hint_file(path: pathlib.Path) -> list[str]:
     if missing:
         errors.append(
             f"{path}: frontmatter missing keys: {sorted(missing)}"
+        )
+    if "detect" in keys and not detect_entries:
+        errors.append(
+            f"{path}: frontmatter 'detect' must list at least one glob entry"
         )
     conf = keys.get("confidence", "")
     if conf and conf not in VALID_CONFIDENCE:
