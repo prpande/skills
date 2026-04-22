@@ -15,7 +15,7 @@ Build a structured inventory of the Figma design's screens, states, actions, and
 
 ## Output
 
-Write `<run_dir>/04-figma-inventory.json`. Schema: [`schemas/04-figma-inventory.json`](../schemas/04-figma-inventory.json).
+Write `<run_dir>/04-figma-inventory.json`. Schema: [`schemas/figma_inventory.json`](../schemas/figma_inventory.json).
 
 Shape:
 
