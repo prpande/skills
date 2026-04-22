@@ -1,0 +1,20 @@
+{
+  "$id": "code_inventory.json",
+  "type": "object",
+  "required": ["items", "unwalked_destinations"],
+  "properties": {
+    "items": {"type": "array", "items": {"$ref": "inventory_item.json"}},
+    "unwalked_destinations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["nav_source", "target", "reason"],
+        "properties": {
+          "nav_source": {"type": "string", "minLength": 1},
+          "target": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

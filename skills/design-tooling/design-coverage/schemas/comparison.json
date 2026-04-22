@@ -1,0 +1,22 @@
+{
+  "$id": "comparison.json",
+  "type": "object",
+  "required": ["rows"],
+  "properties": {
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["pass", "status", "severity"],
+        "properties": {
+          "pass": {"type": "string", "enum": ["flow", "screen"]},
+          "status": {"type": "string", "enum": ["present", "missing", "new-in-figma", "restructured"]},
+          "severity": {"type": "string", "enum": ["info", "warn", "error"]},
+          "code_ref": {"type": ["string", "null"]},
+          "figma_ref": {"type": ["string", "null"]},
+          "evidence": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$id": "flow_mapping.json",
+  "type": "object",
+  "required": ["figma_url", "locator_method", "confidence", "mappings"],
+  "properties": {
+    "figma_url": {"type": "string", "minLength": 1},
+    "locator_method": {"type": "string", "enum": ["nav-graph", "name-search", "refused"]},
+    "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+    "refused_reason": {"type": ["string", "null"]},
+    "mappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["figma_frame_id", "android_destination", "score"],
+        "properties": {
+          "figma_frame_id": {"type": "string", "minLength": 1},
+          "android_destination": {"type": "string", "minLength": 1},
+          "score": {"type": "integer", "minimum": 0}
+        }
+      }
+    }
+  }
+}

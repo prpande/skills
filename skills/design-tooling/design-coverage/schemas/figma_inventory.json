@@ -1,0 +1,20 @@
+{
+  "$id": "figma_inventory.json",
+  "type": "object",
+  "required": ["items", "frames"],
+  "properties": {
+    "items": {"type": "array", "items": {"$ref": "inventory_item.json"}},
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["frame_id", "screenshot_cross_check"],
+        "properties": {
+          "frame_id": {"type": "string", "minLength": 1},
+          "screenshot_cross_check": {"type": "string", "enum": ["agreed", "disagreed", "n/a"]},
+          "error": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}

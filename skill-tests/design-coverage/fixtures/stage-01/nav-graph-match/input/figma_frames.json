@@ -1,0 +1,7 @@
+{
+  "frames": [
+    {"id": "F1", "name": "AppointmentDetailsHeader"},
+    {"id": "F2", "name": "AppointmentDetailsBody"},
+    {"id": "F3", "name": "AppointmentDetailsFooter"}
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "$id": "clarifications.json",
+  "type": "object",
+  "required": ["resolved"],
+  "properties": {
+    "resolved": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["hotspot_id", "answer", "resolved_at"],
+        "properties": {
+          "hotspot_id": {"type": "string", "minLength": 1},
+          "answer": {"type": "string", "minLength": 1},
+          "resolved_at": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

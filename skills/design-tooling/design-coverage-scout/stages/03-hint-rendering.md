@@ -1,0 +1,97 @@
+# Scout Stage 03 — Hint rendering
+
+## Inputs
+
+- `<run-dir>/hint-draft.json` from stage 2.
+- `~/.claude/skills/design-coverage-scout/hint-template.md` as the shape reference.
+
+## Objective
+
+Render `<design-coverage-install>/platforms/<name>.md.draft`, preview it to
+the user in the live session, and on explicit approval move `.draft` →
+`<name>.md`.
+
+## Method
+
+1. **Resolve target path.** The `__file__`-based install-path arithmetic lives in a real `.py` module (`lib/target_path.py`) because `__file__` is undefined in `python -c` blocks. Import it from inline Python:
+
+   ```python
+   import sys
+   from pathlib import Path
+   sys.path.insert(0, str(Path.home() / ".claude" / "skills" / "design-coverage-scout" / "lib"))
+   from target_path import resolve_target_dir
+   target_dir = resolve_target_dir()
+   ```
+
+2. **Refuse-overwrite.** If `<target_dir>/<name>.md` exists and `--force` was
+   NOT passed, refuse loudly and tell the user to pass `--force` or choose a
+   different `--platform-name`.
+
+3. **Sanitize harvested section content before substitution.** Pass each
+   `<sections.*>` string through `sanitize_section` to neutralize `---` and
+   duplicate `## 0N …` lines that would corrupt the enclosing hint's
+   frontmatter or confuse the section-header validator:
+
+   ```python
+   import sys
+   from pathlib import Path
+   sys.path.insert(0, str(Path.home() / ".claude" / "skills" / "design-coverage-scout" / "lib"))
+   from sanitize import sanitize_section
+
+   flow = sanitize_section(draft["sections"]["flow_locator"])
+   code = sanitize_section(draft["sections"]["code_inventory"])
+   clar = sanitize_section(draft["sections"]["clarification"])
+   ```
+
+4. **Render to draft.** Read `hint-draft.json`. Emit `<name>.md.draft`:
+
+   ```markdown
+   ---
+   name: <name>
+   detect:
+     - "<detect glob 1>"
+     - "<detect glob 2>"
+   description: <description>
+   confidence: <confidence>
+   ---
+
+   ## 01 Flow locator
+   <sanitized flow>
+
+   ## 02 Code inventory
+   <sanitized code>
+
+   ## 03 Clarification
+   <sanitized clar>
+
+   ## Unresolved questions
+   <unresolved_questions bullets, if any>
+   ```
+
+   Drop the `## Unresolved questions` section entirely if the array is empty
+   or absent.
+
+5. **Pre-preview validation.** Run `python scripts/validate.py` against the
+   `.draft` file (the draft is already written at step 4 but not yet moved).
+   If the validator refuses, print its errors, delete the `.draft`, and
+   report which `<sections.*>` was the likely source — the sanitizer in
+   step 3 is not exhaustive; any novel structural char the user reports
+   should be added to `lib/sanitize.py`.
+
+6. **Live preview.** Print the drafted file to the user with a header:
+
+   ```
+   === DRAFT PLATFORM HINT ===
+   <full file content>
+   === END DRAFT ===
+   Approve writing this to platforms/<name>.md? (yes / no / edit)
+   ```
+
+7. **Branch on response:**
+   - `yes` → move `.draft` → `<name>.md`; run `python scripts/validate.py`
+     once more against the final file (belt + suspenders with step 5);
+     print success message including the final path; tell the user to
+     commit and push. If this final validate fails, move `<name>.md` back
+     to `<name>.md.draft` so the repo stays clean.
+   - `no` → delete `.draft`; exit.
+   - `edit` → ask the user what to change, apply the change, re-preview.
