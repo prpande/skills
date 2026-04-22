@@ -33,8 +33,16 @@ cd ~/.claude/skills/design-coverage-scout/
 
 ## Run directory
 
+Intermediate artifacts (`stack-profile.json`, `hint-draft.json`) land inside
+the target repo so they're inspectable alongside the rest of its docs. The
+final hint file still writes to the design-coverage install — see
+`Final output` below.
+
 ```bash
-RUN_DIR="$HOME/.claude/design-coverage-scout-runs/$(date +%Y-%m-%d)-<name>"
+# Anchor to the Git root of CWD so re-runs from subdirectories land in the
+# same place. Fall back to CWD if we're not inside a Git repo.
+OUTPUT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+RUN_DIR="$OUTPUT_DIR/docs/design-coverage-scout/$(date +%Y-%m-%d)-<name>"
 mkdir -p "$RUN_DIR"
 ```
 
