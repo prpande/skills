@@ -119,7 +119,9 @@ def render_report(data: Dict[str, Any]) -> str:
         screen = f" ({s['screen']})" if s.get("screen") else ""
         lines.append(f"- [{s['severity'].upper()}]{screen} {s['message']}")
     lines.append("\n## Coverage Matrix\n")
-    lines.append("| Figma frame | Android screen | Status |")
+    # Column header is platform-neutral; the JSON key stays `android_screen`
+    # for schema compatibility (see spec "Known limitations").
+    lines.append("| Figma frame | Code screen | Status |")
     lines.append("|---|---|---|")
     for m in data.get("matrix", []):
         lines.append(f"| {m['figma_frame']} | {m.get('android_screen') or '—'} | {m['status']} |")

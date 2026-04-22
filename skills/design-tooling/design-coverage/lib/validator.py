@@ -18,7 +18,7 @@ class Validator:
             except ValueError:
                 raise ValidationError(f"$ref {ref!r} escapes schemas dir")
             try:
-                self._cache[ref] = json.loads(target.read_text())
+                self._cache[ref] = json.loads(target.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as e:
                 raise ValidationError(f"Cannot load $ref {ref!r}: {e}")
         return self._cache[ref]

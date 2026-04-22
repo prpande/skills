@@ -53,7 +53,32 @@ from renderer import render_report
 run_dir = Path("<absolute path to run dir>")
 comparison = read_json(run_dir / "05-comparison.json")
 
-report = build_report(comparison)  # join Stage 5 rows into summary + matrix
+# Inline join of Stage 5 rows into the report shape. See `## What the
+# summary should contain` and `## What the matrix should contain` for
+# the semantics; schemas/report.json defines the output shape.
+summary = []
+matrix = []
+for row in comparison["rows"]:
+    status = row["status"]
+    severity = row["severity"]
+    if severity in ("error", "warn") or status == "present":
+        screen = row.get("code_ref") or row.get("figma_ref")
+        summary.append({
+            "severity": severity,
+            "message": row.get("evidence") or f"{status} row at {screen}",
+            "screen": screen,
+        })
+    if row["pass"] == "flow" and row.get("figma_ref"):
+        # Matrix is Figma-keyed per schema (required figma_frame, nullable
+        # android_screen). `missing` (code-only) rows don't appear here.
+        if status in ("present", "new-in-figma", "restructured"):
+            matrix.append({
+                "figma_frame": row["figma_ref"],
+                "android_screen": row.get("code_ref"),
+                "status": status,
+            })
+
+report = {"summary": summary, "matrix": matrix}
 
 atomic_write_json(run_dir / "06-report.json", report)
 (run_dir / "06-report.md").write_text(render_report(report))
