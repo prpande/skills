@@ -13,6 +13,28 @@ repo that will be rendered into `platforms/<name>.md` in stage 3. Write
 `<run-dir>/hint-draft.json` conforming to
 `~/.claude/skills/design-coverage-scout/schemas/hint_draft.json`.
 
+## Durability rule (applies to every section below)
+
+Hint files live in the shared skills repo and are re-used across many runs
+against the same stack, months apart. **Describe patterns, not instance
+counts.** Do not embed point-in-time tallies like "329 UIViewController hits
+across 143 files" or "175 `@Published` hits repo-wide" — these drift as the
+repo evolves and turn a hint file stale.
+
+Concretely:
+
+- **Allowed**: ripgrep-ready patterns (`class .*ViewController`,
+  `@Composable fun <PascalCase>Screen`), concrete class names that are
+  structurally load-bearing (e.g., a base protocol like `Coordinator` at a
+  specific path), representative examples ("e.g., `SettingsCoordinator`,
+  `MoreCoordinator`").
+- **Not allowed**: numeric hit counts, file-count tallies, "X hits repo-wide",
+  "N files match" — even approximate. If you need to convey scale, use
+  qualitative words ("dominant", "common", "rare") instead.
+
+When in doubt, ask: "would this sentence still be accurate a year from now?"
+If a number would be wrong by then, cut the number.
+
 ## Method
 
 ### For the `flow_locator` section
