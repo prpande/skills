@@ -78,8 +78,10 @@ UI / design deferral (verdict `ui-deferred`)
   with `fixed` as usual and mention in `reason` that a UI-only sub-point
   was noted. Do not split into two returns.
   When returning `ui-deferred`:
-    - `files_changed` MUST be `[]`. The orchestrator halts the skill if
-      a `ui-deferred` return has touched files.
+    - `files_changed` MUST be `[]`. If a `ui-deferred` return has
+      touched files, the orchestrator rolls back those edits and
+      demotes the result to `needs-human` while continuing the run
+      (see `steps/04-dispatch-fixers.md` — "ui-deferred guard").
     - `reply_text` starts with the quoted feedback sentence followed by
       `Deferred for user review: <one-line proposal>`. The orchestrator
       posts this reply but does NOT resolve the thread.

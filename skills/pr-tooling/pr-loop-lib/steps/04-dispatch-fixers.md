@@ -281,10 +281,17 @@ guard above passes):
   `context.files_changed_this_iteration` — `ui-deferred` never edits
   code during the loop.
 
-Deferred items do NOT block quiescence. Their thread reply is the
-self-login reply that step 08 uses to mark the thread handled, so
-Filter A will exclude them on subsequent iterations even though the
-thread is still open on the platform.
+Deferred items do NOT block quiescence. Step 07 posts a self-login
+reply on the thread, but that alone does NOT cause Filter A to drop
+the original reviewer comment on the next fetch — Filter A's
+self-login pre-filter only drops the reply itself; the original
+comment is still eligible for re-triage via the "new-since"
+timestamp check. The mechanism that actually suppresses re-triage
+is step 08 advancing `context.last_handled_timestamp = now` on
+ui-deferred-present quiescent exits (see
+`steps/08-quiescence-check.md` exit condition #2). The thread
+remains open on the platform; the cursor advance keeps the loop
+from re-dispatching the same item.
 
 ## `needs-human` handling
 

@@ -57,6 +57,7 @@ Required fields are marked as such.
 | `files_changed_this_iteration` | array of strings | default `[]` | Union of fixer file changes |
 | `needs_human_items` | array of objects | default `[]` | Items flagged for user attention |
 | `ui_deferred_items` | array of objects | default `[]` | Items the fixer judged to be UI / design / copy changes; deferred to end-of-run user approval. Each entry: `{feedback_id, thread_id?, path?, line?, author, body, proposal, reply_text}`. Step 11 prompts the user and may re-enter step 04 scoped to approved items. |
+| `ui_deferred_actionable` | array of objects | default `[]` | Scoped overlay written by step 11 before re-dispatching approved `ui_deferred_items`. During that one step-04 invocation, the dispatcher reads its actionable list from this field in place of `context.actionable`. Never replaces `context.actionable`; the persisted top-level `actionable` is left unchanged. Same shape as the individual items in `context.actionable`. |
 | `sanity_check_passed` | object | default `{}` | `{ <iteration>: <bool> }` |
 
 ## CI gate

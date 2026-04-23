@@ -4,7 +4,10 @@ Terminal step. Print a structured summary and — if there are UI /
 design suggestions deferred during the loop — prompt the user for
 per-item approval before releasing the advisory lock. Approved items
 are re-dispatched through step 04 (scoped) and step 06 (commit +
-push); nothing else in the loop's state is mutated.
+push); this may update the scoped/actionable work for those items
+along with the usual context, log, and commit/push bookkeeping for
+that re-dispatch path, but does not otherwise restart or broaden the
+loop.
 
 ## Report template
 
@@ -129,22 +132,30 @@ three-way decision so the user is never forced to approve a bundle.
 Collect every item the user marked **Apply fix and commit**. If the
 list is non-empty:
 
-1. Build a synthetic `context.actionable` containing only the
-   approved items (preserve their original `id`, `surface`, `path`,
-   `line`, `body`, `thread_id`). Do NOT overwrite the prior run's
-   `actionable`; write to a scoped field
-   `context.ui_deferred_actionable` instead.
-2. Enter `pr-loop-lib/steps/04-dispatch-fixers.md` with the scoped
-   list as its input. The fixer prompt's "UI / design deferral"
+1. Build a synthetic `context.ui_deferred_actionable` containing
+   only the approved items (preserve their original `id`,
+   `surface`, `path`, `line`, `body`, `thread_id`). Keep the
+   persisted `context.actionable` unchanged — the saved top-level
+   field must continue to reflect the loop's final triage output,
+   not the re-dispatch input.
+2. Enter `pr-loop-lib/steps/04-dispatch-fixers.md` with a **scoped
+   overlay**: for the duration of this one invocation only, step 04
+   reads its actionable list from `context.ui_deferred_actionable`
+   in place of `context.actionable`. This is an input override for
+   step 04's execution, not a mutation of the persisted top-level
+   field; on return, `context.actionable` is still the unchanged
+   list from the final loop iteration. `context.ui_deferred_actionable`
+   itself is persisted (step 11 writes it before re-dispatching)
+   so the state file is auditable, but it does not replace
+   `actionable`. The fixer prompt's "UI / design deferral"
    guidance still applies, but the user's explicit approval is now
    part of the reason the fixer should proceed with a concrete
    change; the orchestrator passes a flag
    `ui_deferral_override: true` through the fixer prompt's PR
-   context block (new placeholder `{{UI_DEFERRAL_OVERRIDE}}`) so
-   the fixer treats the verdict space as `fixed` /
-   `fixed-differently` / `replied` / `not-addressing` /
-   `needs-human` only — `ui-deferred` is not a valid return in the
-   override path.
+   context block (placeholder `{{UI_DEFERRAL_OVERRIDE}}`) so the
+   fixer treats the verdict space as `fixed` / `fixed-differently`
+   / `replied` / `not-addressing` / `needs-human` only —
+   `ui-deferred` is not a valid return in the override path.
 3. Run `pr-loop-lib/steps/04.5-local-verify.md` then
    `pr-loop-lib/steps/06-commit-push.md` for the resulting diff.
 4. Re-enter `pr-loop-lib/steps/07-reply-resolve.md` with the scoped
@@ -214,7 +225,8 @@ which is why `rm -rf` is mandatory here.
 
 Per `pr-loop-lib/references/invariants.md`:
 - S11.1: `termination_reason` is set.
-- S11.2: Lock file no longer exists after this step.
+- S11.2: Lock path (directory, per Primitive A of `state-protocol.md`)
+  no longer exists after this step.
 - S11.3: If `context.ui_deferred_items` is non-empty at step entry,
   either a `ui_deferred_prompt_skipped` log event OR one
   `ui_deferred_decision` event per item (with `decision ∈ {apply,

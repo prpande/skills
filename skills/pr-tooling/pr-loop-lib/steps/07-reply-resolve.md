@@ -33,12 +33,22 @@ For `ui-deferred`:
 ```markdown
 > <quoted relevant part>
 
-Deferred for user review: <one-line proposal from agent's reply_text>.
+Deferred for user review: <one-line proposal>.
 This appears to be a UI / design / copy change. The pr-autopilot /
 pr-followup skill intentionally does NOT auto-commit UI changes; it
 will ask the PR author at the end of the run whether to apply this
 suggestion.
 ```
+
+The one-line proposal is sourced from
+`context.ui_deferred_items[i].proposal` (the canonical field,
+populated by step 04 from the fixer's `reason`). Do NOT parse it
+out of `agent_return.reply_text` — `reply_text` is a free-form
+markdown reply whose shape is the fixer's to choose, whereas
+`proposal` is a single sentence the orchestrator owns. Sourcing
+from `proposal` keeps the user-facing prompt in step 11, the
+thread reply posted here, and the internal state all reading from
+one place.
 
 The thread is never auto-resolved for `ui-deferred` — it stays open
 on the platform so reviewers can see that a user decision is
