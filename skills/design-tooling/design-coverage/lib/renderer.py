@@ -110,19 +110,33 @@ def render_comparison(data: Dict[str, Any]) -> str:
         )
     return "\n".join(lines) + "\n"
 
+_SEVERITY_EMOJI = {"error": "🔴", "warn": "🟠", "info": "ℹ️"}
+_STATUS_EMOJI = {
+    "missing": "🔴",
+    "restructured": "🟡",
+    "new-in-figma": "⚪",
+    "present": "✅",
+}
+
+
 def render_report(data: Dict[str, Any]) -> str:
     lines = [_header(data, "Design Coverage Report")]
     severity_order = {"error": 0, "warn": 1, "info": 2}
     summary = sorted(data.get("summary", []), key=lambda s: severity_order.get(s["severity"], 99))
     lines.append("\n## Summary\n")
     for s in summary:
+        emoji = _SEVERITY_EMOJI.get(s["severity"], "")
         screen = f" ({s['screen']})" if s.get("screen") else ""
-        lines.append(f"- [{s['severity'].upper()}]{screen} {s['message']}")
+        prefix = f"{emoji} " if emoji else ""
+        lines.append(f"- {prefix}[{s['severity'].upper()}]{screen} {s['message']}")
     lines.append("\n## Coverage Matrix\n")
     # Column header is platform-neutral; the JSON key stays `android_screen`
     # for schema compatibility (see spec "Known limitations").
     lines.append("| Figma frame | Code screen | Status |")
     lines.append("|---|---|---|")
     for m in data.get("matrix", []):
-        lines.append(f"| {m['figma_frame']} | {m.get('android_screen') or '—'} | {m['status']} |")
+        status = m["status"]
+        status_emoji = _STATUS_EMOJI.get(status, "")
+        status_cell = f"{status_emoji} {status}" if status_emoji else status
+        lines.append(f"| {m['figma_frame']} | {m.get('android_screen') or '—'} | {status_cell} |")
     return "\n".join(lines) + "\n"
