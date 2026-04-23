@@ -104,3 +104,23 @@ If a deployment needs `missing` rows on a matrix (e.g., for a code-first coverag
 ## Narrative summary (NOT this stage)
 
 This stage writes the deterministic audit view (`06-report.md`). The verdict-first narrative summary at `06-report.json` → `06-summary.md` is rendered by the **main session**, not a subagent, once this stage returns. See SKILL.md § "Final output" for the required structure. Keeping the narrative render out-of-stage means this stage stays deterministic and testable; the narrative is explicitly labeled non-deterministic.
+
+## Scope fence — what this stage MUST NOT write
+
+This stage writes exactly two files:
+
+- `<run_dir>/06-report.json` (deterministic JSON, schema-validated)
+- `<run_dir>/06-report.md` (deterministic Markdown from `render_report`)
+
+Explicitly forbidden additions to `06-report.md`:
+
+- **Do NOT append a verbatim `## Clarifications Q01–QNN` dump.** Stage 3 already writes the full Q&A to `03-clarifications.json` / `03-clarifications.md`. Duplicating the verbatim Q&A in the report file bloats it without new information and couples stage 6 to stage 3's prose. If `06-report.md` needs to reference clarifications, add a one-line pointer:
+
+  ```markdown
+  _Stage 3 Q&A (verbatim): see [03-clarifications.md](./03-clarifications.md)._
+  ```
+
+- **Do NOT write `06-summary.md`.** The main session owns the narrative render — if you find a `06-summary.md` already in the run dir (from a prior run), leave it alone.
+- **Do NOT rewrite any severity or status judgement from `05-comparison.json`.** Stage 5 is the source of truth; your job is to project those rows into the report shape, not re-adjudicate them. If a verdict looks wrong, that's a stage 5 problem — surface it as an error, don't paper over it.
+
+Freelancing extra prose sections (e.g., "Severity tally insights", "Review roadmap", "Reasoning notes") also belongs in `06-summary.md`, not here.

@@ -206,16 +206,40 @@ exists in the run directory.
 
 ## Final output
 
-After stage 6 writes the deterministic `<run-dir>/06-report.md` (audit view), run the **stage-6 narrative render** in the main session — do NOT dispatch a subagent for this step. Read `<run-dir>/06-report.json` and render a verdict-first summary to `<run-dir>/06-summary.md` with this structure:
+After stage 6 writes the deterministic `<run-dir>/06-report.md` (audit view), run the **stage-6 narrative render** in the main session — do NOT dispatch a subagent for this step. Read `<run-dir>/06-report.json` and render a verdict-first summary to `<run-dir>/06-summary.md`.
 
-1. **One-line verdict** at the top: `> **Verdict:** 🟢 Ready to ship` / `🟡 Caveats below` / `🔴 Not ready to ship: <one-sentence reason>`. Pick color by highest-severity summary entry: any `error` → red; any `warn` (no error) → yellow; else green.
-2. **Severity tally table** (counts of error / warn / info summary entries + counts of matrix statuses: `missing`, `new-in-figma`, `restructured`, `present`).
-3. **Sections per severity bucket** — start with 🔴 errors, each as a concise paragraph citing `code_ref` / `figma_ref` / evidence. Then 🟠 warnings, grouped by screen. Then 🟡 restructured rows (if any) under an optional "verify intent, don't fix" banner. `new-in-figma` counts get a collapsed summary, not an enumeration.
-4. **Where to start** section at the bottom — 2-4 bullets prioritizing errors over warnings.
+The summary is for a designer / engineer reviewer who has ~2 minutes before their next meeting. Optimize for that reader: prose-first, prioritized, collapsed where noisy. Do NOT mechanically enumerate.
 
-Write the summary via a simple Bash heredoc or `Write` call. The rendered file has a header comment noting it is non-deterministic (re-running may produce different prose). The deterministic audit view remains at `06-report.md`.
+### Required structure
 
-Then print the path to **both** files:
+1. **Non-deterministic banner** — write this HTML comment verbatim at the very top of `06-summary.md` (do **not** wrap it in a code fence; the banner is an actual HTML comment, not a code example): `<!-- Rendered by the main session from 06-report.json on <ISO-date>. Non-deterministic — re-running /design-coverage may produce different prose. The deterministic audit view is 06-report.md. -->`
+
+2. **One-line verdict** immediately after the title: `> **Verdict:** 🟢 Ready to ship` / `🟡 Caveats below` / `🔴 Not ready to ship: <one-sentence reason>`. Pick color by highest-severity summary entry (any `error` → red; any `warn` and no error → yellow; else green). The reason cites the specific gap that blocks shipping ("the Resource Picker modal has no Figma frame"), not a count ("2 errors need review").
+
+3. **Next 5 actions** — a numbered list of the 5 most actionable rows the reader should work on first (errors before warnings, highest-severity warnings before lower). One sentence each, imperative voice, beginning with a verb ("Ask design to add…", "Confirm with product whether…", "Drop the legacy X path…"). This is what the reader reads in the first 30 seconds — it must be the top of the file, not buried after the tally.
+
+4. **Severity tally table** — counts of 🔴/🟠/ℹ️ summary entries + counts of matrix statuses (`missing`, `new-in-figma`, `restructured`, `present`). Use the emoji in the table cells, not just the headers.
+
+5. **Sections per severity bucket**, in this order:
+   - **🔴 Errors** — each error as its own subsection. Required content per error: the row's `code_ref` / `figma_ref`, one-sentence reasoning, and a concrete "what to do" sentence that starts with a verb ("Ask design to…", "Document that…", "Drop the X branch if…"). **No ambiguity-punting prose** like "needs explicit product confirmation" without a proposed ask.
+   - **🟠 Warnings** — group by **underlying design decision**, not by severity tag or by clarification Q-ID. Cluster related items: "all three cancel-with-auto-email variants trace to one dropped feature — one fix". The group name should be in reviewer-facing product language ("Bottom toolbar collapse", "Notes screen extraction", "Status-chip consolidation"), not audit shorthand ("Q10/Q11 fold"). If one design decision produces > 20 warning rows, the decision itself is a cluster worth calling out in its own subsection.
+   - **🟡 Restructured** — same grouping principle (by design decision, not by Q-ID). Open with a banner reminding the reader these are intentional moves, not bugs: *"The N restructured rows below are not bugs — they are places the legacy shape is being intentionally rebuilt. Review to confirm intent; do NOT treat as defects."*
+   - **⚪ New in Figma** — summarize into themed buckets (`Coachmarks`, `Milestones`, `Skeleton loading`, `Haptics`, …), counts only. Do NOT enumerate individual rows — link to `06-report.md` for the full list.
+
+6. **Wrap long sections in `<details>`** — any section with ≥ 20 rows MUST be wrapped in `<details><summary>…</summary>…</details>` so GitHub collapses it by default. The `<summary>` must carry the bucket name AND the row count so the reader can see the scale without expanding (example: `<summary><b>Bottom toolbar collapse — 38 rows</b></summary>`).
+
+7. **Where to start** — 3–5 numbered bullets at the bottom prioritizing errors over warnings, with concrete next actions. Separate from "Next 5 actions" at the top — that's raw-priority; this is operator-guidance ("Walk the 62 missing rows with product in one session; decide which are dropped vs oversight").
+
+### Forbidden / pitfalls
+
+- **Do NOT group by severity tag alone** ("🟠 Warnings" is a section header, not a group). Always cluster related rows under a design-decision name.
+- **Do NOT enumerate the full matrix.** If a section would exceed ~30 bullets, collapse it with `<details>` or bucket it.
+- **Do NOT paste verbatim clarifications.** They live in `03-clarifications.md`; link to that file.
+- **Do NOT soften error action prose.** "Needs confirmation" is wrong. "Ask design to add a frame for the Resource Picker, or document that resource-required appointments are out of scope for the new flow" is right.
+
+### Mechanics
+
+Use the `Write` tool to create `06-summary.md` directly. Then print the path to both files so the user can open either:
 
 ```
 Audit view:     <run-dir>/06-report.md
