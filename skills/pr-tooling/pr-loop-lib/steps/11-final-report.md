@@ -147,11 +147,22 @@ list is non-empty:
    override path.
 3. Run `pr-loop-lib/steps/04.5-local-verify.md` then
    `pr-loop-lib/steps/06-commit-push.md` for the resulting diff.
-   Skip steps 07 and 08 — the user has already decided; no
-   quiescence check is needed.
-4. Post a single follow-up reply per resolved thread summarizing the
-   approved change (reuses step 07's reply format; thread IS
-   resolved on success because the user explicitly approved).
+4. Re-enter `pr-loop-lib/steps/07-reply-resolve.md` with the scoped
+   `agent_returns` from the re-dispatch. Step 07 handles the
+   platform-specific reply + resolve logic uniformly: GitHub inline
+   threads resolve via the GraphQL resolve mutation, AzDO threads
+   resolve via `az repos pr thread update --status closed`, and
+   `surface: issue` comments are posted without resolve (no
+   mechanism). Because the user has explicitly approved each
+   re-dispatched item, the resulting verdicts are expected to be
+   `fixed` / `fixed-differently` / `replied` — the normal resolve
+   paths in step 07 apply. Do NOT skip the `needs-human`-style
+   resolve exception: if the re-dispatched fixer still returns
+   `needs-human` (e.g., ambiguity the override doesn't resolve),
+   the thread stays open as usual.
+5. Skip step 08 (quiescence check) — the user has already decided
+   the loop is done; re-running quiescence against the scoped list
+   would either trivially exit or spuriously re-enter the loop.
 
 ### Reject path
 
@@ -183,7 +194,8 @@ state file; a subsequent `pr-followup` invocation can re-prompt.
 
 ## Lock release
 
-As the last action before the report is printed:
+After the UI-deferred approval phase completes (no-op when the list
+is empty), and as the final action of this step:
 ```bash
 rm -rf "<repo-root>/.pr-autopilot/pr-<N>.lock"
 ```
