@@ -212,13 +212,7 @@ The summary is for a designer / engineer reviewer who has ~2 minutes before thei
 
 ### Required structure
 
-1. **Non-deterministic banner** at the very top — a comment explaining provenance:
-
-   ```
-   <!-- Rendered by the main session from 06-report.json on <ISO-date>.
-        Non-deterministic — re-running /design-coverage may produce different
-        prose. The deterministic audit view is 06-report.md. -->
-   ```
+1. **Non-deterministic banner** — write this HTML comment verbatim at the very top of `06-summary.md` (do **not** wrap it in a code fence; the banner is an actual HTML comment, not a code example): `<!-- Rendered by the main session from 06-report.json on <ISO-date>. Non-deterministic — re-running /design-coverage may produce different prose. The deterministic audit view is 06-report.md. -->`
 
 2. **One-line verdict** immediately after the title: `> **Verdict:** 🟢 Ready to ship` / `🟡 Caveats below` / `🔴 Not ready to ship: <one-sentence reason>`. Pick color by highest-severity summary entry (any `error` → red; any `warn` and no error → yellow; else green). The reason cites the specific gap that blocks shipping ("the Resource Picker modal has no Figma frame"), not a count ("2 errors need review").
 
