@@ -83,11 +83,12 @@ equivalent predicates live in `P02.*`.
 | # | Predicate |
 |---|---|
 | S04.1 | `len(agent_returns) == len(dispatch_units)` where dispatch_units is clusters + individual items |
-| S04.2 | Every return's `verdict` is one of the 5 allowed values |
+| S04.2 | Every return's `verdict` is one of the 6 allowed values (`fixed`, `fixed-differently`, `replied`, `not-addressing`, `needs-human`, `ui-deferred`) per the AgentReturn schema in `context-schema.md` |
 | S04.3 | Every entry in `verifier_judgements` has a matching entry in `agent_returns` (by `feedback_id`), AND every `feedback_id` whose fixer invocation produced a `fixed`/`fixed-differently` verdict (recorded via the `subagent_return` log event) has an entry in `verifier_judgements`. Demotion in the policy ladder does NOT excuse a missing verifier_judgement — judgements are keyed off the fixer's ORIGINAL verdict, not the post-ladder one. |
 | S04.4 | `files_changed_this_iteration` equals the union of `files_changed` across all returns |
 | S04.5 | No file in `files_changed_this_iteration` has a path outside `context.repo_root` |
 | S04.7 | After the policy ladder resolves for the current dispatch, no surviving fixer's `files_changed` contains an entry that also appears in any rolled-back fixer's `files_changed` unless a `fixer_reverify` log event for that survivor exists this step with the overlapping files listed in `overlap_files`. See `04-dispatch-fixers.md` — "Overlap re-verify". |
+| S04.8 | Every return in `agent_returns` with `verdict == "ui-deferred"` has `files_changed == []` AND a matching entry in `context.ui_deferred_items` (by `feedback_id`). A `ui-deferred` return that touched files must have been rolled back and demoted to `needs-human` by step 04's `ui-deferred` guard — verified by the presence of a `ui_deferred_touched_files` log event and the absence of the item from `ui_deferred_items`. |
 
 ### Step 04.5 — local-verify
 
@@ -133,6 +134,7 @@ equivalent predicates live in `P02.*`.
 |---|---|
 | S11.1 | `termination_reason` is set |
 | S11.2 | Lock **directory** (Primitive A in `state-protocol.md`) has been removed by the time this step completes. Verified via `test ! -d "<repo-root>/.pr-autopilot/pr-<N>.lock"`. Under α the lock was a flat file and this read "Lock file has been removed"; under β the directory-as-lock form requires `rm -rf`, but the presence-check predicate is unchanged in intent — the path must not exist. |
+| S11.3 | If `len(context.ui_deferred_items) > 0` at step entry, the log contains either exactly one `ui_deferred_prompt_skipped` event for this run OR one `ui_deferred_decision` event per item (matched by `feedback_id`), with `decision ∈ {apply, reject, skip}`. Re-dispatch of approved items is audited via the normal `subagent_dispatch` / `subagent_return` events on step 04, with each entry's `feedback_id` matching the approved item. |
 
 ### Step 04g — post-open /code-review invocation (pr-autopilot)
 

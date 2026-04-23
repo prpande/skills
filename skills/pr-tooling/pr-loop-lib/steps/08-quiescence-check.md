@@ -14,8 +14,11 @@ Decide whether to start another iteration or exit to the CI gate.
    `context.last_handled_timestamp = now` so filter A's "new-since" gate
    applies to suspicious items too, and treat this iteration as quiescent.
 2. **No code changed** this iteration: all verdicts are in
-   `{replied, not-addressing, needs-human}`. Re-entering the loop cannot
-   progress — another fetch will see the same state.
+   `{replied, not-addressing, needs-human, ui-deferred}`. Re-entering
+   the loop cannot progress — another fetch will see the same state.
+   `ui-deferred` is treated like `needs-human` for quiescence: step 07
+   posted a self-login reply, so filter A excludes the item on the
+   next fetch; the loop exits and step 11 prompts the user.
 3. **Iteration cap reached**:
    - `context.user_iteration_cap` if set → cap at that value.
    - Else 10 (default).

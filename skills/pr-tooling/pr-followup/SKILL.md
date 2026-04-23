@@ -7,7 +7,7 @@ description: >
   iteration. Use when the user says "follow up on the PR", "new comments
   came in", "address the latest review feedback", "/pr-followup", or similar.
 argument-hint: "[pr-number] [iteration-cap]"
-allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, ScheduleWakeup
+allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, ScheduleWakeup, AskUserQuestion
 ---
 
 # pr-followup

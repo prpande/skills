@@ -56,6 +56,7 @@ Required fields are marked as such.
 | `verifier_judgements` | array of objects | default `[]` | Step 04 verifier outputs, one per verified fixer return |
 | `files_changed_this_iteration` | array of strings | default `[]` | Union of fixer file changes |
 | `needs_human_items` | array of objects | default `[]` | Items flagged for user attention |
+| `ui_deferred_items` | array of objects | default `[]` | Items the fixer judged to be UI / design / copy changes; deferred to end-of-run user approval. Each entry: `{feedback_id, thread_id?, path?, line?, author, body, proposal, reply_text}`. Step 11 prompts the user and may re-enter step 04 scoped to approved items. |
 | `sanity_check_passed` | object | default `{}` | `{ <iteration>: <bool> }` |
 
 ## CI gate
@@ -101,7 +102,7 @@ Required fields are marked as such.
 
 ```json
 {
-  "verdict": "fixed | fixed-differently | replied | not-addressing | needs-human",
+  "verdict": "fixed | fixed-differently | replied | not-addressing | needs-human | ui-deferred",
   "feedback_id": "string",
   "feedback_type": "inline | issue | review | thread",
   "reply_text": "string (markdown)",
@@ -111,6 +112,10 @@ Required fields are marked as such.
   "cluster_assessment": "string or null"
 }
 ```
+
+`ui-deferred` is never emitted with a non-empty `files_changed`. Step
+04's validation rolls back and demotes to `needs-human` if a fixer
+violates this.
 
 ### VerifierJudgement (used in `verifier_judgements`)
 
@@ -124,6 +129,11 @@ Required fields are marked as such.
   "dispatched_at": "ISO-8601 string"
 }
 ```
+
+`fixer_verdict_after` does NOT include `ui-deferred`: verification
+only runs when the fixer originally edited files (verdict `fixed` or
+`fixed-differently`), so the policy ladder can never land on
+`ui-deferred` post-hoc.
 
 ## Validation rules (applied by the LLM on every write)
 

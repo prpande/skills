@@ -9,7 +9,7 @@ description: >
   when the user says "publish the PR", "ship with autopilot", "run
   pr-autopilot", "/pr-autopilot", or similar.
 argument-hint: "[iteration-cap]"
-allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, ScheduleWakeup
+allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, ScheduleWakeup, AskUserQuestion
 ---
 
 # pr-autopilot
@@ -81,9 +81,14 @@ Phase 4 — CI gate (if step 08 exited quiescent, not on cap/runaway)
 7. If red, perform `~/.claude/skills/pr-loop-lib/steps/10-ci-failure-classify.md`.
    Up to 3 re-entries of Phase 3. On cap, proceed to step 8.
 
-Phase 5 — Report
+Phase 5 — Report (and optional UI-deferred approval)
 
-8. Perform `~/.claude/skills/pr-loop-lib/steps/11-final-report.md`. End.
+8. Perform `~/.claude/skills/pr-loop-lib/steps/11-final-report.md`.
+   If `context.ui_deferred_items` is non-empty, step 11 also runs an
+   interactive approval phase (per-item apply / reject / skip via
+   `AskUserQuestion`). Approved items re-enter step 04 with
+   `UI_DEFERRAL_OVERRIDE=true` and go through step 06 for commit +
+   push. Then end.
 
 ## Hard rules (from user global CLAUDE.md)
 

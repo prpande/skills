@@ -20,6 +20,7 @@ PR context
   PR title: {{PR_TITLE}}
   base branch: {{BASE_BRANCH}}
   head commit: {{HEAD_SHA}}
+  ui deferral override: {{UI_DEFERRAL_OVERRIDE}}   (one of: `false` | `true`)
 
 Feedback details
   surface: {{SURFACE_TYPE}}   (one of: inline | issue | review | thread)
@@ -37,6 +38,9 @@ Your task
      {{FILE_PATH}} and adjacent files in the same directory if the
      feedback references them.
   2. Decide whether the feedback is:
+       - a UI / design / visual-appearance change (verdict `ui-deferred`);
+         see "UI / design deferral" below — this takes precedence over
+         `fixed`/`replied` when it applies;
        - valid and actionable with a clear code fix;
        - valid but already addressed in the current code (a reply is enough);
        - factually wrong about the code (provide evidence in the reply);
@@ -52,10 +56,48 @@ Your task
      are addressing, followed by one of:
        - "Addressed: <brief description of the fix>"
        - "Not addressing: <reason with evidence, e.g., 'null check already exists at line 85'>"
+       - "Deferred for user review: <one-line description of the proposed UI change>"
+         (used with verdict `ui-deferred`).
+
+UI / design deferral (verdict `ui-deferred`)
+  The orchestrator auto-commits code fixes, but **UI / design feedback must
+  be surfaced to the user for explicit approval**. Return `ui-deferred`
+  (and do NOT edit any files) when the feedback is primarily about:
+    - visual appearance — color, gradient, shadow, contrast, opacity;
+    - layout, spacing, padding, margin, alignment, grid, flex geometry;
+    - typography — font family, size, weight, line-height, letter-spacing;
+    - component styling, iconography, imagery, empty-state visuals,
+      animation/transition feel;
+    - user-facing copy / wording / tone (microcopy, button labels,
+      placeholders, help text);
+    - pure UX polish ("this feels cramped", "move this button above the
+      fold", "the modal should close on backdrop click").
+  If the feedback is mixed — part UI, part logic/accessibility/a11y-code
+  (e.g., missing `aria-label`, keyboard-trap bug, unhandled error state
+  that happens to show a broken UI) — treat the logic/a11y-code portion
+  with `fixed` as usual and mention in `reason` that a UI-only sub-point
+  was noted. Do not split into two returns.
+  When returning `ui-deferred`:
+    - `files_changed` MUST be `[]`. The orchestrator halts the skill if
+      a `ui-deferred` return has touched files.
+    - `reply_text` starts with the quoted feedback sentence followed by
+      `Deferred for user review: <one-line proposal>`. The orchestrator
+      posts this reply but does NOT resolve the thread.
+    - Put the one-line proposal (what you *would* change, if approved)
+      into `reason` as well, so the final-report prompt can show it to
+      the user verbatim.
+  **UI deferral override.** If the PR-context line reads
+  `ui deferral override: true`, the user has already reviewed this
+  feedback in the final-report prompt and explicitly approved the
+  change. In that case, `ui-deferred` is NOT a valid verdict — pick
+  one of `fixed`, `fixed-differently`, `replied`, `not-addressing`,
+  or `needs-human` and proceed to apply the change directly. When
+  override is `false` (the default during the loop), follow the
+  deferral rules above.
 
 Return format (exactly these keys as JSON in your final message)
   {
-    "verdict": "fixed" | "fixed-differently" | "replied" | "not-addressing" | "needs-human",
+    "verdict": "fixed" | "fixed-differently" | "replied" | "not-addressing" | "needs-human" | "ui-deferred",
     "feedback_id": "{{FEEDBACK_ID}}",
     "feedback_type": "{{SURFACE_TYPE}}",
     "reply_text": "markdown reply starting with `> quoted...`",

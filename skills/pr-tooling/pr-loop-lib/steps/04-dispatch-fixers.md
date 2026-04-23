@@ -55,7 +55,11 @@ For each unit:
 5. Substitute remaining placeholders: `{{OWNER}}`, `{{REPO}}`, `{{PR_NUMBER}}`,
    `{{PR_TITLE}}`, `{{BASE_BRANCH}}`, `{{HEAD_SHA}}`, `{{SURFACE_TYPE}}`,
    `{{FILE_PATH}}`, `{{LINE_NUMBER}}`, `{{AUTHOR_LOGIN}}`, `{{AUTHOR_TYPE}}`,
-   `{{CREATED_AT}}`, `{{COMMENT_BODY_VERBATIM}}`, `{{FEEDBACK_ID}}`.
+   `{{CREATED_AT}}`, `{{COMMENT_BODY_VERBATIM}}`, `{{FEEDBACK_ID}}`,
+   `{{UI_DEFERRAL_OVERRIDE}}`. `{{UI_DEFERRAL_OVERRIDE}}` is the
+   literal string `false` during the normal loop and `true` only when
+   step 11's UI-deferred approval phase re-enters this step for items
+   the user explicitly approved.
 6. For cluster units, additionally substitute the cluster-brief XML block.
 7. Spawn an agent via the host platform's agent-dispatch mechanism (on
    Claude Code: `Agent` tool with `subagent_type: "general-purpose"`,
@@ -73,6 +77,16 @@ Validate each return:
   outside the repo root.
 - `reply_text` is non-empty when verdict is not `not-addressing` of the
   `suspicious` flavor (those have canned replies from step 03).
+- **`ui-deferred` guard:** if `verdict == "ui-deferred"` AND
+  `files_changed` is non-empty, the fixer violated the contract in
+  `references/fixer-prompt.md` ("UI / design deferral"). Treat this as
+  an invariant fail: log `ui_deferred_touched_files` with
+  `{feedback_id, files_changed}`, roll back via
+  `git checkout -- <files_changed>`, clear `files_changed = []`, and
+  demote the return to `needs-human` with reason
+  "fixer returned ui-deferred but edited files; rolled back". Do NOT
+  collect into `context.ui_deferred_items` in this case — the fixer's
+  judgement is no longer trusted for this item.
 
 ## Fixer-output verification (mandatory)
 
@@ -240,8 +254,9 @@ Per `pr-loop-lib/references/invariants.md`:
 
 ### Skip conditions
 
-- Return verdicts `replied`, `not-addressing`, `needs-human` → no
-  verification runs. These already declined to change code.
+- Return verdicts `replied`, `not-addressing`, `needs-human`,
+  `ui-deferred` → no verification runs. These already declined to
+  change code (or deferred the change to the user).
 - Return with `fixer_return.suspicious == true` → no verification runs.
   `suspicious` is a boolean flag on the return, not a verdict value;
   suspicious returns carry a canned `not-addressing` verdict plus the
@@ -249,6 +264,27 @@ Per `pr-loop-lib/references/invariants.md`:
 - Return with `files_changed: []` despite verdict `fixed`: log an
   `invariant_fail` and demote to `needs-human` (the fixer claimed a
   fix but produced no diff — bug).
+
+## `ui-deferred` handling
+
+Any agent returning `ui-deferred` (after the empty-`files_changed`
+guard above passes):
+
+- Its `reply_text` is posted in step 07 but the thread is NOT
+  resolved. Step 07 uses the `ui-deferred` reply template.
+- Append an entry to `context.ui_deferred_items` with
+  `{feedback_id, thread_id?, path?, line?, author, body, proposal,
+    reply_text}`, where `proposal` is the fixer's one-line description
+  (from `fixer_return.reason`). Step 11 reads this list to prompt the
+  user for approval at the end of the run.
+- No verifier call, no sanity check entry, and no contribution to
+  `context.files_changed_this_iteration` — `ui-deferred` never edits
+  code during the loop.
+
+Deferred items do NOT block quiescence. Their thread reply is the
+self-login reply that step 08 uses to mark the thread handled, so
+Filter A will exclude them on subsequent iterations even though the
+thread is still open on the platform.
 
 ## `needs-human` handling
 
@@ -274,3 +310,7 @@ demotion, or via overlap re-verify cascade-rollback:
 - `context.files_changed_this_iteration` — union of `files_changed` across
   all agents
 - `context.needs_human_items` — subset requiring user decision
+- `context.ui_deferred_items` — subset deferred for end-of-run user
+  approval (UI / design / copy changes). Not dispatched for auto-fix
+  during the loop; step 11 prompts the user and, if approved, re-runs
+  step 04 scoped to the approved items.
