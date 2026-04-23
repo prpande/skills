@@ -75,6 +75,9 @@ Rules:
 | `verifier_nonce_collision` | `{slot, body_sample}` — emitted by the verifier prompt renderer when raw content in one of the untrusted slots contains the nonce literal. `slot` is `feedback` / `reason` / `diff`; `body_sample` is the first 200 chars of the offending input. First collision triggers nonce regeneration; a second collision aborts the verifier call |
 | `fixer_nonce_collision` | `{}` — emitted by the fixer dispatch when the comment body contains the fixer nonce literal. Distinct from `verifier_nonce_collision` (which covers the verifier's three slots). First collision triggers nonce regeneration; a second collision escalates the dispatch unit to `needs-human` |
 | `wait_clamped` | `{requested_minutes, effective_minutes, reason}` — emitted by `pr-loop-lib/steps/01-wait-cycle.md` when `context.wait_override_minutes` is less than the 10-minute floor and gets clamped up. `requested_minutes` is the raw user input, `effective_minutes` is always 10. `reason` is a short string explaining the floor (e.g., `"reviewer-bot response window"`). Informational only — the loop continues with the clamped value |
+| `ui_deferred_touched_files` | `{feedback_id, files_changed}` — emitted by step 04's validation when a fixer return with `verdict == "ui-deferred"` arrived with a non-empty `files_changed`. The orchestrator rolls back and demotes the return to `needs-human`; this event is the audit trail for S04.8. |
+| `ui_deferred_decision` | `{feedback_id, decision}` — emitted by step 11's UI-deferred approval phase, one per item, `decision ∈ {apply, reject, skip}`. `apply` triggers a re-dispatch through step 04 with `UI_DEFERRAL_OVERRIDE=true`. |
+| `ui_deferred_prompt_skipped` | `{reason, count}` — emitted by step 11 when the approval prompt could not run (e.g., non-interactive host). `count` is `len(context.ui_deferred_items)` at the time the prompt would have fired. |
 
 ## Truncation
 

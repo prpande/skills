@@ -1,7 +1,13 @@
 # Loop step 11 — Final report
 
-Terminal step. Print a structured summary. No side effects other than
-releasing the advisory lock.
+Terminal step. Print a structured summary and — if there are UI /
+design suggestions deferred during the loop — prompt the user for
+per-item approval before releasing the advisory lock. Approved items
+are re-dispatched through step 04 (scoped) and step 06 (commit +
+push); this may update the scoped/actionable work for those items
+along with the usual context, log, and commit/push bookkeeping for
+that re-dispatch path, but does not otherwise restart or broaden the
+loop.
 
 ## Report template
 
@@ -28,6 +34,7 @@ Comments addressed (<total>):
   - replied:          <n>
   - not-addressing:   <n>
   - needs-human:      <n>  (threads remain open for user input)
+  - ui-deferred:      <n>  (UI / design / copy — awaiting your approval below)
   - suspicious:       <n>  (prompt-injection filter fired)
 
 Verifier judgements (<total>):
@@ -63,6 +70,15 @@ Needs your input:
   <for each needs-human item: file:line, quoted feedback sentence,
    agent's reason>
 
+UI / design suggestions deferred to you (<total>):
+  <for each ui_deferred_items entry: file:line, author, quoted
+   feedback body (first 200 chars), fixer's one-line proposal
+   (from .proposal). Thread URL if platform supports thread-linking.>
+
+  You will be asked to approve, reject, or skip each item below. The
+  skill does NOT auto-commit UI / design / copy changes — those are
+  always a user decision.
+
 Pre-existing main-branch failures (skipped, not our responsibility):
   <per-check table if any>
 
@@ -81,9 +97,116 @@ The full detail (per-finding file:line, description, fixer/verifier
 outcome) lives in the review-summary file on disk — step 11 only
 prints counts to keep the terminal output scannable.
 
+## UI-deferred user-approval phase
+
+Runs after the report is printed, BEFORE lock release. Skipped
+entirely when `context.ui_deferred_items` is empty.
+
+### Prompting
+
+For each entry in `context.ui_deferred_items`, ask the user via the
+host's question mechanism (on Claude Code: `AskUserQuestion`) with
+three options:
+
+- **Apply fix and commit** — dispatch a fresh fixer for this item and
+  push the resulting change.
+- **Reject (post a polite decline)** — post a follow-up reply on the
+  thread noting the suggestion was considered and declined; do not
+  edit code.
+- **Skip (leave thread open)** — take no further action; the PR
+  author will handle it manually later.
+
+Present the item's `path:line` (when known), author, the first 200
+characters of the quoted feedback `body`, and the fixer's `proposal`
+as context in the question body so the user can decide without
+scrolling back through the report.
+
+Batch prompting is acceptable for up to 4 items in a single
+`AskUserQuestion` call (one question per item). For more than 4
+items, loop with one question at a time. Do not group distinct
+suggestions into a single multi-select — each item gets its own
+three-way decision so the user is never forced to approve a bundle.
+
+### Re-dispatch (for approved items only)
+
+Collect every item the user marked **Apply fix and commit**. If the
+list is non-empty:
+
+1. Build a synthetic `context.ui_deferred_actionable` containing
+   only the approved items (preserve their original `id`,
+   `surface`, `path`, `line`, `body`, `thread_id`). Keep the
+   persisted `context.actionable` unchanged — the saved top-level
+   field must continue to reflect the loop's final triage output,
+   not the re-dispatch input.
+2. Enter `pr-loop-lib/steps/04-dispatch-fixers.md` with a **scoped
+   overlay**: for the duration of this one invocation only, step 04
+   reads its actionable list from `context.ui_deferred_actionable`
+   in place of `context.actionable`. This is an input override for
+   step 04's execution, not a mutation of the persisted top-level
+   field; on return, `context.actionable` is still the unchanged
+   list from the final loop iteration. `context.ui_deferred_actionable`
+   itself is persisted (step 11 writes it before re-dispatching)
+   so the state file is auditable, but it does not replace
+   `actionable`. The fixer prompt's "UI / design deferral"
+   guidance still applies, but the user's explicit approval is now
+   part of the reason the fixer should proceed with a concrete
+   change; the orchestrator passes a flag
+   `ui_deferral_override: true` through the fixer prompt's PR
+   context block (placeholder `{{UI_DEFERRAL_OVERRIDE}}`) so the
+   fixer treats the verdict space as `fixed` / `fixed-differently`
+   / `replied` / `not-addressing` / `needs-human` only —
+   `ui-deferred` is not a valid return in the override path.
+3. Run `pr-loop-lib/steps/04.5-local-verify.md` then
+   `pr-loop-lib/steps/06-commit-push.md` for the resulting diff.
+4. Re-enter `pr-loop-lib/steps/07-reply-resolve.md` with the scoped
+   `agent_returns` from the re-dispatch. Step 07 handles the
+   platform-specific reply + resolve logic uniformly: GitHub inline
+   threads resolve via the GraphQL resolve mutation, AzDO threads
+   resolve via `az repos pr thread update --status closed`, and
+   `surface: issue` comments are posted without resolve (no
+   mechanism). Because the user has explicitly approved each
+   re-dispatched item, the resulting verdicts are expected to be
+   `fixed` / `fixed-differently` / `replied` — the normal resolve
+   paths in step 07 apply. Do NOT skip the `needs-human`-style
+   resolve exception: if the re-dispatched fixer still returns
+   `needs-human` (e.g., ambiguity the override doesn't resolve),
+   the thread stays open as usual.
+5. Skip step 08 (quiescence check) — the user has already decided
+   the loop is done; re-running quiescence against the scoped list
+   would either trivially exit or spuriously re-enter the loop.
+
+### Reject path
+
+For each item the user marked **Reject**:
+
+1. Post a reply on the thread:
+   ```markdown
+   > <quoted feedback body, first 200 chars>
+
+   Considered — the PR author has decided not to apply this UI
+   change in this PR. Leaving the thread for further discussion if
+   needed.
+   ```
+2. Do NOT resolve the thread — the user rejected the code change,
+   not the conversation.
+
+### Skip path
+
+Take no action beyond what step 07 already did (the "deferred for
+user review" reply is already on the thread). The thread stays open.
+
+### Failure handling
+
+If `AskUserQuestion` is unavailable (non-interactive host, batch CI
+run), log a `ui_deferred_prompt_skipped` event with
+`{reason: "no-interactive-host", count}` and fall through to lock
+release. The ui-deferred items remain visible in the report and the
+state file; a subsequent `pr-followup` invocation can re-prompt.
+
 ## Lock release
 
-As the last action before the report is printed:
+After the UI-deferred approval phase completes (no-op when the list
+is empty), and as the final action of this step:
 ```bash
 rm -rf "<repo-root>/.pr-autopilot/pr-<N>.lock"
 ```
@@ -102,7 +225,12 @@ which is why `rm -rf` is mandatory here.
 
 Per `pr-loop-lib/references/invariants.md`:
 - S11.1: `termination_reason` is set.
-- S11.2: Lock file no longer exists after this step.
+- S11.2: Lock path (directory, per Primitive A of `state-protocol.md`)
+  no longer exists after this step.
+- S11.3: If `context.ui_deferred_items` is non-empty at step entry,
+  either a `ui_deferred_prompt_skipped` log event OR one
+  `ui_deferred_decision` event per item (with `decision ∈ {apply,
+  reject, skip}`) is present by step end.
 
 ## Exit
 
