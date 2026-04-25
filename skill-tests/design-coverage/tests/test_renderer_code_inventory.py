@@ -13,7 +13,7 @@ INV = {
          "hotspot": None, "confidence": "low", "notes": None},
     ],
     "unwalked_destinations": [
-        {"nav_source": "nav_main.xml", "target": "HiddenFragment", "reason": "class not found"}
+        {"nav_source": "nav_main.xml", "target": "HiddenFragment", "reason": "unresolved-class"}
     ]
 }
 

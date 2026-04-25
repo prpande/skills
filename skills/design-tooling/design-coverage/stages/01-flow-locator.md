@@ -8,17 +8,19 @@
 
 ## Preflight: working-directory normalization
 
-At the top of any Python snippet you run, normalize the working directory so `lib.*` imports resolve regardless of where the skill was invoked:
+At the top of any Python snippet you run, normalize the working directory so `lib.*` imports resolve regardless of where the skill was invoked. Resolve the skill root portably by walking up from CWD to find `SKILL.md`:
 
 ```bash
-cd ~/.claude/skills/design-coverage/
+# Resolve the skill root portably: walk up from CWD to find SKILL.md, with
+# fallback to the standard install location when CWD is outside the skill tree.
+cd "$(python -c 'import sys; from pathlib import Path; p=Path.cwd(); fb=Path.home()/".claude"/"skills"/"design-coverage"; cands=[q for q in [p,*p.parents,fb] if (q/"SKILL.md").exists()]; print(cands[0]) if cands else sys.exit("design-coverage skill not found")')"
 ```
 
 Then add `Path.cwd() / "lib"` to `sys.path` before importing.
 
 ## Objective
 
-Produce `01-flow-mapping.json` conforming to `~/.claude/skills/design-coverage/schemas/flow_mapping.json`. Required shape:
+Produce `01-flow-mapping.json` conforming to the skill's `schemas/flow_mapping.json`. Required shape:
 
 ```
 {

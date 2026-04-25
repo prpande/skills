@@ -49,7 +49,9 @@ If a **specific** frame's MCP call fails, record the failure on that frame's ent
 ## Atomic write pattern
 
 ```bash
-cd ~/.claude/skills/design-coverage/
+# Resolve the skill root portably: walk up from CWD to find SKILL.md, with
+# fallback to the standard install location when CWD is outside the skill tree.
+cd "$(python -c 'import sys; from pathlib import Path; p=Path.cwd(); fb=Path.home()/".claude"/"skills"/"design-coverage"; cands=[q for q in [p,*p.parents,fb] if (q/"SKILL.md").exists()]; print(cands[0]) if cands else sys.exit("design-coverage skill not found")')"
 ```
 
 ```python

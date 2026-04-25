@@ -176,19 +176,29 @@ destination; feed that back into navigation walking in stage 1 scope.
 **Hotspots to record alongside inventory items.**
 
 Each emission must match the shared `inventory_item.json` schema — a
-non-null `hotspot` is an object `{"type": "<enum>", "question": "<short prompt for stage 3>"}`. Use these mappings from iOS patterns to the schema's `hotspot.type` enum:
+non-null `hotspot` is an object `{"type": "<enum>", "symbol": "<identifier>"}`.
+The `symbol` is the concrete identifier that distinguishes this hotspot
+from siblings of the same type — the flag name, permission name, cell
+class name, etc. Stage 03's question registry uses `symbol` as the
+dedup key and substitutes it into the canonical prompt template. You
+MAY add an optional `"question": "..."` field to suggest prompt text,
+but the registry is the source of truth — it will be ignored unless a
+platform override hooks it in. Use these mappings from iOS patterns to
+the schema's `hotspot.type` enum:
 
 - `feature-flag` — any branch keyed on `FeatureFlagType`,
   `FeatureFlagManager`, `ImplementationSwitch`, `RemoteConfig`,
-  or `LaunchDarkly`. Emit `{"type": "feature-flag", "question": "..."}`.
+  or `LaunchDarkly`. Emit `{"type": "feature-flag", "symbol": "<flagName>"}`
+  (e.g., `"isAppointmentDetailsNewDesignEnabled"`).
 - `permission` — `if staff.can*`, `if user.hasRole(`,
   `AVCaptureDevice.authorizationStatus(`, `CLLocationManager` auth,
   `UNUserNotificationCenter` requests, `PHPhotoLibrary` requests.
-  Emit `{"type": "permission", "question": "..."}`.
+  Emit `{"type": "permission", "symbol": "<permissionName>"}`
+  (e.g., `"staff.canEditAppointments"`, `"camera"`).
 - `server-driven` — `for item in response.items`,
   `UICollectionViewCompositionalLayout` with dynamic section provider,
   any cell type chosen by a runtime `switch` on a server enum.
-  Emit `{"type": "server-driven", "question": "..."}`.
+  Emit `{"type": "server-driven", "symbol": "<sectionOrFieldName>"}`.
 - `view-type` — `tableView.dequeueReusableCell` with an identifier
   chosen at runtime, or a cell-provider closure that branches on item
   type; also `UIHostingController` or `UIViewControllerRepresentable`
@@ -197,10 +207,11 @@ non-null `hotspot` is an object `{"type": "<enum>", "question": "<short prompt f
   status Booked/Confirmed/Arrived/…) that renders a different UI
   per case — treat each case as a candidate state row whose presence
   in Figma stage 5 can verify.
-  Emit `{"type": "view-type", "question": "..."}`.
+  Emit `{"type": "view-type", "symbol": "<cellClassOrEnumCase>"}`
+  (e.g., `"MBOApptDetailCheckoutCell"`).
 - `form-factor` — compact vs regular `horizontalSizeClass`, iPhone vs
   iPad layout branches, `UIDevice.current.userInterfaceIdiom`.
-  Emit `{"type": "form-factor", "question": "..."}`.
+  Emit `{"type": "form-factor", "symbol": "<branchName>"}`.
 
 The schema's enum also accepts `config-qualifier`, `process-death`,
 `viewpager-tab`, `sheet-dialog`; only `process-death` has a clear iOS

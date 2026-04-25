@@ -8,12 +8,14 @@
 ## Preflight
 
 ```bash
-cd ~/.claude/skills/design-coverage/
+# Resolve the skill root portably: walk up from CWD to find SKILL.md, with
+# fallback to the standard install location when CWD is outside the skill tree.
+cd "$(python -c 'import sys; from pathlib import Path; p=Path.cwd(); fb=Path.home()/".claude"/"skills"/"design-coverage"; cands=[q for q in [p,*p.parents,fb] if (q/"SKILL.md").exists()]; print(cands[0]) if cands else sys.exit("design-coverage skill not found")')"
 ```
 
 ## Objective
 
-For each screen in the flow, enumerate its inventory items — screens, states, actions, fields — and emit `02-code-inventory.json` conforming to `~/.claude/skills/design-coverage/schemas/code_inventory.json` with rows conforming to the shared `inventory_item.json` fragment.
+For each screen in the flow, enumerate its inventory items — screens, states, actions, fields — and emit `02-code-inventory.json` conforming to the skill's `schemas/code_inventory.json` with rows conforming to the shared `inventory_item.json` fragment.
 
 ## Method (platform-agnostic)
 
@@ -33,6 +35,55 @@ Use the **Discovery → Focused-reads → Cross-linking** approach:
 - **One row per item.** Do not duplicate inventory items across visual modes; represent mode-dependence via the optional `modes: [...]` list on the item. For a screen that exists only in light + dark modes at the code level, emit one row with `modes: ["light", "dark"]` — not two separate rows. For a screen with a role-based variant, use `modes: ["admin", "user"]`.
 - **Tag ambiguity loudly.** When a state/action/field's presence or behavior can't be determined statically (e.g., only visible in a demo harness, shown as deprecated but not removed), set `ambiguous: true` and a one-sentence `ambiguity_reason` so stage 5's comparator can cite it.
 - **No speculation.** Only include items present in code. If a comment references a feature that isn't implemented, do not record it.
+
+## Closed-enum reasons for `unwalked_destinations`
+
+Stage 02 emits `unwalked_destinations` for navigation targets it does NOT
+walk. The `reason` field is now a **closed enum** with values:
+
+- `adapter-hosted` — the destination is reached through an adapter/bridge whose
+  internals are not in scope (e.g., `*Adapter.*`, `*Bridge.*` calls).
+- `external-module` — the destination lives in a separate module/package not
+  part of this audit's source tree.
+- `swiftui-bridge` — UIKit-to-SwiftUI or SwiftUI-to-UIKit bridge whose wrapped
+  destination is reached through a hosting controller or representable.
+- `dynamic-identifier` — the destination identifier is computed at runtime
+  (e.g., `instantiateViewControllerWithIdentifier:` with a runtime string,
+  selectors built from data).
+- `platform-bridge` — platform-specific bridge that crosses framework boundaries
+  (e.g., React Native bridge call into native, Flutter MethodChannel).
+- `unresolved-class` — the destination references a class name (e.g., from a
+  nav-graph XML `android:name=` attribute) that does not exist in the walked
+  source tree. Distinct from `external-module`: an external module is known
+  to live elsewhere; an unresolved class might be a typo, a deleted file, or
+  generated code not on disk.
+
+**The string `"out-of-scope-destination"` is no longer valid.** If you would
+have written that, emit the destination to `candidate_destinations` instead
+(see below) so stage 03 can ask the user to confirm scope.
+
+## Candidate destinations (judgment-call escapes)
+
+Anything that's reachable from the entry but the agent judges as "maybe in
+scope, not sure" goes to `candidate_destinations: [...]`. Each entry:
+
+```json
+{
+  "parent_screen": "MBOApptDetailViewController",
+  "symbol": "MBOApptQuickBookViewController",
+  "file": "MindBodyPOS/Legacy/.../QuickBook.m",
+  "hop_distance": 1,
+  "why_not_walked": "Modify-appointment full screen; agent unsure if part of appointment-details audit scope."
+}
+```
+
+`parent_screen` is the symbol of the screen the candidate is reachable
+from — stage 03 groups candidates by `parent_screen` for the
+multi-select scope question.
+
+Stage 03 will surface these to the user as a multi-select question per parent
+screen, defaulting all to in-scope (uncheck to exclude). Do NOT silently
+in-scope or out-of-scope these on your own.
 
 ## Output
 
