@@ -1,8 +1,9 @@
 # Wave 3 — Implementation Plan (issue #13)
 
 This document is the agent-facing implementation plan for Wave 3 of the
-design-coverage improvements. It precedes code changes; all items below
-require review approval before implementation begins.
+design-coverage improvements. The PR that introduced this doc also contains the
+full implementation; the plan serves as a design reference and audit trail for
+what was built and why.
 
 Reference spec: `docs/superpowers/specs/2026-04-25-design-coverage-improvements-design.md`
 Feature branch: `claude/issue-13-implementation-DwefJ`
@@ -106,7 +107,9 @@ are invalid `str.format()` placeholder names; calling `.format()` on it would ra
 the appropriate choice inline — it does not call `.format()`.
 
 `test_action_verbs.py` verifies the exported names and checks that `"{verb}"` and
-`"{object}"` are present in the display string; it does NOT attempt `.format()`.
+`"{object}"` are present in the display string; it also calls `.format()` (with no
+arguments) and asserts `KeyError` is raised — making the "not a format target"
+contract machine-checked.
 
 No logic beyond the constant exports — just the vocabulary contract.
 
@@ -342,7 +345,7 @@ default value. The expected fixture at
 `skill-tests/design-coverage/fixtures/stage-03/zero-hotspots/expected/clarifications.json`
 is currently `{"resolved": []}` — it must be updated to:
 ```json
-{"resolved": [], "figma_dedup_policy": "dark-twins-folded"}
+{"resolved": [], "in_scope_destinations": [], "figma_dedup_policy": "dark-twins-folded"}
 ```
 `test_stage3_zero_hotspots.py` must be updated accordingly.
 

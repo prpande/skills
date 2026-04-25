@@ -11,11 +11,14 @@ Build a structured inventory of the Figma design's screens, states, actions, and
 ## Inputs
 
 - `<run_dir>/01-flow-mapping.json` (Stage 1) — tells you which Figma frames are in-scope.
+- `<run_dir>/03-clarifications.json` (Stage 3) — provides `figma_dedup_policy` for appearance-variant folding.
 - Figma MCP tools: `mcp__plugin_figma_figma__get_design_context` and `mcp__plugin_figma_figma__get_screenshot` (paired per frame).
 
 ## Output
 
 Write `<run_dir>/04-figma-inventory.json`. Schema: [`schemas/figma_inventory.json`](../schemas/figma_inventory.json).
+
+Also writes `<run_dir>/00-frame-classification.json` (wave 3 #5). Schema: [`schemas/frame_classification.json`](../schemas/frame_classification.json). Written unconditionally before the per-frame loop — see "Frame classification" section below.
 
 Shape:
 

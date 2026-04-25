@@ -5,7 +5,7 @@ import json
 import os
 import pytest
 from pathlib import Path
-from validator import Validator, ValidationError
+from validator import ValidationError, Validator
 
 SCHEMAS = Path(os.environ["DESIGN_COVERAGE_SKILL_ROOT"]) / "schemas"
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "frame-classification"
@@ -32,7 +32,7 @@ def test_valid_mixed_passes():
 def test_missing_is_leaf_fails():
     data = json.loads((FIXTURES / "invalid_missing_is_leaf.json").read_text())
     schema = json.loads((SCHEMAS / "frame_classification.json").read_text())
-    with pytest.raises((ValidationError, Exception)):
+    with pytest.raises(ValidationError):
         Validator(SCHEMAS).validate(data, schema)
 
 

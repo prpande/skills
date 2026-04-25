@@ -50,14 +50,21 @@ After the candidate-class grep loop (Pass 1 and/or Pass 2) has produced candidat
 run multi-anchor detection **before** writing `01-flow-mapping.json`.
 
 ```python
+import json
+import os
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd() / "lib"))
 from hint_frontmatter import parse_hint_frontmatter
+from skill_io import atomic_write_json
+
+PLATFORMS_DIR = Path(os.environ["DESIGN_COVERAGE_PLATFORMS_DIR"])
+run_config = json.loads((run_dir / "00-run-config.json").read_text(encoding="utf-8"))
+platform = run_config["platform"]
 
 # multi_anchor_suffixes comes from the platform hint's frontmatter.
 # Default to [] when the field is absent (hint has no ambiguous-suffix pairs).
-hint_text = (PLATFORMS_DIR / f"{context.platform}.md").read_text(encoding="utf-8")
+hint_text = (PLATFORMS_DIR / f"{platform}.md").read_text(encoding="utf-8")
 fm = parse_hint_frontmatter(hint_text)
 multi_anchor_suffixes: list[str] = fm.get("multi_anchor_suffixes", [])
 
@@ -102,11 +109,8 @@ for base_name, group in sorted(groups.items()):
     # Record the choice in run-config.
     run_config["selected_anchor"] = selected_class
     run_config["selected_anchor_reason"] = "user-picked-multi-anchor"
-    # Persist the updated run-config.
-    import json
-    (run_dir / "00-run-config.json").write_text(
-        json.dumps(run_config, indent=2), encoding="utf-8"
-    )
+    # Persist the updated run-config atomically so resumes never see partial JSON.
+    atomic_write_json(run_dir / "00-run-config.json", run_config)
 ```
 
 > **Invariant:** Multi-anchor disambiguation is **interactive in-session** (via the
