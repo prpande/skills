@@ -189,7 +189,7 @@ severity looks wrong, the fix is to add an entry to `lib/severity_matrix.py`'s
 ```bash
 # Resolve the skill root portably: walk up from CWD to find SKILL.md, with
 # fallback to the standard install location when CWD is outside the skill tree.
-cd "$(python -c 'import sys; from pathlib import Path; p=Path.cwd(); fb=Path.home()/".claude"/"skills"/"design-tooling"/"design-coverage"; cands=[q for q in [p,*p.parents,fb] if (q/"SKILL.md").exists()]; print(cands[0]) if cands else sys.exit("design-coverage skill not found")')"
+cd "$(python -c 'import sys; from pathlib import Path; p=Path.cwd(); fb=Path.home()/".claude"/"skills"/"design-coverage"; cands=[q for q in [p,*p.parents,fb] if (q/"SKILL.md").exists()]; print(cands[0]) if cands else sys.exit("design-coverage skill not found")')"
 ```
 
 ```python

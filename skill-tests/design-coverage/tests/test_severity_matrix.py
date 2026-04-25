@@ -102,6 +102,25 @@ def test_flush_misses_replaces_existing_file_not_appends(tmp_path):
     assert second_payload[0]["kind"] == "kind-b"
 
 
+def test_flush_misses_empty_buffer_clears_stale_file(tmp_path):
+    """Run with zero misses must NOT inherit a stale miss file from a prior run."""
+    import json
+    import severity_matrix as sm
+    target = tmp_path / "_severity_lookup_misses.json"
+
+    # Stale file from a prior run.
+    sm.reset_misses()
+    sm.lookup("missing", "stale-kind", None, None)
+    sm.flush_misses(target)
+    assert json.loads(target.read_text()) != []  # sanity
+
+    # New run produces zero misses; flush must overwrite to empty list.
+    sm.reset_misses()
+    sm.flush_misses(target)
+    after = json.loads(target.read_text())
+    assert after == [], f"empty-buffer flush left stale entries: {after}"
+
+
 def test_lookup_fallback_walk_order():
     """Document-and-test the four-step walk: (s,k,h,a) → (s,k,h,None) → (s,k,None,None) → (s,None,None,None)."""
     from severity_matrix import lookup, SEVERITY_MATRIX

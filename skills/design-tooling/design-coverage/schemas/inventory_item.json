@@ -35,7 +35,7 @@
           "enum": ["feature-flag", "permission", "server-driven", "config-qualifier", "form-factor", "process-death", "view-type", "viewpager-tab", "sheet-dialog"]
         },
         "symbol": {"type": "string", "minLength": 1},
-        "question": {"type": ["string", "null"]}
+        "question": {"type": ["string", "null"], "minLength": 1}
       }
     },
     "confidence": {"type": "string", "enum": ["high", "medium", "low"]},

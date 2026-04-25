@@ -117,14 +117,17 @@ def flush_misses(path: Optional[Path] = None) -> None:
     earlier draft did, accumulated duplicate entries on every re-run and
     corrupted the audit signal.
 
+    Empty-buffer behavior: when the current run produced no misses but a
+    file from a prior run exists at `target`, the function still overwrites
+    it with `[]`. Returning early would leave stale data masquerading as the
+    current run's misses.
+
     The miss file lives at the run-dir top level (alongside numbered artifacts);
     its name `_severity_lookup_misses.json` is the ONE allowed underscore-prefixed
     file at the top level (per wave 2 #11's scratch-file policy, which exempts
     this audit file).
     """
     target = Path(path) if path is not None else _MISSES_PATH
-    if not _MISS_BUFFER:
-        return
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = [
         {

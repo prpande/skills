@@ -105,6 +105,35 @@ def test_inventory_item_hotspot_type_carries_x_platform_pattern():
     assert htype.get("x-platform-pattern") is True
 
 
+def test_inventory_item_hotspot_question_keeps_min_length_when_present():
+    """`hotspot.question` is now optional/nullable but the string form must
+    still enforce minLength: 1 — empty-string questions are an artifact bug,
+    not a valid 'no question'."""
+    schema = _load("inventory_item.json")
+    question_schema = schema["properties"]["hotspot"]["properties"]["question"]
+    # Nullable string in the type union.
+    assert "string" in question_schema["type"] and "null" in question_schema["type"]
+    # When present (non-null), the string must be non-empty.
+    assert question_schema.get("minLength") == 1
+    # Verify the validator: a non-null empty string must fail.
+    v = Validator(SCHEMAS)
+    bad = {
+        "id": "x", "kind": "screen", "title": "X",
+        "parent_id": None,
+        "source": {"surface": "compose", "file": "x.kt"},
+        "confidence": "high",
+        "hotspot": {"type": "feature-flag", "symbol": "y", "question": ""},
+    }
+    with pytest.raises(ValidationError):
+        v.validate(bad, schema)
+    # And a null is fine.
+    good_null = dict(bad, hotspot={"type": "feature-flag", "symbol": "y", "question": None})
+    v.validate(good_null, schema)
+    # And a non-empty string is fine.
+    good_str = dict(bad, hotspot={"type": "feature-flag", "symbol": "y", "question": "ok?"})
+    v.validate(good_str, schema)
+
+
 def test_unwalked_reason_carries_x_platform_pattern():
     schema = _load("code_inventory.json")
     reason = schema["properties"]["unwalked_destinations"]["items"]["properties"]["reason"]
