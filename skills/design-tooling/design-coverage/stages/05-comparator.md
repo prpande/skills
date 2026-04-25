@@ -93,14 +93,44 @@ hotspot_answers = {r["hotspot_id"]: r["answer"] for r in clarifications.get("res
 inventory = read_json(run_dir / "02-code-inventory.json") or {"items": []}
 items_by_id = {i["id"]: i for i in inventory.get("items", [])}
 
+# Stage-1 + stage-4 signals that modify severity *after* the matrix lookup.
+flow_mapping = read_json(run_dir / "01-flow-mapping.json") or {}
+flow_confidence = flow_mapping.get("confidence")  # "high" | "medium" | "low" | None
+figma_inv = read_json(run_dir / "04-figma-inventory.json") or {"frames": []}
+disagreed_frames = {
+    f["frame_id"]
+    for f in figma_inv.get("frames", [])
+    if f.get("screenshot_cross_check") == "disagreed"
+}
+
 def _hotspot_for(item: dict | None) -> dict | None:
-    """Walk up parent_id until a hotspot is found or the chain ends."""
+    """Walk up parent_id until a hotspot is found or the chain ends.
+
+    Guards against cyclic parent_id chains (item A's parent_id pointing back
+    at an ancestor) by tracking visited ids — stage 02 should never produce
+    a cycle, but a malformed inventory artifact would otherwise loop forever.
+    """
     cur = item
+    visited: set[str] = set()
     while cur is not None:
+        cur_id = cur.get("id")
+        if cur_id in visited:
+            return None  # cycle — bail out rather than spin
+        if cur_id is not None:
+            visited.add(cur_id)
         if cur.get("hotspot"):
             return cur["hotspot"]
-        cur = items_by_id.get(cur.get("parent_id")) if cur.get("parent_id") else None
+        parent = cur.get("parent_id")
+        cur = items_by_id.get(parent) if parent else None
     return None
+
+def _bump(sev: str) -> str:
+    """info → warn → error. error stays error."""
+    return {"info": "warn", "warn": "error", "error": "error"}[sev]
+
+def _downgrade(sev: str) -> str:
+    """error → warn. info / warn unchanged (target floor is warn, never info)."""
+    return {"info": "info", "warn": "warn", "error": "warn"}[sev]
 
 # For each comparator row, join into stage-2 inventory and look up severity.
 for row in rows:
@@ -120,11 +150,30 @@ for row in rows:
         hotspot_type=hotspot_type,
         clarification_answer=clarification_answer,
     )
+
+    # Cross-check bump: rows that reference a Figma frame whose screenshot
+    # disagreed with structured metadata get bumped one level.
+    if row.get("figma_ref") in disagreed_frames:
+        severity = _bump(severity)
+
+    # Low-confidence flow downgrade: when stage 1 located the flow with low
+    # confidence, push errors down to warn so they don't drown out signal
+    # caused by mislocated mappings. We do NOT downgrade warn → info — the
+    # floor is warn (over-report rather than silence; spec wave 1).
+    if flow_confidence == "low":
+        severity = _downgrade(severity)
+
     row["severity"] = severity
 
 # End of stage: flush misses for audit (call ONCE).
 flush_misses(run_dir / "_severity_lookup_misses.json")
 ```
+
+The bump and downgrade post-process the matrix's deterministic result so
+per-row cross-check signals (stage 4) and per-run flow-confidence (stage 1)
+still influence severity. These are the same rules the prose-based stage 05
+applied pre-wave-1; they were re-instated as post-processing because
+`severity_matrix.lookup()` doesn't see those signals.
 
 Unknown tuples fall back to `"warn"` and are recorded to
 `_severity_lookup_misses.json` at the run-dir top level so the matrix can be

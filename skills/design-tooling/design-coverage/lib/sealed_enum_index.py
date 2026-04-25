@@ -44,23 +44,28 @@ def get_sealed_enum_pattern_keys() -> list[str]:
     return sorted(keys)
 
 
-def _walk_schema(node: dict, path: str) -> Iterator[tuple[str, dict]]:
+_MAX_WALK_DEPTH = 20  # safety bound; current schemas nest <8 deep
+
+
+def _walk_schema(node: dict, path: str, _depth: int = 0) -> Iterator[tuple[str, dict]]:
     """Yield (dotted_path, field_subtree) for every property in the schema.
 
     Recurses into `properties` and `items.properties`. Does NOT follow `$ref` —
     referenced schemas are walked separately when iterating the schemas/ dir.
+    Bounded at `_MAX_WALK_DEPTH` so an accidentally cyclic or pathologically
+    deep schema can't stack-overflow at registry-build time.
     """
-    if not isinstance(node, dict):
+    if not isinstance(node, dict) or _depth > _MAX_WALK_DEPTH:
         return
     yield path, node
     for child_name, child in (node.get("properties") or {}).items():
-        yield from _walk_schema(child, f"{path}.{child_name}")
+        yield from _walk_schema(child, f"{path}.{child_name}", _depth + 1)
     items = node.get("items")
     if isinstance(items, dict):
         # Array items don't add a path segment; their properties are addressed
         # as if direct children of the array's containing field.
         for child_name, child in (items.get("properties") or {}).items():
-            yield from _walk_schema(child, f"{path}.{child_name}")
+            yield from _walk_schema(child, f"{path}.{child_name}", _depth + 1)
     # Tuple-typed items (JSON-Schema's `items: [<sub>, <sub>]` form) are not
     # used anywhere under schemas/ today. If a future schema introduces one,
     # extend this branch — silently skipping would drop platform-pattern
