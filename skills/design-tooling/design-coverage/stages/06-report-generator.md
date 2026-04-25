@@ -49,8 +49,9 @@ Then:
 import sys, json
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd() / "lib"))
-from skill_io import atomic_write_json, read_json
+from skill_io import validate_and_write_json, read_json
 from renderer import render_report
+from skill_root import get_skill_root
 
 run_dir = Path("<absolute path to run dir>")
 comparison = read_json(run_dir / "05-comparison.json")
@@ -82,9 +83,18 @@ for row in comparison["rows"]:
 
 report = {"summary": summary, "matrix": matrix}
 
-atomic_write_json(run_dir / "06-report.json", report)
+validate_and_write_json(
+    run_dir / "06-report.json",
+    report,
+    "report.json",
+    get_skill_root() / "schemas",
+)
 (run_dir / "06-report.md").write_text(render_report(report))
 ```
+
+> Scratch reminder: any intermediate file produced by this stage (debug
+> dumps, classification scratch) goes to `<run_dir>/.scratch/`, never the
+> run-dir top level.
 
 ## What the summary should contain
 

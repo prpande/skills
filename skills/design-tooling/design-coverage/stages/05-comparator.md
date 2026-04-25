@@ -195,9 +195,19 @@ cd "$(python -c 'import sys; from pathlib import Path; p=Path.cwd(); fb=Path.hom
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd() / "lib"))
-from skill_io import atomic_write_json
+from skill_io import validate_and_write_json
 from renderer import render_comparison
+from skill_root import get_skill_root
 
-atomic_write_json(run_dir / "05-comparison.json", comparison)
+validate_and_write_json(
+    run_dir / "05-comparison.json",
+    comparison,
+    "comparison.json",
+    get_skill_root() / "schemas",
+)
 (run_dir / "05-comparison.md").write_text(render_comparison(comparison))
 ```
+
+> Scratch reminder: any intermediate file produced by this stage (debug
+> dumps, classification scratch) goes to `<run_dir>/.scratch/`, never the
+> run-dir top level.
