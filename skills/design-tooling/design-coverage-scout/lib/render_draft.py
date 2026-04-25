@@ -21,7 +21,12 @@ def render_draft_to_md(
     """
     def _yaml_str(s: str) -> str:
         """Emit s as a double-quoted YAML scalar with minimal escaping."""
-        return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+        # Escape backslash and double-quote first, then control chars < 0x20.
+        escaped = s.replace("\\", "\\\\").replace('"', '\\"')
+        escaped = "".join(
+            f"\\u{ord(c):04x}" if ord(c) < 0x20 else c for c in escaped
+        )
+        return '"' + escaped + '"'
 
     fm_lines = ["---", f"name: {draft['name']}", "detect:"]
     for d in draft["detect"]:

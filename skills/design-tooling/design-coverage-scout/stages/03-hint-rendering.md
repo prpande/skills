@@ -24,9 +24,10 @@ preview it to the user in the live session, and on explicit approval move
    target_dir = resolve_target_dir()
    ```
 
-2. **Refuse-overwrite.** If `<target_dir>/<name>.md` exists and `--force` was
-   NOT passed, refuse loudly and tell the user to pass `--force` or choose a
-   different `--platform-name`.
+2. **Refuse-overwrite.** If `<target_dir>/<name>.md` **or** `<target_dir>/<name>.md.draft`
+   exists and `--force` was NOT passed, refuse loudly: an existing `.md.draft`
+   means a previous scout run is in progress. Tell the user to pass `--force`
+   to overwrite, or choose a different `--platform-name`.
 
 3. **Sanitize harvested section content before substitution.** Pass each
    `<sections.*>` string through `sanitize_section` to neutralize `---` and

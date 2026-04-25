@@ -145,18 +145,18 @@ grep list).
 - **`inventory_item.source.surface.nav-compose`**: `NavHost\s*\(`, `composable\s*\(`, `navigation\s*\(\s*route\s*=`.
 - **`inventory_item.hotspot.type.feature-flag`**: `FeatureFlags\.`, `Flags\.`, `isEnabled\(`, `FlagKey`.
 - **`inventory_item.hotspot.type.permission`**: `checkSelfPermission`, `registerForActivityResult\(.*RequestPermission`, `android\.permission\.[A-Z_]+`.
-- **`inventory_item.hotspot.type.server-driven`**: Retrofit / OkHttp response decoding into UI state, paged adapters.
+- **`inventory_item.hotspot.type.server-driven`**: `Retrofit\.Builder\b`, `@GET\(`, `@POST\(`, `OkHttpClient\b`.
 - **`inventory_item.hotspot.type.config-qualifier`**: `Configuration\.uiMode`, resources under `values-night/`, `values-ldrtl/`, `values-sw\d+dp/`.
 - **`inventory_item.hotspot.type.form-factor`**: `resources\.configuration\.smallestScreenWidthDp`, `isTablet\(\)`.
 - **`inventory_item.hotspot.type.process-death`**: `SavedStateHandle\b`, `savedStateHandle\.get\(`.
 - **`inventory_item.hotspot.type.view-type`**: RecyclerView `getItemViewType` branches, `ViewHolder` subclasses.
 - **`inventory_item.hotspot.type.viewpager-tab`**: `ViewPager2 \+ FragmentStateAdapter` data-driven tab counts.
 - **`inventory_item.hotspot.type.sheet-dialog`**: `BottomSheetDialog`, `DialogFragment`, `showSheet`, `show\(supportFragmentManager`.
-- **`code_inventory.unwalked_destinations.reason.platform-bridge`**: React Native bridge calls into native, Flutter MethodChannel.
-- **`code_inventory.unwalked_destinations.reason.adapter-hosted`**: `*Adapter\.` / `*Bridge\.` calls whose internals are out of scope.
-- **`code_inventory.unwalked_destinations.reason.dynamic-identifier`**: Fragment instantiations from runtime strings.
-- **`code_inventory.unwalked_destinations.reason.swiftui-bridge`**: typically n/a on Android — record a `null` value or skip.
-- **`code_inventory.unwalked_destinations.reason.external-module`**: nav-graph `<fragment android:name="<external.module.Class>"`.
+- **`code_inventory.unwalked_destinations.reason.platform-bridge`**: React Native / Flutter bridge calls — `MethodChannel\b`, `FlutterActivity\b`, `RCTBridgeModule\b`.
+- **`code_inventory.unwalked_destinations.reason.adapter-hosted`**: `\w+Adapter\.`, `\w+Bridge\.` calls whose internals are out of scope.
+- **`code_inventory.unwalked_destinations.reason.dynamic-identifier`**: Fragment instantiations from runtime strings: `Class\.forName\(`, `fragmentManager\.findFragmentByTag\b`.
+- **`code_inventory.unwalked_destinations.reason.swiftui-bridge`**: typically n/a on Android — record a null value or skip.
+- **`code_inventory.unwalked_destinations.reason.external-module`**: nav-graph `android:name="[a-z][a-z0-9.]*\.[A-Z][A-Za-z0-9]+"` where the class belongs to an external module.
 - **`code_inventory.unwalked_destinations.reason.unresolved-class`**: nav-graph `android:name=` referencing a class not in the walked source tree.
 
 #### Adding a new platform section

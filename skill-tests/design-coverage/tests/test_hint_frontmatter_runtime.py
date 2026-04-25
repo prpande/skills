@@ -130,6 +130,95 @@ def test_validate_rejects_non_list_multi_anchor_suffixes() -> None:
     assert any("multi_anchor_suffixes" in e for e in errors), errors
 
 
+def test_validate_rejects_empty_detect_item() -> None:
+    fm = {
+        "name": "ios",
+        "detect": ["*.xcodeproj", ""],
+        "description": "iOS hint.",
+        "confidence": "high",
+    }
+    errors = validate_hint_frontmatter(fm, sealed_keys=[])
+    assert any("detect" in e for e in errors), errors
+
+
+def test_validate_rejects_non_string_detect_item() -> None:
+    fm = {
+        "name": "ios",
+        "detect": ["*.xcodeproj", 42],
+        "description": "iOS hint.",
+        "confidence": "high",
+    }
+    errors = validate_hint_frontmatter(fm, sealed_keys=[])
+    assert any("detect" in e for e in errors), errors
+
+
+def test_validate_rejects_empty_multi_anchor_suffix_item() -> None:
+    fm = {
+        "name": "ios",
+        "detect": ["*.xcodeproj"],
+        "description": "iOS hint.",
+        "confidence": "high",
+        "multi_anchor_suffixes": ["New", ""],
+    }
+    errors = validate_hint_frontmatter(fm, sealed_keys=[])
+    assert any("multi_anchor_suffixes" in e for e in errors), errors
+
+
+def test_validate_rejects_integer_hotspot_override_value() -> None:
+    fm = {
+        "name": "ios",
+        "detect": ["*.xcodeproj"],
+        "description": "iOS hint.",
+        "confidence": "high",
+        "hotspot_question_overrides": {"feature-flag": 42},
+    }
+    errors = validate_hint_frontmatter(fm, sealed_keys=[])
+    assert any("hotspot_question_overrides" in e for e in errors), errors
+
+
+def test_validate_rejects_empty_grep_list() -> None:
+    fm = {
+        "name": "ios",
+        "detect": ["*.xcodeproj"],
+        "description": "iOS hint.",
+        "confidence": "high",
+        "sealed_enum_patterns": {
+            "inventory_item.kind.screen": {"grep": []},
+        },
+    }
+    errors = validate_hint_frontmatter(
+        fm, sealed_keys=["inventory_item.kind.screen"]
+    )
+    assert any("grep" in e for e in errors), errors
+
+
+def test_parse_description_empty_sub_val_is_none_not_list() -> None:
+    """description: with no value must parse as None, not []."""
+    import textwrap
+    text = textwrap.dedent("""\
+        ---
+        name: ios
+        detect:
+          - "*.xcodeproj"
+        description: iOS hint.
+        confidence: high
+        sealed_enum_patterns:
+          inventory_item.kind.screen:
+            grep:
+              - "class \\\\w+ViewController"
+            description:
+        ---
+    """)
+    fm = parse_hint_frontmatter(text)
+    sep = fm.get("sealed_enum_patterns", {})
+    assert "inventory_item.kind.screen" in sep
+    entry = sep["inventory_item.kind.screen"]
+    assert entry.get("description") is None, (
+        f"Expected None for empty description, got {entry.get('description')!r}"
+    )
+    assert isinstance(entry.get("grep"), list), "grep must still be a list"
+
+
 def test_validate_rejects_sealed_enum_patterns_missing_grep() -> None:
     fm = {
         "name": "ios",

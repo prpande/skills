@@ -71,10 +71,7 @@ def _patterns_for_key(ios_section: str, key: str) -> list[str]:
 
 
 def _matches_any(pattern: str, files: list[Path]) -> bool:
-    try:
-        rx = re.compile(pattern)
-    except re.error:
-        return False
+    rx = re.compile(pattern)  # raises re.error loudly if pattern is invalid
     return any(rx.search(f.read_text(encoding="utf-8", errors="ignore"))
                for f in files)
 

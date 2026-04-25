@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/main_nav"
+    app:startDestination="@id/appointmentListFragment">
+
+    <!-- code_inventory.unwalked_destinations.reason.unresolved-class
+         and inventory_item.kind.screen via android:name= -->
+    <fragment
+        android:id="@+id/appointmentListFragment"
+        android:name="com.example.appointments.AppointmentListFragment"
+        android:label="Appointments" />
+
+    <!-- code_inventory.unwalked_destinations.reason.external-module
+         The class below belongs to an external dependency module. -->
+    <fragment
+        android:id="@+id/paymentFragment"
+        android:name="com.external.payments.PaymentFragment"
+        android:label="Payment" />
+
+</navigation>
