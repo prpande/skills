@@ -46,7 +46,9 @@ questions = emit_questions_for_inventory(inventory, platform_overrides)
 ```
 
 For each Question, present the rendered_text, capture the user's answer, and
-record it in `03-clarifications.json`'s `resolved` array.
+record it in `03-clarifications.json`'s `resolved` array. For each Question,
+format `hotspot_id` as `f"{hotspot_type}:{symbol}"` when persisting to
+`resolved[]` — stage 05 joins on this exact string.
 
 ### B. Candidate-destination scope (one multi-select per parent screen)
 

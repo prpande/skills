@@ -10,7 +10,7 @@ each declaring a question template + default answer + severity-if-violated.
 Stage 03 calls emit_questions_for_inventory(stage2_inventory, platform_overrides).
 The function:
   1. Walks every inventory item with a non-null hotspot.
-  2. Groups by (hotspot_type, hotspot.question) so duplicate symbols collapse.
+  2. Groups by (hotspot_type, hotspot.symbol) so duplicate symbols collapse.
   3. Looks up the template in HOTSPOT_QUESTIONS (or platform_overrides if present).
   4. Skips templates whose applies_when_count_gte threshold isn't met.
   5. Returns one Question per distinct (type, symbol) — the order is
@@ -108,7 +108,7 @@ def emit_questions_for_inventory(inventory: dict, platform_overrides: dict[str, 
     """Walk the stage-2 inventory and emit one Question per distinct hotspot symbol.
 
     `inventory` is the parsed code_inventory.json shape. Items with no hotspot
-    are skipped. Duplicate (hotspot.type, hotspot.question) pairs collapse to
+    are skipped. Duplicate (hotspot.type, hotspot.symbol) pairs collapse to
     one Question. `platform_overrides` is a mapping of hotspot_type -> template
     string; when present, replaces HOTSPOT_QUESTIONS[type].template.
     """
@@ -120,7 +120,7 @@ def emit_questions_for_inventory(inventory: dict, platform_overrides: dict[str, 
         if not h:
             continue
         htype = h.get("type")
-        symbol = h.get("question")  # The hotspot.question field carries the symbol name.
+        symbol = h.get("symbol")  # Identifier for dedup + template substitution.
         if not htype or not symbol:
             continue
         key = (htype, symbol)

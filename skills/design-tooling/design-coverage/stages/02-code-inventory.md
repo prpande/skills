@@ -51,6 +51,11 @@ walk. The `reason` field is now a **closed enum** with values:
   selectors built from data).
 - `platform-bridge` — platform-specific bridge that crosses framework boundaries
   (e.g., React Native bridge call into native, Flutter MethodChannel).
+- `unresolved-class` — the destination references a class name (e.g., from a
+  nav-graph XML `android:name=` attribute) that does not exist in the walked
+  source tree. Distinct from `external-module`: an external module is known
+  to live elsewhere; an unresolved class might be a typo, a deleted file, or
+  generated code not on disk.
 
 **The string `"out-of-scope-destination"` is no longer valid.** If you would
 have written that, emit the destination to `candidate_destinations` instead
@@ -63,12 +68,17 @@ scope, not sure" goes to `candidate_destinations: [...]`. Each entry:
 
 ```json
 {
+  "parent_screen": "MBOApptDetailViewController",
   "symbol": "MBOApptQuickBookViewController",
   "file": "MindBodyPOS/Legacy/.../QuickBook.m",
   "hop_distance": 1,
   "why_not_walked": "Modify-appointment full screen; agent unsure if part of appointment-details audit scope."
 }
 ```
+
+`parent_screen` is the symbol of the screen the candidate is reachable
+from — stage 03 groups candidates by `parent_screen` for the
+multi-select scope question.
 
 Stage 03 will surface these to the user as a multi-select question per parent
 screen, defaulting all to in-scope (uncheck to exclude). Do NOT silently

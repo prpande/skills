@@ -31,9 +31,9 @@ def test_emit_questions_returns_empty_when_no_hotspots():
 def test_emit_questions_one_per_distinct_symbol():
     from hotspot_questions import emit_questions_for_inventory
     inv = _inventory_with([
-        {"type": "feature-flag", "question": "isAppointmentDetailsNewDesignEnabled"},
-        {"type": "feature-flag", "question": "isAppointmentDetailsNewDesignEnabled"},  # duplicate
-        {"type": "feature-flag", "question": "isGroupAppointmentsEnabled"},
+        {"type": "feature-flag", "symbol": "isAppointmentDetailsNewDesignEnabled"},
+        {"type": "feature-flag", "symbol": "isAppointmentDetailsNewDesignEnabled"},  # duplicate
+        {"type": "feature-flag", "symbol": "isGroupAppointmentsEnabled"},
     ])
     questions = emit_questions_for_inventory(inv, platform_overrides={})
     symbols = [q.symbol for q in questions]
@@ -43,8 +43,8 @@ def test_emit_questions_one_per_distinct_symbol():
 def test_emit_questions_uses_template_for_each_hotspot_type():
     from hotspot_questions import emit_questions_for_inventory
     inv = _inventory_with([
-        {"type": "permission", "question": "staff.canEditAppointments"},
-        {"type": "view-type", "question": "MBOApptDetailCheckoutCell"},
+        {"type": "permission", "symbol": "staff.canEditAppointments"},
+        {"type": "view-type", "symbol": "MBOApptDetailCheckoutCell"},
     ])
     questions = emit_questions_for_inventory(inv, platform_overrides={})
     by_type = {q.hotspot_type: q for q in questions}
@@ -58,7 +58,7 @@ def test_emit_questions_respects_applies_when_count_gte():
     """view-type template requires at least 2 distinct symbols of the same type."""
     from hotspot_questions import emit_questions_for_inventory
     inv = _inventory_with([
-        {"type": "view-type", "question": "MBOApptDetailCheckoutCell"},
+        {"type": "view-type", "symbol": "MBOApptDetailCheckoutCell"},
     ])
     questions = emit_questions_for_inventory(inv, platform_overrides={})
     assert not any(q.hotspot_type == "view-type" for q in questions)
@@ -68,8 +68,8 @@ def test_emit_questions_view_type_with_multiple_symbols_emits():
     """When >=2 view-type symbols exist, both questions emit."""
     from hotspot_questions import emit_questions_for_inventory
     inv = _inventory_with([
-        {"type": "view-type", "question": "MBOApptDetailCheckoutCell"},
-        {"type": "view-type", "question": "MBOApptDetailPaymentCheckoutCell"},
+        {"type": "view-type", "symbol": "MBOApptDetailCheckoutCell"},
+        {"type": "view-type", "symbol": "MBOApptDetailPaymentCheckoutCell"},
     ])
     questions = emit_questions_for_inventory(inv, platform_overrides={})
     view_type_qs = [q for q in questions if q.hotspot_type == "view-type"]
@@ -79,7 +79,7 @@ def test_emit_questions_view_type_with_multiple_symbols_emits():
 def test_platform_overrides_replace_template_text():
     from hotspot_questions import emit_questions_for_inventory
     inv = _inventory_with([
-        {"type": "permission", "question": "staff.canFoo"},
+        {"type": "permission", "symbol": "staff.canFoo"},
     ])
     overrides = {"permission": "Custom-template for {symbol}: ok?"}
     questions = emit_questions_for_inventory(inv, platform_overrides=overrides)

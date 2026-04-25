@@ -56,7 +56,10 @@ For each Pass 1 `present` pair, compare the states / actions / fields inside the
 
 Severity is no longer agent judgment. For each comparator row, compute the
 tuple `(status, kind, hotspot_type, clarification_answer)` and call
-`severity_matrix.lookup(...)`:
+`severity_matrix.lookup(...)`. The `clarification_answer` comes from
+`03-clarifications.json` joined on `hotspot_id`; the canonical
+`hotspot_id` format is `f"{hotspot_type}:{symbol}"` and MUST match the
+format stage 03 uses when persisting to `clarifications.resolved[]`.
 
 ```python
 import sys
@@ -64,21 +67,36 @@ from pathlib import Path
 sys.path.insert(0, str(Path.cwd() / "lib"))
 from skill_root import get_skill_root
 from severity_matrix import lookup, flush_misses
-
-# At start of stage 05: clear any stale per-process miss buffer.
+from skill_io import read_json
 import severity_matrix
+
+# Start of stage: clear miss buffer to keep audit per-run.
 severity_matrix._MISS_BUFFER.clear()
 
-# For each row being assembled:
-severity = lookup(
-    status=row["status"],            # "present" | "missing" | "new-in-figma" | "restructured"
-    kind=row.get("code_kind"),       # "screen" | "state" | "action" | "field" | None
-    hotspot_type=row.get("hotspot_type"),  # one of hotspot.type enum values, or None
-    clarification_answer=row.get("clarification_answer"),  # from 03-clarifications.json or None
-)
-row["severity"] = severity
+# Load clarifications and build hotspot_id -> answer map.
+# hotspot_id format is "<hotspot_type>:<symbol>" (must match stage 03's write).
+clarifications = read_json(run_dir / "03-clarifications.json") or {"resolved": []}
+hotspot_answers = {r["hotspot_id"]: r["answer"] for r in clarifications.get("resolved", [])}
 
-# At end of stage, flush any unknown-tuple misses for audit (call ONCE):
+# For each comparator row, derive the clarification answer for its hotspot:
+for row in rows:
+    hotspot = row.get("inventory_item_hotspot")  # the hotspot dict from stage-2 inventory
+    hotspot_type = hotspot.get("type") if hotspot else None
+    if hotspot:
+        hotspot_id = f"{hotspot_type}:{hotspot['symbol']}"
+        clarification_answer = hotspot_answers.get(hotspot_id)
+    else:
+        clarification_answer = None
+
+    severity = lookup(
+        status=row["status"],
+        kind=row.get("code_kind"),
+        hotspot_type=hotspot_type,
+        clarification_answer=clarification_answer,
+    )
+    row["severity"] = severity
+
+# End of stage: flush misses for audit (call ONCE).
 flush_misses(run_dir / "_severity_lookup_misses.json")
 ```
 

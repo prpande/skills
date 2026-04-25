@@ -23,7 +23,7 @@ def cross_link(nav_dest, known_classes):
         if cls in known_classes:
             linked.append({"dest": d["id"], "class": cls})
         else:
-            unwalked.append({"nav_source": "nav_main.xml", "target": cls, "reason": "class not found"})
+            unwalked.append({"nav_source": "nav_main.xml", "target": cls, "reason": "unresolved-class"})
     return linked, unwalked
 
 def test_links_known_and_records_unwalked():

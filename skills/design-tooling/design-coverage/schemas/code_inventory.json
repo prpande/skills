@@ -20,7 +20,8 @@
               "external-module",
               "swiftui-bridge",
               "dynamic-identifier",
-              "platform-bridge"
+              "platform-bridge",
+              "unresolved-class"
             ]
           }
         }
@@ -30,8 +31,9 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["symbol", "file", "hop_distance", "why_not_walked"],
+        "required": ["parent_screen", "symbol", "file", "hop_distance", "why_not_walked"],
         "properties": {
+          "parent_screen": {"type": "string", "minLength": 1},
           "symbol": {"type": "string", "minLength": 1},
           "file": {"type": "string", "minLength": 1},
           "hop_distance": {"type": "integer", "minimum": 1},

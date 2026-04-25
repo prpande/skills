@@ -30,6 +30,7 @@ def test_unwalked_destinations_reason_is_closed_enum():
         "swiftui-bridge",
         "dynamic-identifier",
         "platform-bridge",
+        "unresolved-class",
     }
 
 
@@ -65,6 +66,7 @@ def test_candidate_destination_item_validates():
         "unwalked_destinations": [],
         "candidate_destinations": [
             {
+                "parent_screen": "MBOApptDetailViewController",
                 "symbol": "MBOApptQuickBookViewController",
                 "file": "MindBodyPOS/Legacy/.../QuickBook.m",
                 "hop_distance": 1,

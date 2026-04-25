@@ -70,6 +70,7 @@ def test_includes_unwalked_reason_values():
         "code_inventory.unwalked_destinations.reason.swiftui-bridge",
         "code_inventory.unwalked_destinations.reason.dynamic-identifier",
         "code_inventory.unwalked_destinations.reason.platform-bridge",
+        "code_inventory.unwalked_destinations.reason.unresolved-class",
     }
     assert expected <= keys
 
