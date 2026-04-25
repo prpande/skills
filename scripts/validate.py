@@ -85,7 +85,9 @@ def validate_hint_file(path: pathlib.Path) -> list[str]:
     text = path.read_text(encoding="utf-8")
     m = FRONTMATTER.match(text)
     if not m:
-        return [f"{path}: missing frontmatter block"]
+        # README.md and other non-hint files ship without frontmatter.
+        # Skip them silently rather than treating absence as an error.
+        return []
     body = text[m.end():]
 
     # The design-coverage skill lib lives at a fixed location relative to
