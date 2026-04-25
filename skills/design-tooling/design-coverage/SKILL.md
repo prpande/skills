@@ -194,6 +194,23 @@ Write `00-run-config.json` (see spec "Run config artifact (day-one shape)" — t
 }
 ```
 
+## Scratch files
+
+All intermediate files (stage inputs/outputs being assembled, temp downloads,
+etc.) go under `<run-dir>/.scratch/`. The orchestrator writes a `.gitignore`
+immediately after creating the run directory so scratch files are never
+accidentally committed:
+
+```bash
+mkdir -p "$RUN_DIR/.scratch"
+cat > "$RUN_DIR/.gitignore" <<'GITIGNORE'
+.scratch/
+GITIGNORE
+```
+
+Stage prompts must write any intermediate work to `<run-dir>/.scratch/` and
+final artifacts (JSON + Markdown views) directly to `<run-dir>/`.
+
 ## Hint injection
 
 For each of stages 01, 02, 03, compose the stage prompt by replacing the
