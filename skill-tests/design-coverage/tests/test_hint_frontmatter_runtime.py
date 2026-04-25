@@ -192,6 +192,62 @@ def test_validate_rejects_empty_grep_list() -> None:
     assert any("grep" in e for e in errors), errors
 
 
+def test_validate_rejects_non_string_grep_item() -> None:
+    fm = {
+        "name": "ios",
+        "detect": ["*.xcodeproj"],
+        "description": "iOS hint.",
+        "confidence": "high",
+        "sealed_enum_patterns": {
+            "inventory_item.kind.screen": {"grep": [r"class \w+ViewController", 42]},
+        },
+    }
+    errors = validate_hint_frontmatter(
+        fm, sealed_keys=["inventory_item.kind.screen"]
+    )
+    assert any("grep" in e and "items" in e for e in errors), errors
+
+
+def test_validate_rejects_empty_string_grep_item() -> None:
+    fm = {
+        "name": "ios",
+        "detect": ["*.xcodeproj"],
+        "description": "iOS hint.",
+        "confidence": "high",
+        "sealed_enum_patterns": {
+            "inventory_item.kind.screen": {"grep": [r"class \w+ViewController", ""]},
+        },
+    }
+    errors = validate_hint_frontmatter(
+        fm, sealed_keys=["inventory_item.kind.screen"]
+    )
+    assert any("grep" in e and "items" in e for e in errors), errors
+
+
+def test_roundtrip_grep_pattern_with_double_quote() -> None:
+    """A grep pattern containing a literal double-quote must round-trip correctly."""
+    draft = {
+        "name": "ios",
+        "detect": ["*.xcodeproj"],
+        "description": "iOS hint.",
+        "confidence": "high",
+        "sections": {
+            "flow_locator": "x",
+            "code_inventory": "x",
+            "clarification": "x",
+        },
+        "sealed_enum_patterns": {
+            "inventory_item.kind.screen": {
+                "grep": [r'Text("hello")'],
+                "description": None,
+            },
+        },
+    }
+    fm = _render_and_parse(draft)
+    patterns = fm["sealed_enum_patterns"]["inventory_item.kind.screen"]["grep"]
+    assert patterns == [r'Text("hello")'], f"double-quote not round-tripped: {patterns!r}"
+
+
 def test_parse_description_empty_sub_val_is_none_not_list() -> None:
     """description: with no value must parse as None, not []."""
     import textwrap

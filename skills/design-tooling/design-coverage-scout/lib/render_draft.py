@@ -20,13 +20,13 @@ def render_draft_to_md(
     provided (stage 03 passes them through `sanitize_section` first).
     """
     def _yaml_str(s: str) -> str:
-        """Emit s as a double-quoted YAML scalar with minimal escaping."""
-        # Escape backslash and double-quote first, then control chars < 0x20.
-        escaped = s.replace("\\", "\\\\").replace('"', '\\"')
-        escaped = "".join(
-            f"\\u{ord(c):04x}" if ord(c) < 0x20 else c for c in escaped
-        )
-        return '"' + escaped + '"'
+        """Emit s as a double-quoted YAML scalar compatible with frontmatter parsing."""
+        # The frontmatter parser only unescapes \\ and \", so do not emit
+        # \uXXXX sequences here.  Control characters (including newlines) are
+        # not meaningful in hint description/override strings — replace with space
+        # to keep the value on a single line.
+        normalized = "".join(" " if ord(c) < 0x20 else c for c in s)
+        return '"' + normalized.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
     fm_lines = ["---", f"name: {draft['name']}", "detect:"]
     for d in draft["detect"]:

@@ -26,10 +26,11 @@ _FRONTMATTER_RE = re.compile(
 def _yaml_unescape(s: str) -> str:
     """Reverse the escaping emitted by render_draft._yaml_str.
 
-    Intentionally narrow: only handles the two escape sequences that
-    _yaml_str produces (nothing more, nothing less):
+    Handles exactly the two escape sequences that _yaml_str emits:
       \\  →  \
       \"  →  "
+    _yaml_str normalizes control characters to spaces rather than emitting
+    \\uXXXX, so no Unicode-escape decoding is needed here.
     Processed character-by-character so mixed sequences (e.g. \\\")
     are decoded correctly.
     """
@@ -166,10 +167,8 @@ def _parse_nested_mapping(lines: list[str], start: int) -> tuple[dict[str, Any],
             continue
         if indent == 6 and stripped.startswith("- ") and cur_subkey and cur_val is not None:
             if isinstance(cur_val.get(cur_subkey), list):
-                # Unescape YAML double-backslash back to single backslash so
-                # callers can use the value directly as a Python regex pattern.
                 raw = stripped[2:].strip().strip('"').strip("'")
-                cur_val[cur_subkey].append(raw.replace("\\\\", "\\"))
+                cur_val[cur_subkey].append(_yaml_unescape(raw))
             i += 1
             continue
         i += 1
@@ -252,5 +251,13 @@ def validate_hint_frontmatter(
                     errors.append(
                         f"frontmatter 'sealed_enum_patterns.{key}.grep' must "
                         f"be a non-empty list of regex strings"
+                    )
+                elif any(
+                    not isinstance(pattern, str) or not pattern
+                    for pattern in body["grep"]
+                ):
+                    errors.append(
+                        f"frontmatter 'sealed_enum_patterns.{key}.grep' items "
+                        f"must be non-empty strings"
                     )
     return errors
