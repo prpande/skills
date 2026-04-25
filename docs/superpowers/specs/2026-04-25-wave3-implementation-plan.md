@@ -65,12 +65,12 @@ flows into `get_sealed_enum_pattern_keys()` automatically — no other wiring re
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["frame_id", "name", "is_leaf", "parent_id"],
+        "required": ["frame_id", "name", "is_leaf", "figma_parent_id"],
         "properties": {
-          "frame_id":  { "type": "string",          "minLength": 1 },
-          "name":      { "type": "string",          "minLength": 1 },
-          "is_leaf":   { "type": "boolean"                        },
-          "parent_id": { "type": ["string", "null"]               }
+          "frame_id":        { "type": "string",          "minLength": 1 },
+          "name":            { "type": "string",          "minLength": 1 },
+          "is_leaf":         { "type": "boolean"                        },
+          "figma_parent_id": { "type": ["string", "null"]               }
         }
       }
     }
@@ -142,8 +142,20 @@ writing `01-flow-mapping.json`.
 1. Read `multi_anchor_suffixes` from the resolved platform-hint frontmatter
    (already available via `hint_frontmatter.parse_hint_frontmatter`).
    Default to `[]` if the field is absent (hint has no ambiguous-suffix pairs).
-2. Strip each known suffix from the end of every candidate class name to derive
-   a base name. Group candidates by their base name.
+2. For each candidate class name, strip the first suffix in `multi_anchor_suffixes`
+   that matches its end, yielding a base name. If no suffix matches, the class name
+   itself is the base name. Group all candidates by base name.
+   - Example: `multi_anchor_suffixes = ["ViewController", "HostingController"]`
+     - `AppointmentDetailsViewController` → base `AppointmentDetails`
+     - `AppointmentDetailsHostingController` → base `AppointmentDetails`
+     - Both map to the same group → ambiguous pair.
+   - The spec's narrative example (`MBOApptDetailViewController` vs
+     `AppointmentDetailsHostingController`) yields different bases (`MBOApptDetail`
+     and `AppointmentDetails`) and would **not** trigger disambiguation — those are
+     genuinely different classes that happen to both match the Figma frame name. The
+     algorithm is intentionally conservative: it only flags classes that are clearly
+     platform-variant rewrites of the same screen (same base, different framework
+     suffix), not all multi-match candidates.
 3. If **any group contains N ≥ 2 candidates** that share the same base name →
    **refuse-loud** (interactive in-session, never a file handoff). Present **all
    N candidates in a single question** (not one question per pair):
@@ -227,10 +239,10 @@ Before the per-frame loop, emit:
 frame_classification = {
     "frames": [
         {
-            "frame_id": f["id"],
-            "name":     f["name"],
-            "is_leaf":  <bool>,
-            "parent_id": f.get("parentId")  # Figma parent, not pipeline parent_id
+            "frame_id":        f["id"],
+            "name":            f["name"],
+            "is_leaf":         <bool>,
+            "figma_parent_id": f.get("parentId")  # Figma node parent ID
         }
         for f in all_in_scope_frames
     ]
@@ -348,6 +360,11 @@ Tests the multi-anchor detection algorithm described in stage 01.
 - `input/AppointmentDetailsViewController.swift` — contains `class AppointmentDetailsViewController`
 - `input/AppointmentDetailsHostingController.swift` — contains `class AppointmentDetailsHostingController`
 - `hint_suffixes.json` — `["ViewController", "HostingController"]`
+
+Both classes strip to base `AppointmentDetails`, which satisfies the suffix-based
+disambiguation criterion. (The spec's narrative example — `MBOApptDetailViewController`
+vs `AppointmentDetailsHostingController` — strips to different bases and is explicitly
+not caught by this algorithm; see algorithm note in section 5.)
 
 **Tests:**
 1. `test_multi_anchor_detected` — given two candidates whose base names match after
