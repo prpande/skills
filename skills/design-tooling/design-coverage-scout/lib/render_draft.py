@@ -19,10 +19,14 @@ def render_draft_to_md(
     `sanitized_sections` overrides the raw `draft["sections"]` strings if
     provided (stage 03 passes them through `sanitize_section` first).
     """
+    def _yaml_str(s: str) -> str:
+        """Emit s as a double-quoted YAML scalar with minimal escaping."""
+        return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
     fm_lines = ["---", f"name: {draft['name']}", "detect:"]
     for d in draft["detect"]:
         fm_lines.append(f'  - "{d}"')
-    fm_lines.append(f"description: {draft['description']}")
+    fm_lines.append(f"description: {_yaml_str(draft['description'])}")
     fm_lines.append(f"confidence: {draft['confidence']}")
 
     if "multi_anchor_suffixes" in draft and draft["multi_anchor_suffixes"]:
@@ -52,7 +56,7 @@ def render_draft_to_md(
             if desc is None:
                 fm_lines.append("    description: null")
             else:
-                fm_lines.append(f'    description: "{desc}"')
+                fm_lines.append(f"    description: {_yaml_str(desc)}")
     fm_lines.append("---")
 
     sections = sanitized_sections or draft["sections"]

@@ -24,7 +24,13 @@ platform-agnostic.
 
 At the top of any Python snippet, normalize the working directory so `lib.*`
 imports resolve regardless of where the skill was invoked. Resolve the skill
-root portably by walking up from CWD to find `SKILL.md`:
+root portably by walking up from CWD to find `SKILL.md`.
+
+> **Execution order note:** When running the full orchestrator, the **Platform
+> resolution** bash block below subsumes this `cd` — it captures the consuming
+> repo path first, then performs the same `cd` to the skill root. Do NOT run
+> the standalone block below separately in that context; it is provided only as
+> a reference for ad-hoc Python snippets invoked outside the orchestrator flow.
 
 ```bash
 # Resolve the skill root portably: walk up from CWD to find SKILL.md, with

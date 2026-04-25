@@ -101,3 +101,21 @@ def test_render_includes_sealed_enum_patterns_block(tmp_path: pathlib.Path) -> N
     assert "default_in_scope_hops: 3" in rendered
     assert "multi_anchor_suffixes:" in rendered
     assert "hotspot_question_overrides: {}" in rendered
+
+
+def test_description_with_special_chars_is_quoted() -> None:
+    """description values containing ':' or '"' must be emitted as double-quoted
+    YAML scalars so the frontmatter remains valid YAML."""
+    draft = {
+        "name": "tricky",
+        "detect": ["*.swift"],
+        "description": 'Has: colon and "quotes"',
+        "confidence": "medium",
+        "sections": {
+            "flow_locator": "x",
+            "code_inventory": "x",
+            "clarification": "x",
+        },
+    }
+    rendered = render_draft_to_md(draft)
+    assert 'description: "Has: colon and \\"quotes\\""' in rendered

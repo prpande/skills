@@ -7,9 +7,10 @@
 
 ## Objective
 
-Render `<design-coverage-install>/platforms/<name>.md.draft`, preview it to
-the user in the live session, and on explicit approval move `.draft` →
-`<name>.md`.
+Render `<target_dir>/<name>.md.draft` (where `<target_dir>` is
+`<repo>/.claude/skills/design-coverage/platforms/` in the consuming repo),
+preview it to the user in the live session, and on explicit approval move
+`.draft` → `<target_dir>/<name>.md`.
 
 ## Method
 
@@ -75,7 +76,7 @@ the user in the live session, and on explicit approval move `.draft` →
    === DRAFT PLATFORM HINT ===
    <full file content>
    === END DRAFT ===
-   Approve writing this to platforms/<name>.md? (yes / no / edit)
+   Approve writing this to <target_dir>/<name>.md? (yes / no / edit)
    ```
 
 7. **Branch on response:**

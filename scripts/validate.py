@@ -85,19 +85,25 @@ def validate_hint_file(path: pathlib.Path) -> list[str]:
     text = path.read_text(encoding="utf-8")
     m = FRONTMATTER.match(text)
     if not m:
-        # README.md and other non-hint files ship without frontmatter.
-        # Skip them silently rather than treating absence as an error.
-        return []
+        # Only README.md is exempt from frontmatter validation. Any other
+        # platforms/*.md without a frontmatter block is treated as an error
+        # so accidentally-added hint files don't bypass linting silently.
+        if path.name == "README.md":
+            return []
+        return [f"{path}: missing YAML frontmatter block"]
     body = text[m.end():]
 
-    # The design-coverage skill lib lives at a fixed location relative to
-    # this script. Insert it on sys.path so we can reuse the runtime validator
-    # and the schema-derived registry — avoids hand-maintaining a parallel
-    # _walk_schema implementation here.
-    skill_lib = (
-        pathlib.Path(__file__).resolve().parent.parent
-        / "skills" / "design-tooling" / "design-coverage" / "lib"
-    )
+    # Resolve skill_lib from REPO (which honours SKILLS_REPO_OVERRIDE) so that
+    # when a test overrides the whole repo tree the imported modules come from
+    # the same tree as the files being validated. Fall back to the path relative
+    # to this script when the override only stubs a subset of the tree (e.g.,
+    # tests that create only hint files without the full skill lib).
+    skill_lib = REPO / "skills" / "design-tooling" / "design-coverage" / "lib"
+    if not skill_lib.is_dir():
+        skill_lib = (
+            pathlib.Path(__file__).resolve().parent.parent
+            / "skills" / "design-tooling" / "design-coverage" / "lib"
+        )
     if str(skill_lib) not in sys.path:
         sys.path.insert(0, str(skill_lib))
     from hint_frontmatter import parse_hint_frontmatter, validate_hint_frontmatter  # noqa: E402
