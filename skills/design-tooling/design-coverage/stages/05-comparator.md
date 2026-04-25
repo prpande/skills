@@ -52,17 +52,44 @@ For each Pass 1 `present` pair, compare the states / actions / fields inside the
 - Every state/action/field matches → emit `status: "present"`, `pass: "screen"`.
 - Content exists in code but not in Figma (or vice versa), or moved between states → `status: "restructured"`, `pass: "screen"`.
 
-## Severity rules
+## Severity assignment (deterministic — wave 1)
 
-Severity **must** be set on every row (including `present` and `new-in-figma`). This is a regression the iOS skill shipped with; we fix it up front.
+Severity is no longer agent judgment. For each comparator row, compute the
+tuple `(status, kind, hotspot_type, clarification_answer)` and call
+`severity_matrix.lookup(...)`:
 
-- `error` — `missing` or `restructured` with a confirmed action or field loss.
-- `warn` — `restructured` without loss, or `missing` where a Stage 3 clarification says the branch is out of scope (record that justification in `evidence`).
-- `info` — `present` and `new-in-figma`.
+```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd() / "lib"))
+from skill_root import get_skill_root
+from severity_matrix import lookup, flush_misses
 
-**Cross-check bump:** if the row references a Figma frame with `screenshot_cross_check: "disagreed"` in `04-figma-inventory.json`, bump severity one level (`info` → `warn`, `warn` → `error`).
+# At start of stage 05: clear any stale per-process miss buffer.
+import severity_matrix
+severity_matrix._MISS_BUFFER.clear()
 
-**Stage 1 low-confidence downgrade:** if `01-flow-mapping.json.confidence == "low"`, every row's severity downgrades one step toward `warn` **only when the locator's low confidence could plausibly be the cause** — prefer over-reporting to silence.
+# For each row being assembled:
+severity = lookup(
+    status=row["status"],            # "present" | "missing" | "new-in-figma" | "restructured"
+    kind=row.get("code_kind"),       # "screen" | "state" | "action" | "field" | None
+    hotspot_type=row.get("hotspot_type"),  # one of hotspot.type enum values, or None
+    clarification_answer=row.get("clarification_answer"),  # from 03-clarifications.json or None
+)
+row["severity"] = severity
+
+# At end of stage, flush any unknown-tuple misses for audit (call ONCE):
+flush_misses(run_dir / "_severity_lookup_misses.json")
+```
+
+Unknown tuples fall back to `"warn"` and are recorded to
+`_severity_lookup_misses.json` at the run-dir top level so the matrix can be
+grown over time. The miss file is the ONE allowed `_*.json` file at the top
+level of the run-dir.
+
+The previous prose-based severity rules are removed entirely. If a row's
+severity looks wrong, the fix is to add an entry to `lib/severity_matrix.py`'s
+`SEVERITY_MATRIX` dict, NOT to override the call site.
 
 ## Atomic write pattern
 

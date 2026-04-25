@@ -35,6 +35,45 @@ Use the **Discovery → Focused-reads → Cross-linking** approach:
 - **Tag ambiguity loudly.** When a state/action/field's presence or behavior can't be determined statically (e.g., only visible in a demo harness, shown as deprecated but not removed), set `ambiguous: true` and a one-sentence `ambiguity_reason` so stage 5's comparator can cite it.
 - **No speculation.** Only include items present in code. If a comment references a feature that isn't implemented, do not record it.
 
+## Closed-enum reasons for `unwalked_destinations`
+
+Stage 02 emits `unwalked_destinations` for navigation targets it does NOT
+walk. The `reason` field is now a **closed enum** with values:
+
+- `adapter-hosted` — the destination is reached through an adapter/bridge whose
+  internals are not in scope (e.g., `*Adapter.*`, `*Bridge.*` calls).
+- `external-module` — the destination lives in a separate module/package not
+  part of this audit's source tree.
+- `swiftui-bridge` — UIKit-to-SwiftUI or SwiftUI-to-UIKit bridge whose wrapped
+  destination is reached through a hosting controller or representable.
+- `dynamic-identifier` — the destination identifier is computed at runtime
+  (e.g., `instantiateViewControllerWithIdentifier:` with a runtime string,
+  selectors built from data).
+- `platform-bridge` — platform-specific bridge that crosses framework boundaries
+  (e.g., React Native bridge call into native, Flutter MethodChannel).
+
+**The string `"out-of-scope-destination"` is no longer valid.** If you would
+have written that, emit the destination to `candidate_destinations` instead
+(see below) so stage 03 can ask the user to confirm scope.
+
+## Candidate destinations (judgment-call escapes)
+
+Anything that's reachable from the entry but the agent judges as "maybe in
+scope, not sure" goes to `candidate_destinations: [...]`. Each entry:
+
+```json
+{
+  "symbol": "MBOApptQuickBookViewController",
+  "file": "MindBodyPOS/Legacy/.../QuickBook.m",
+  "hop_distance": 1,
+  "why_not_walked": "Modify-appointment full screen; agent unsure if part of appointment-details audit scope."
+}
+```
+
+Stage 03 will surface these to the user as a multi-select question per parent
+screen, defaulting all to in-scope (uncheck to exclude). Do NOT silently
+in-scope or out-of-scope these on your own.
+
 ## Output
 
 Write `02-code-inventory.json` to the run dir, then regenerate the Markdown view:
