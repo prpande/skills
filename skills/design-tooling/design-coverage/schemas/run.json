@@ -8,7 +8,7 @@
     "platform": {"type": "string", "minLength": 1},
     "hint_source": {
       "type": "string",
-      "enum": ["detection", "flag", "user-prompt", "scout-generated", "agnostic"]
+      "enum": ["detection", "flag", "user-prompt", "scout-generated"]
     },
     "skill_version": {"type": "string", "minLength": 1},
     "stages": {

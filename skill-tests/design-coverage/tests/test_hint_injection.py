@@ -5,8 +5,6 @@ import textwrap
 
 def inject_hint(core_prompt: str, hint_text: str, platform: str, stage_num: str) -> str:
     """Replica of the injection logic from SKILL.md."""
-    if platform == "agnostic":
-        return core_prompt.replace("<!-- PLATFORM_HINTS -->", "")
     section_map = {
         "01": "## 01 Flow locator",
         "02": "## 02 Code inventory",
@@ -67,8 +65,3 @@ def test_injects_stage_03() -> None:
     assert "iOS inventory content" not in out
 
 
-def test_agnostic_removes_marker() -> None:
-    core = "Body.\n<!-- PLATFORM_HINTS -->\n"
-    out = inject_hint(core, HINT_FIXTURE, "agnostic", "01")
-    assert "<!-- PLATFORM_HINTS -->" not in out
-    assert "Platform-specific hints" not in out

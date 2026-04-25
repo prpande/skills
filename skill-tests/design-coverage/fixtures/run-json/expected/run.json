@@ -21,7 +21,7 @@
       "status": "refused"
     }
   },
-  "platform": "agnostic",
-  "hint_source": "agnostic",
+  "platform": "ios",
+  "hint_source": "scout-generated",
   "skill_version": "test-sha"
 }
