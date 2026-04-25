@@ -66,9 +66,18 @@ persisting to `resolved[]` — stage 05 joins on this exact string.
 
 ### B. Candidate-destination scope (one multi-select per parent screen)
 
-Read `02-code-inventory.json`'s `candidate_destinations` field. Group by
-`parent_screen` (the symbol that's the navigation source). For each group,
-emit ONE multi-select question:
+Read `02-code-inventory.json`'s `candidate_destinations` field with a
+defensive default — `schemas/code_inventory.json` only requires
+`["items", "unwalked_destinations"]`, so legacy run-dir artifacts may
+omit `candidate_destinations` entirely. Use the same `inventory.get(...)`
+idiom the hotspot-question path uses:
+
+```python
+candidates = inventory.get("candidate_destinations", [])
+```
+
+Group by `parent_screen` (the symbol that's the navigation source). For each
+group, emit ONE multi-select question:
 
 > "Reachable from `<parent_screen>` in N hops:
 >  - `<candidate_1.symbol>` (`<file>`)

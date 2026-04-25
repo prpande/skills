@@ -23,7 +23,12 @@ import json
 from pathlib import Path
 from typing import Iterator
 
-from skill_root import get_skill_root
+# Module-level (not name-level) import so monkeypatching `skill_root.get_skill_root`
+# in tests is picked up live without `importlib.reload(sealed_enum_index)`. A `from
+# skill_root import get_skill_root` form would copy the reference at import time;
+# after monkeypatch reverts, the local copy stays bound to the test lambda for the
+# rest of the session and any subsequent test using this module reads fake schemas.
+import skill_root
 
 
 def get_sealed_enum_pattern_keys() -> list[str]:
@@ -33,7 +38,7 @@ def get_sealed_enum_pattern_keys() -> list[str]:
     `"x-platform-pattern": true`. Paths are rooted at the schema's file stem.
     """
     keys: list[str] = []
-    schemas_dir = get_skill_root() / "schemas"
+    schemas_dir = skill_root.get_skill_root() / "schemas"
     for schema_file in sorted(schemas_dir.glob("*.json")):
         schema = json.loads(schema_file.read_text(encoding="utf-8"))
         root_name = schema_file.stem

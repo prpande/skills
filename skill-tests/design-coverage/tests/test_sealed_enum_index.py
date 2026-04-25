@@ -105,10 +105,29 @@ def test_dynamically_picks_up_new_x_platform_pattern_value(tmp_path, monkeypatch
 
     import skill_root as real_skill_root_mod
     monkeypatch.setattr(real_skill_root_mod, "get_skill_root", lambda: fake_skill_root)
-    import importlib
+    # No importlib.reload needed — sealed_enum_index uses attribute-level access
+    # (`skill_root.get_skill_root()`) so the monkeypatch is live without rebinding.
     import sealed_enum_index
-    importlib.reload(sealed_enum_index)
 
     keys = sealed_enum_index.get_sealed_enum_pattern_keys()
     assert "fake.novel_enum.alpha" in keys
     assert "fake.novel_enum.beta" in keys
+
+
+def test_sealed_enum_index_does_not_leak_monkeypatch_after_test():
+    """Regression: importlib.reload + `from skill_root import get_skill_root`
+    bound a stale lambda to sealed_enum_index for the rest of the session.
+    Switching to `import skill_root` + attribute access fixes it. After the
+    monkeypatch test above reverts, this test must see the real schemas."""
+    from sealed_enum_index import get_sealed_enum_pattern_keys
+    keys = get_sealed_enum_pattern_keys()
+    # Real schemas have inventory_item.hotspot.type.* keys; the fake schema
+    # used in the prior test only declared fake.novel_enum.*.
+    assert any(k.startswith("inventory_item.hotspot.type.") for k in keys), (
+        "sealed_enum_index appears to be reading from fake schemas — module state "
+        "leaked across tests"
+    )
+    assert not any(k.startswith("fake.") for k in keys), (
+        "fake schema keys should not appear once the prior test's monkeypatch "
+        "has reverted"
+    )
