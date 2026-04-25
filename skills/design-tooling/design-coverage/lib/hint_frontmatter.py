@@ -76,8 +76,15 @@ def parse_hint_frontmatter(text: str) -> dict[str, Any]:
 
 
 def _parse_nested_mapping(lines: list[str], start: int) -> tuple[dict[str, Any], int]:
-    """Parse a two-level mapping rooted at column 2 (sealed_enum_patterns)."""
-    out: dict[str, dict[str, Any]] = {}
+    """Parse a mapping rooted at column 2.
+
+    Handles two shapes:
+    - Two-level nested dict (sealed_enum_patterns): outer keys end with `:`,
+      inner keys are at indent 4, list items at indent 6.
+    - Flat {str: str} dict (hotspot_question_overrides): key-value pairs at
+      indent 2 that do NOT end with `:`.
+    """
+    out: dict[str, Any] = {}
     i = start
     cur_key: str | None = None
     cur_val: dict[str, Any] | None = None
@@ -91,11 +98,17 @@ def _parse_nested_mapping(lines: list[str], start: int) -> tuple[dict[str, Any],
             break
         indent = len(line) - len(line.lstrip())
         stripped = line.strip()
-        if indent == 2 and stripped.endswith(":"):
-            cur_key = stripped[:-1]
-            cur_val = {}
-            out[cur_key] = cur_val
-            cur_subkey = None
+        if indent == 2:
+            if stripped.endswith(":"):
+                # Start of a new outer key for two-level nested dict.
+                cur_key = stripped[:-1]
+                cur_val = {}
+                out[cur_key] = cur_val
+                cur_subkey = None
+            elif ":" in stripped:
+                # Flat key: value entry (e.g., hotspot_question_overrides).
+                flat_key, _, flat_val = stripped.partition(":")
+                out[flat_key.strip()] = flat_val.strip().strip('"').strip("'")
             i += 1
             continue
         if indent == 4 and ":" in stripped:
@@ -114,7 +127,10 @@ def _parse_nested_mapping(lines: list[str], start: int) -> tuple[dict[str, Any],
             continue
         if indent == 6 and stripped.startswith("- ") and cur_subkey and cur_val is not None:
             if isinstance(cur_val.get(cur_subkey), list):
-                cur_val[cur_subkey].append(stripped[2:].strip().strip('"').strip("'"))
+                # Unescape YAML double-backslash back to single backslash so
+                # callers can use the value directly as a Python regex pattern.
+                raw = stripped[2:].strip().strip('"').strip("'")
+                cur_val[cur_subkey].append(raw.replace("\\\\", "\\"))
             i += 1
             continue
         i += 1

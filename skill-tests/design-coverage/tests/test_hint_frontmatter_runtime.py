@@ -144,3 +144,76 @@ def test_validate_rejects_sealed_enum_patterns_missing_grep() -> None:
         fm, sealed_keys=["inventory_item.kind.screen"]
     )
     assert any("grep" in e for e in errors), errors
+
+
+# ---------------------------------------------------------------------------
+# Round-trip tests: render_draft_to_md → parse_hint_frontmatter
+# These guard against latent parser bugs that only surface when Python code
+# reads back values that were written by the scout renderer.
+# ---------------------------------------------------------------------------
+
+def _render_and_parse(draft: dict) -> dict:
+    """Helper: render a draft dict to .md text, then parse the frontmatter."""
+    import sys
+    from pathlib import Path
+    # render_draft lives in the scout lib, not the design-coverage lib.
+    scout_lib = (
+        Path(__file__).resolve().parents[3]
+        / "skills" / "design-tooling" / "design-coverage-scout" / "lib"
+    )
+    if str(scout_lib) not in sys.path:
+        sys.path.insert(0, str(scout_lib))
+    from render_draft import render_draft_to_md
+    rendered = render_draft_to_md(draft)
+    return parse_hint_frontmatter(rendered)
+
+
+def test_roundtrip_hotspot_question_overrides_non_empty() -> None:
+    """Non-empty hotspot_question_overrides must survive a render→parse round-trip."""
+    draft = {
+        "name": "ios",
+        "detect": ["*.xcodeproj"],
+        "description": "iOS hint.",
+        "confidence": "high",
+        "sections": {
+            "flow_locator": "x",
+            "code_inventory": "x",
+            "clarification": "x",
+        },
+        "hotspot_question_overrides": {
+            "feature-flag": "Treat ON as live",
+            "permission": "Check staff role",
+        },
+    }
+    fm = _render_and_parse(draft)
+    assert fm.get("hotspot_question_overrides") == {
+        "feature-flag": "Treat ON as live",
+        "permission": "Check staff role",
+    }
+
+
+def test_roundtrip_grep_patterns_are_unescaped() -> None:
+    """Grep patterns with backslashes must be returned as single-backslash strings
+    (ready for use as Python regex patterns) after a render→parse round-trip."""
+    draft = {
+        "name": "ios",
+        "detect": ["*.xcodeproj"],
+        "description": "iOS hint.",
+        "confidence": "high",
+        "sections": {
+            "flow_locator": "x",
+            "code_inventory": "x",
+            "clarification": "x",
+        },
+        "sealed_enum_patterns": {
+            "inventory_item.kind.screen": {
+                "grep": [r"class \w+ViewController"],
+                "description": "iOS UIViewController",
+            },
+        },
+    }
+    fm = _render_and_parse(draft)
+    patterns = fm["sealed_enum_patterns"]["inventory_item.kind.screen"]["grep"]
+    assert patterns == [r"class \w+ViewController"], (
+        f"Expected single-backslash pattern, got: {patterns!r}"
+    )
