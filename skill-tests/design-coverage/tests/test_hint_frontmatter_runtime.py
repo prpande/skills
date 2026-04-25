@@ -169,7 +169,8 @@ def _render_and_parse(draft: dict) -> dict:
 
 
 def test_roundtrip_hotspot_question_overrides_non_empty() -> None:
-    """Non-empty hotspot_question_overrides must survive a render→parse round-trip."""
+    """Non-empty hotspot_question_overrides must survive a render→parse round-trip,
+    including values with special YAML characters."""
     draft = {
         "name": "ios",
         "detect": ["*.xcodeproj"],
@@ -181,15 +182,32 @@ def test_roundtrip_hotspot_question_overrides_non_empty() -> None:
             "clarification": "x",
         },
         "hotspot_question_overrides": {
-            "feature-flag": "Treat ON as live",
-            "permission": "Check staff role",
+            "feature-flag": 'Treat "ON" as live',
+            "permission": "Check staff: role",
         },
     }
     fm = _render_and_parse(draft)
     assert fm.get("hotspot_question_overrides") == {
-        "feature-flag": "Treat ON as live",
-        "permission": "Check staff role",
+        "feature-flag": 'Treat "ON" as live',
+        "permission": "Check staff: role",
     }
+
+
+def test_roundtrip_description_with_special_chars() -> None:
+    """description values with quotes and backslashes must round-trip correctly."""
+    draft = {
+        "name": "tricky",
+        "detect": ["*.swift"],
+        "description": 'Has: colon and "quotes" and \\backslash',
+        "confidence": "medium",
+        "sections": {
+            "flow_locator": "x",
+            "code_inventory": "x",
+            "clarification": "x",
+        },
+    }
+    fm = _render_and_parse(draft)
+    assert fm.get("description") == 'Has: colon and "quotes" and \\backslash'
 
 
 def test_roundtrip_grep_patterns_are_unescaped() -> None:

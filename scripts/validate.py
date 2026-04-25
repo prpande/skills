@@ -129,6 +129,13 @@ def validate_hint_file(path: pathlib.Path) -> list[str]:
 
     fm = parse_hint_frontmatter(text)
     errors = [f"{path}: {e}" for e in validate_hint_frontmatter(fm, sealed_keys)]
+    # Belt-and-suspenders: frontmatter name must match the filename stem so
+    # platform detection (which appends hint.stem) resolves to the right file.
+    if fm.get("name") and fm["name"] != path.stem:
+        errors.append(
+            f"{path}: frontmatter 'name' ({fm['name']!r}) does not match "
+            f"filename stem ({path.stem!r})"
+        )
 
     body_for_headers = _mask_code_blocks(body)
     body_lines = {line.strip() for line in body_for_headers.splitlines()}

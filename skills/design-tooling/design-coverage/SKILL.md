@@ -122,7 +122,7 @@ for hint in sorted(PLATFORMS_DIR.glob("*.md")):
                 in_detect = False
     for g in detect_globs:
         if detect_match(REPO_ROOT, g):
-            matches.append(name)
+            matches.append(hint.stem)  # use filename stem so platform ID always resolves to <stem>.md
             break
 print(matches)
 ```

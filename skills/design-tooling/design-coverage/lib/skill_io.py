@@ -56,7 +56,7 @@ def validate_and_write_json(path: Path, obj: Any, schema_name: str,
     file is left behind.
     """
     import json as _json
-    from validator import Validator, ValidationError
+    from validator import Validator
 
     schema_path = Path(schemas_dir) / schema_name
     if not schema_path.exists():

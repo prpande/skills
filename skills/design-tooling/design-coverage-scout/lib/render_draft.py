@@ -40,7 +40,7 @@ def render_draft_to_md(
         if overrides:
             fm_lines.append("hotspot_question_overrides:")
             for k, v in sorted(overrides.items()):
-                fm_lines.append(f'  {k}: "{v}"')
+                fm_lines.append(f"  {_yaml_str(k)}: {_yaml_str(v)}")
         else:
             fm_lines.append("hotspot_question_overrides: {}")
     if "sealed_enum_patterns" in draft and draft["sealed_enum_patterns"]:

@@ -23,6 +23,35 @@ _FRONTMATTER_RE = re.compile(
 )
 
 
+def _yaml_unescape(s: str) -> str:
+    """Reverse the escaping emitted by render_draft._yaml_str.
+
+    Handles only the two escape sequences that _yaml_str produces:
+      \\  →  \
+      \"  →  "
+    Processed character-by-character so mixed sequences (e.g. \\\")
+    are decoded correctly.
+    """
+    result: list[str] = []
+    i = 0
+    while i < len(s):
+        if s[i] == "\\" and i + 1 < len(s):
+            nxt = s[i + 1]
+            if nxt == "\\":
+                result.append("\\")
+                i += 2
+            elif nxt == '"':
+                result.append('"')
+                i += 2
+            else:
+                result.append(s[i])
+                i += 1
+        else:
+            result.append(s[i])
+            i += 1
+    return "".join(result)
+
+
 def parse_hint_frontmatter(text: str) -> dict[str, Any]:
     """Parse the frontmatter block from a hint .md file into a dict."""
     m = _FRONTMATTER_RE.match(text)
@@ -70,7 +99,8 @@ def parse_hint_frontmatter(text: str) -> dict[str, Any]:
         elif value in ("true", "false"):
             fm[key] = value == "true"
         else:
-            fm[key] = value.strip('"').strip("'")
+            raw = value.strip('"').strip("'")
+            fm[key] = _yaml_unescape(raw)
         i += 1
     return fm
 
@@ -108,7 +138,9 @@ def _parse_nested_mapping(lines: list[str], start: int) -> tuple[dict[str, Any],
             elif ":" in stripped:
                 # Flat key: value entry (e.g., hotspot_question_overrides).
                 flat_key, _, flat_val = stripped.partition(":")
-                out[flat_key.strip()] = flat_val.strip().strip('"').strip("'")
+                raw_fk = flat_key.strip().strip('"').strip("'")
+                raw_fv = flat_val.strip().strip('"').strip("'")
+                out[_yaml_unescape(raw_fk)] = _yaml_unescape(raw_fv)
             i += 1
             continue
         if indent == 4 and ":" in stripped:
@@ -121,8 +153,12 @@ def _parse_nested_mapping(lines: list[str], start: int) -> tuple[dict[str, Any],
                     cur_val[sub_key] = []
             else:
                 if cur_val is not None:
-                    cur_val[sub_key] = (None if sub_val == "null"
-                                        else sub_val.strip('"').strip("'"))
+                    if sub_val == "null":
+                        cur_val[sub_key] = None
+                    else:
+                        cur_val[sub_key] = _yaml_unescape(
+                            sub_val.strip('"').strip("'")
+                        )
             i += 1
             continue
         if indent == 6 and stripped.startswith("- ") and cur_subkey and cur_val is not None:
