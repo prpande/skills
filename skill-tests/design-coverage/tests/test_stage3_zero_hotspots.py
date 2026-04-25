@@ -8,7 +8,15 @@ SCHEMAS = Path(os.environ["DESIGN_COVERAGE_SKILL_ROOT"]) / "schemas"
 
 def stage3_resolve(inventory):
     hotspots = [i for i in inventory["items"] if i.get("hotspot")]
-    return {"resolved": []} if not hotspots else None
+    if not hotspots:
+        # Short-circuit: no hotspot questions, no candidate destinations.
+        # Still writes figma_dedup_policy with the default (wave 3 #5).
+        return {
+            "resolved": [],
+            "in_scope_destinations": [],
+            "figma_dedup_policy": "dark-twins-folded",
+        }
+    return None
 
 def test_zero_hotspots_short_circuits():
     inv = json.loads((FX / "input" / "code_inventory.json").read_text())

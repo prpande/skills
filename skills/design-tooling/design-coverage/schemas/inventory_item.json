@@ -7,7 +7,7 @@
     "kind": {
       "type": "string",
       "x-platform-pattern": true,
-      "enum": ["screen", "state", "action", "field"]
+      "enum": ["screen", "screen-group", "state", "action", "field"]
     },
     "title": {"type": "string", "minLength": 1},
     "parent_id": {"type": ["string", "null"]},

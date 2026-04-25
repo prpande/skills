@@ -117,6 +117,19 @@ If a deployment needs `missing` rows on a matrix (e.g., for a code-first coverag
 
 This stage writes the deterministic audit view (`06-report.md`). The verdict-first narrative summary at `06-report.json` → `06-summary.md` is rendered by the **main session**, not a subagent, once this stage returns. See SKILL.md § "Final output" for the required structure. Keeping the narrative render out-of-stage means this stage stays deterministic and testable; the narrative is explicitly labeled non-deterministic.
 
+**Cross-references for the narrative render (wave 3):**
+
+- **Low-confidence anchor warning (#13):** The narrative render reads
+  `<run-dir>/01-flow-mapping.json` fields `confidence` and `locator_method`.
+  If `confidence == "low"` OR `locator_method == "name-search"`, it prepends the
+  verdict line with `⚠ **Low-confidence anchor — review stage 1 before trusting
+  this report.**` See SKILL.md § "Final output" → "Required structure" item 2.
+
+- **Next-5-actions slot-fill template (#12):** The narrative render constructs each
+  action using the template and `ALLOWED_VERBS` from `lib/action_verbs.py`. The verb
+  slot is constrained to `Ask | Confirm | Drop | Document | Wire | Deprecate`.
+  See SKILL.md § "Final output" → "Required structure" item 3.
+
 ## Scope fence — what this stage MUST NOT write
 
 This stage writes exactly two files:

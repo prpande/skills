@@ -28,6 +28,10 @@
           }
         }
       }
+    },
+    "figma_dedup_policy": {
+      "type": "string",
+      "enum": ["none", "dark-twins-folded", "appearance-modes-folded"]
     }
   }
 }

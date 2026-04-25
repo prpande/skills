@@ -1,0 +1,20 @@
+{
+  "$id": "frame_classification.json",
+  "type": "object",
+  "required": ["frames"],
+  "properties": {
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["frame_id", "name", "is_leaf", "figma_parent_id"],
+        "properties": {
+          "frame_id":        { "type": "string",          "minLength": 1 },
+          "name":            { "type": "string",          "minLength": 1 },
+          "is_leaf":         { "type": "boolean"                        },
+          "figma_parent_id": { "type": ["string", "null"]               }
+        }
+      }
+    }
+  }
+}

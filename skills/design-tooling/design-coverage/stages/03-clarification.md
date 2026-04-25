@@ -103,15 +103,35 @@ Persist the user's selections in `03-clarifications.json`'s
 Stage 05 reads this list to know which candidates to flag as `missing` if
 Figma has no counterpart.
 
+### C. Figma deduplication policy (wave 3 #5)
+
+After questions A and B, emit one final question about Figma appearance-variant
+folding. Always ask this question, regardless of whether A and B produced any items:
+
+> "How should Figma appearance variants (light/dark mode, etc.) be handled in the
+> inventory?
+>  - `none` — keep all variants as separate inventory items
+>  - `dark-twins-folded` *(default)* — fold light/dark pairs into one item with
+>    `modes: ["light", "dark"]`
+>  - `appearance-modes-folded` — fold all appearance variants (including dynamic
+>    type, high-contrast) into one item"
+
+Present options `["none", "dark-twins-folded", "appearance-modes-folded"]` via
+`AskUserQuestion`; default answer is `"dark-twins-folded"` if the user does not
+respond. Persist in `03-clarifications.json` as a top-level `figma_dedup_policy`
+field.
+
 ### Short-circuit on empty
 
 If both `emit_questions_for_inventory` returns `[]` AND `candidate_destinations`
-is empty, write `{"resolved": [], "in_scope_destinations": []}` to
-`03-clarifications.json` immediately and exit. Do not enter a dialogue.
+is empty, skip questions A and B. Still ask question C (the `figma_dedup_policy`
+question). Write `{"resolved": [], "in_scope_destinations": [], "figma_dedup_policy": "dark-twins-folded"}`
+(or the user's chosen value) to `03-clarifications.json` and exit.
 
 ## Output
 
-Write `03-clarifications.json` to the run dir conforming to the skill's `schemas/clarifications.json`, then regenerate the Markdown view:
+Write `03-clarifications.json` to the run dir conforming to the skill's `schemas/clarifications.json`
+(which now includes the optional `figma_dedup_policy` field), then regenerate the Markdown view:
 
 ```python
 import sys
