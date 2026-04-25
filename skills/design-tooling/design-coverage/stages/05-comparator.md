@@ -77,7 +77,6 @@ this propagates the screen-level clarification to its descendants.
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd() / "lib"))
-from skill_root import get_skill_root
 from severity_matrix import lookup, flush_misses, reset_misses
 from skill_io import read_json
 

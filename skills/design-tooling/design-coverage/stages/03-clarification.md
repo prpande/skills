@@ -54,12 +54,15 @@ strings; persist that string verbatim to `clarifications.resolved[].answer`.
 This is load-bearing: stage 05's severity matrix only matches against the
 canonical strings (`"on"`, `"granted"`, `"all_variants_required"`, etc.). A
 free-form answer falls through to the generic `("missing", "<kind>", None,
-None)` bucket and silently downgrades what should have been an error to
-`warn`. If the user truly needs to answer outside the canonical set, treat
-that as a registry gap and add the alternative to
-`lib/hotspot_questions.py`'s `QuestionTemplate.alternatives` AND a matching
-entry to `lib/severity_matrix.py`'s `SEVERITY_MATRIX` — do not persist the
-free-form string.
+None)` bucket and downgrades what should have been an error to `warn`;
+stage 05 records the unmatched lookup tuple to `_severity_lookup_misses.json`
+at the run-dir top level, so the failure mode is auditable rather than
+fully silent — but auditing after the fact is no substitute for getting
+the answer right at clarification time. If the user truly needs to answer
+outside the canonical set, treat that as a registry gap and add the
+alternative to `lib/hotspot_questions.py`'s `QuestionTemplate.alternatives`
+AND a matching entry to `lib/severity_matrix.py`'s `SEVERITY_MATRIX` — do
+not persist the free-form string.
 
 For each Question, format `hotspot_id` as `f"{hotspot_type}:{symbol}"` when
 persisting to `resolved[]` — stage 05 joins on this exact string.

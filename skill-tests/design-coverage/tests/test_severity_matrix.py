@@ -49,11 +49,10 @@ def test_lookup_unknown_tuple_returns_warn_fallback(tmp_path):
     assert sev == "warn"
 
 
-def test_lookup_unknown_tuple_records_miss(tmp_path, monkeypatch):
+def test_lookup_unknown_tuple_records_miss(tmp_path):
     """Misses are recorded so the matrix can be audited and grown over time."""
     import severity_matrix as sm
     misses_path = tmp_path / "_severity_lookup_misses.json"
-    monkeypatch.setattr(sm, "_MISSES_PATH", misses_path)
     sm._MISS_BUFFER.clear()  # ensure clean state
     sm.lookup("missing", "novel-kind", None, None)
     sm.flush_misses(misses_path)
