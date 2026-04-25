@@ -44,6 +44,80 @@ The `mappings[].android_destination` key name is inherited from the Android port
 4. **Pass 2 — name-search fallback (only if Pass 1 yields no medium-confidence match).** Tokenize Figma frame names + hint. Grep against the platform's screen-unit anchors (see hints). Rank by distinct-anchor count. Set `locator_method: "name-search"`.
 5. **Refuse loudly on no locatable entry.** If neither pass produces at least one high-or-medium-confidence mapping, write `locator_method: "refused"` with a `refused_reason` suggesting `--old-flow <hint>` and exit.
 
+## Multi-anchor disambiguation (wave 3 #4)
+
+After the candidate-class grep loop (Pass 1 and/or Pass 2) has produced candidates,
+run multi-anchor detection **before** writing `01-flow-mapping.json`.
+
+```python
+import json
+import os
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd() / "lib"))
+from hint_frontmatter import parse_hint_frontmatter
+from skill_io import atomic_write_json
+
+PLATFORMS_DIR = Path(os.environ["DESIGN_COVERAGE_PLATFORMS_DIR"])
+run_config = json.loads((run_dir / "00-run-config.json").read_text(encoding="utf-8"))
+platform = run_config["platform"]
+
+# multi_anchor_suffixes comes from the platform hint's frontmatter.
+# Default to [] when the field is absent (hint has no ambiguous-suffix pairs).
+hint_text = (PLATFORMS_DIR / f"{platform}.md").read_text(encoding="utf-8")
+fm = parse_hint_frontmatter(hint_text)
+multi_anchor_suffixes: list[str] = fm.get("multi_anchor_suffixes", [])
+
+
+def _strip_suffix(name: str, suffixes: list[str]) -> str:
+    """Return name with the first matching suffix removed; original name if none match."""
+    for sfx in suffixes:
+        if name.endswith(sfx):
+            return name[: -len(sfx)]
+    return name
+
+
+# Group candidates by their stripped base name.
+from collections import defaultdict
+groups: dict[str, list[dict]] = defaultdict(list)
+for candidate in candidates:  # each dict has at least "class_name", "file", "mtime", "lines"
+    base = _strip_suffix(candidate["class_name"], multi_anchor_suffixes)
+    groups[base].append(candidate)
+
+# For each group with N ≥ 2 members, ask the user which to use.
+for base_name, group in sorted(groups.items()):
+    if len(group) < 2:
+        continue
+    # Build a choice list for AskUserQuestion.
+    choices = [
+        f"{c['class_name']} ({c['file']}, last modified {c['mtime']}, {c['lines']} lines)"
+        for c in group
+    ]
+    question = (
+        f"Found multiple anchors sharing base `{base_name}`:\n"
+        + "".join(f"  - {ch}\n" for ch in choices)
+        + "\nWhich should anchor the audit?"
+    )
+    # Ask interactively — never a file handoff.
+    answer = AskUserQuestion(question, choices)
+    selected_class = next(
+        c["class_name"] for c in group if answer.startswith(c["class_name"])
+    )
+    # Remove non-selected candidates from the list.
+    candidates = [c for c in candidates if c["class_name"] not in
+                  [g["class_name"] for g in group] or c["class_name"] == selected_class]
+    # Record the choice in run-config.
+    run_config["selected_anchor"] = selected_class
+    run_config["selected_anchor_reason"] = "user-picked-multi-anchor"
+    # Persist the updated run-config atomically so resumes never see partial JSON.
+    atomic_write_json(run_dir / "00-run-config.json", run_config)
+```
+
+> **Invariant:** Multi-anchor disambiguation is **interactive in-session** (via the
+> live `AskUserQuestion` interface). Never write the question to a file for the user
+> to edit offline. If `multi_anchor_suffixes` is empty or no group has N ≥ 2
+> candidates, this block is a no-op and the run proceeds normally.
+
 ## Output
 
 Write `01-flow-mapping.json` to the run dir, then regenerate the Markdown view:

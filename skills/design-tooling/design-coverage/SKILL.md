@@ -285,9 +285,45 @@ The summary is for a designer / engineer reviewer who has ~2 minutes before thei
 
 1. **Non-deterministic banner** — write this HTML comment verbatim at the very top of `06-summary.md` (do **not** wrap it in a code fence; the banner is an actual HTML comment, not a code example): `<!-- Rendered by the main session from 06-report.json on <ISO-date>. Non-deterministic — re-running /design-coverage may produce different prose. The deterministic audit view is 06-report.md. -->`
 
-2. **One-line verdict** immediately after the title: `> **Verdict:** 🟢 Ready to ship` / `🟡 Caveats below` / `🔴 Not ready to ship: <one-sentence reason>`. Pick color by highest-severity summary entry (any `error` → red; any `warn` and no error → yellow; else green). The reason cites the specific gap that blocks shipping ("the Resource Picker modal has no Figma frame"), not a count ("2 errors need review").
+2. **One-line verdict** immediately after the title. Pick color by highest-severity summary entry (any `error` → red; any `warn` and no error → yellow; else green). The reason cites the specific gap that blocks shipping ("the Resource Picker modal has no Figma frame"), not a count ("2 errors need review"). Use exactly one of these formats:
 
-3. **Next 5 actions** — a numbered list of the 5 most actionable rows the reader should work on first (errors before warnings, highest-severity warnings before lower). One sentence each, imperative voice, beginning with a verb ("Ask design to add…", "Confirm with product whether…", "Drop the legacy X path…"). This is what the reader reads in the first 30 seconds — it must be the top of the file, not buried after the tally.
+   ```
+   > **Verdict:** 🟢 Ready to ship
+   > **Verdict:** 🟡 Caveats below — {one-sentence reason}
+   > **Verdict:** 🔴 Not ready to ship: {one-sentence reason}
+   ```
+
+   **Low-confidence anchor check (wave 3 #13):** Before writing the verdict line, read
+   `<run-dir>/01-flow-mapping.json`. If `confidence == "low"` **OR**
+   `locator_method == "name-search"`, prepend the warning immediately before whichever
+   verdict line was selected (green, yellow, or red):
+
+   ```
+   > ⚠ **Low-confidence anchor — review stage 1 before trusting this report.**
+   > **Verdict:** 🟢 Ready to ship
+   ```
+
+   If `confidence` is `"high"` or `"medium"` AND `locator_method` is `"nav-graph"`,
+   emit only the selected verdict line with no warning prepended.
+
+3. **Next 5 actions** — a numbered list of the 5 most actionable rows the reader should work on first (errors before warnings, highest-severity warnings before lower). This is what the reader reads in the first 30 seconds — it must be the top of the file, not buried after the tally.
+
+   **Slot-fill template (wave 3 #12):** Each action **must** use the following template.
+   The `verb` slot is constrained to `ALLOWED_VERBS` from `lib/action_verbs.py`:
+   `Ask | Confirm | Drop | Document | Wire | Deprecate`. Fill every slot — do not
+   write free-form prose in place of the template.
+
+   ```
+   {N}. **{verb} {object}** — {legacy_ref} {has no | conflicts with} {figma_ref}.
+      {one-sentence consequence}. Action: {ask_design | confirm_with_product | document_as_dropped | wire_in_navigation}.
+   ```
+
+   Example:
+
+   ```
+   1. **Ask design to add Resource Picker frame** — `ResourcePickerViewController` has no Figma counterpart.
+      Without a frame, the comparison is incomplete and stage 5 flags it as missing. Action: ask_design.
+   ```
 
 4. **Severity tally table** — counts of 🔴/🟠/ℹ️ summary entries + counts of matrix statuses (`missing`, `new-in-figma`, `restructured`, `present`). Use the emoji in the table cells, not just the headers.
 

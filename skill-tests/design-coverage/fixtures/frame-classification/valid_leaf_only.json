@@ -1,0 +1,6 @@
+{
+  "frames": [
+    {"frame_id": "1:1", "name": "Appointment Details", "is_leaf": true, "figma_parent_id": null},
+    {"frame_id": "1:2", "name": "Client Profile",      "is_leaf": true, "figma_parent_id": null}
+  ]
+}
