@@ -89,12 +89,24 @@ the same data produce matching action verbs and noun-objects.
 ```python
 ALLOWED_VERBS = ["Ask", "Confirm", "Drop", "Document", "Wire", "Deprecate"]
 
-ACTION_TEMPLATE = (
+# Display guide for agent use — NOT a str.format() template.
+# Slots with `|`-delimited options (e.g., `{has no | conflicts with}`) are
+# prose choices; the agent picks one. Do NOT call .format() on this string.
+ACTION_TEMPLATE_DISPLAY = (
     "{N}. **{verb} {object}** — {legacy_ref} {has no | conflicts with} {figma_ref}.\n"
     "   {one-sentence consequence}. Action: "
     "{ask_design | confirm_with_product | document_as_dropped | wire_in_navigation}."
 )
 ```
+
+`ACTION_TEMPLATE_DISPLAY` is a prose guide for the agent, not a callable Python
+format string. Slots like `{has no | conflicts with}` contain spaces and pipes that
+are invalid `str.format()` placeholder names; calling `.format()` on it would raise
+`KeyError`. The agent reads the template as guidance and fills each slot by writing
+the appropriate choice inline — it does not call `.format()`.
+
+`test_action_verbs.py` verifies the exported names and checks that `"{verb}"` and
+`"{object}"` are present in the display string; it does NOT attempt `.format()`.
 
 No logic beyond the constant exports — just the vocabulary contract.
 
@@ -130,17 +142,21 @@ writing `01-flow-mapping.json`.
 1. Read `multi_anchor_suffixes` from the resolved platform-hint frontmatter
    (already available via `hint_frontmatter.parse_hint_frontmatter`).
    Default to `[]` if the field is absent (hint has no ambiguous-suffix pairs).
-2. Strip each known suffix from the end of every candidate class name; compare
-   the resulting base names pairwise.
-3. If any two candidates share the same base name → **refuse-loud** (interactive
-   in-session, never a file handoff):
+2. Strip each known suffix from the end of every candidate class name to derive
+   a base name. Group candidates by their base name.
+3. If **any group contains N ≥ 2 candidates** that share the same base name →
+   **refuse-loud** (interactive in-session, never a file handoff). Present **all
+   N candidates in a single question** (not one question per pair):
 
    > "Found multiple anchors for Figma frame `<name>`:\n
-   >  - `<CandidateA>` (`<file>`, last modified `<date>`, `<N>` lines)\n
-   >  - `<CandidateB>` (`<file>`, last modified `<date>`, `<N>` lines)\n\n
+   >  - `<Candidate1>` (`<file>`, last modified `<date>`, `<N>` lines)\n
+   >  - `<Candidate2>` (`<file>`, last modified `<date>`, `<N>` lines)\n
+   >  - `<CandidateN>` (`<file>`, last modified `<date>`, `<N>` lines)\n\n
    > Which should anchor the audit?"
 
    Ask via the live `AskUserQuestion` interface with each candidate as a choice.
+   If multiple groups each have N ≥ 2 ambiguous candidates, ask one question per
+   group in sequence.
 4. Record the user's selection in `00-run-config.json`:
    ```json
    "selected_anchor": "<chosen class name>",
@@ -198,6 +214,13 @@ For each in-scope Figma file:
    with `parent_id: null` — no MCP call needed, just the frame metadata.
 
 #### 7b — Emit `00-frame-classification.json` as a real artifact
+
+**Resumability:** `00-frame-classification.json` is written **unconditionally** (before
+the per-frame loop, on every invocation including resumes). The classification is
+deterministic — the same Figma structure always produces the same output — so
+re-writing on resume is safe. Do NOT add a guard that skips the write when the file
+already exists; that would leave a resumed run without the artifact if it was absent
+for any reason.
 
 Before the per-frame loop, emit:
 ```python
@@ -290,6 +313,29 @@ stage 06 in isolation knows where to look.
 
 ---
 
+## Existing tests to update
+
+### `test_schemas_parse.py` — bump schema count 8 → 9
+
+`skill-tests/design-coverage/tests/test_schemas_parse.py` line 9 currently asserts:
+```python
+assert len(files) == 8, f"expected 8 schemas, found {len(files)}"
+```
+Adding `schemas/frame_classification.json` makes the count 9. Update to `== 9`.
+
+### `test_stage3_zero_hotspots.py` and its fixture
+
+The zero-hotspot short-circuit in stage 03 now writes `figma_dedup_policy` with the
+default value. The expected fixture at
+`skill-tests/design-coverage/fixtures/stage-03/zero-hotspots/expected/clarifications.json`
+is currently `{"resolved": []}` — it must be updated to:
+```json
+{"resolved": [], "figma_dedup_policy": "dark-twins-folded"}
+```
+`test_stage3_zero_hotspots.py` must be updated accordingly.
+
+---
+
 ## Tests to add
 
 All tests go under `skill-tests/design-coverage/tests/`.
@@ -338,9 +384,12 @@ Tests `lib/action_verbs.py`.
 **Tests:**
 1. `test_allowed_verbs_exported` — `ALLOWED_VERBS` exists and equals
    `["Ask", "Confirm", "Drop", "Document", "Wire", "Deprecate"]`.
-2. `test_action_template_exported` — `ACTION_TEMPLATE` exists and is a non-empty string.
-3. `test_template_contains_verb_slot` — `ACTION_TEMPLATE` contains `{verb}`.
-4. `test_template_contains_object_slot` — `ACTION_TEMPLATE` contains `{object}`.
+2. `test_action_template_display_exported` — `ACTION_TEMPLATE_DISPLAY` exists and is a
+   non-empty string.
+3. `test_template_contains_verb_slot` — `ACTION_TEMPLATE_DISPLAY` contains `{verb}`.
+4. `test_template_contains_object_slot` — `ACTION_TEMPLATE_DISPLAY` contains `{object}`.
+5. `test_template_is_not_format_callable` — calling `ACTION_TEMPLATE_DISPLAY.format()`
+   raises `KeyError` (documents that it is intentionally not a `str.format()` target).
 
 ### `test_low_confidence_verdict.py`
 
@@ -382,7 +431,9 @@ The following files are **not touched** by Wave 3:
 7. `stages/04-figma-inventory.md` — leaf-frame level + screen-group + classification artifact
 8. `SKILL.md` — verdict warning + slot-fill template
 9. `stages/06-report-generator.md` — cross-references
-10. Tests + fixtures
+10. `test_schemas_parse.py` — bump count 8 → 9 (must not be forgotten; breaks CI otherwise)
+11. `fixtures/stage-03/zero-hotspots/expected/clarifications.json` + `test_stage3_zero_hotspots.py` — add `figma_dedup_policy`
+12. New test files + fixtures (`test_multi_anchor_disambiguate.py`, `test_frame_classification_schema.py`, `test_action_verbs.py`, `test_low_confidence_verdict.py`)
 
 Each step is independently reviewable; no step creates a compile/import dependency on
 a later step (the stage `.md` files are prose, not executable code, so order matters
