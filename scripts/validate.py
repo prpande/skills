@@ -81,62 +81,47 @@ VALID_CONFIDENCE = {"high", "medium", "low"}
 
 
 def validate_hint_file(path: pathlib.Path) -> list[str]:
-    """Return list of error strings for a platforms/*.md hint file.
-
-    Enforces: frontmatter present with required keys (name, detect,
-    description, confidence); `confidence` is one of high/medium/low;
-    body contains the three required section headers.
-    """
-    errors: list[str] = []
+    """Return list of error strings for a platforms/*.md hint file."""
     text = path.read_text(encoding="utf-8")
     m = FRONTMATTER.match(text)
     if not m:
         return [f"{path}: missing frontmatter block"]
-    fm_text = m.group(1)
     body = text[m.end():]
-    # Minimal frontmatter key extraction — only scalar keys at column 0.
-    # `detect:` is a list, so we also count any `- "…"` lines that
-    # immediately follow it as its entries.
-    keys: dict[str, str] = {}
-    detect_entries: list[str] = []
-    in_detect = False
-    for line in fm_text.splitlines():
-        if line.startswith("detect:"):
-            keys["detect"] = line.partition(":")[2].strip()
-            in_detect = True
-            continue
-        if in_detect:
-            stripped = line.lstrip()
-            if stripped.startswith("- "):
-                detect_entries.append(stripped[2:].strip().strip('"').strip("'"))
-                continue
-            if line and not line[0].isspace():
-                in_detect = False
-        if not line or line[0].isspace() or line.startswith("-"):
-            continue
-        if ":" in line:
-            k, _, v = line.partition(":")
-            k = k.strip()
-            v = v.strip()
-            if k:
-                keys[k] = v
-    missing = REQUIRED_HINT_FM_KEYS - set(keys)
-    if missing:
-        errors.append(
-            f"{path}: frontmatter missing keys: {sorted(missing)}"
-        )
-    if "detect" in keys and not detect_entries:
-        errors.append(
-            f"{path}: frontmatter 'detect' must list at least one glob entry"
-        )
-    conf = keys.get("confidence", "")
-    if conf and conf not in VALID_CONFIDENCE:
-        errors.append(
-            f"{path}: frontmatter 'confidence' must be one of "
-            f"{sorted(VALID_CONFIDENCE)}, got {conf!r}"
-        )
-    # Mask fenced code blocks so a hint can't satisfy the lint by mentioning
-    # `## 01 Flow locator` inside ```…``` without an actual header outside.
+
+    # The design-coverage skill lib lives at a fixed location relative to
+    # this script. Insert it on sys.path so we can reuse the runtime validator
+    # and the schema-derived registry — avoids hand-maintaining a parallel
+    # _walk_schema implementation here.
+    skill_lib = (
+        pathlib.Path(__file__).resolve().parent.parent
+        / "skills" / "design-tooling" / "design-coverage" / "lib"
+    )
+    if str(skill_lib) not in sys.path:
+        sys.path.insert(0, str(skill_lib))
+    from hint_frontmatter import parse_hint_frontmatter, validate_hint_frontmatter  # noqa: E402
+    from sealed_enum_index import get_sealed_enum_pattern_keys  # noqa: E402
+
+    # Locate the enclosing skill root (the directory containing both
+    # schemas/ and platforms/). Walk up from the hint file's path.
+    skill_root = None
+    for ancestor in path.parents:
+        if (ancestor / "schemas").is_dir() and (ancestor / "platforms").is_dir():
+            skill_root = ancestor
+            break
+
+    sealed_keys: list[str] = []
+    if skill_root is not None:
+        import skill_root as _skill_root_mod  # noqa: E402
+        original = _skill_root_mod.get_skill_root
+        _skill_root_mod.get_skill_root = lambda r=skill_root: r
+        try:
+            sealed_keys = get_sealed_enum_pattern_keys()
+        finally:
+            _skill_root_mod.get_skill_root = original
+
+    fm = parse_hint_frontmatter(text)
+    errors = [f"{path}: {e}" for e in validate_hint_frontmatter(fm, sealed_keys)]
+
     body_for_headers = _mask_code_blocks(body)
     body_lines = {line.strip() for line in body_for_headers.splitlines()}
     for section in REQUIRED_HINT_SECTIONS:
