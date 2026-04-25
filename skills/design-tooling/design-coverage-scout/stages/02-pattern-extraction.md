@@ -115,7 +115,7 @@ grep list).
 - **`inventory_item.source.surface.compose`**: `struct \w+ ?: ?View\b` (SwiftUI is the iOS analogue of Compose for surface tagging).
 - **`inventory_item.source.surface.xml`**: `\.storyboard\b`, `\.xib\b`.
 - **`inventory_item.source.surface.hybrid`**: `UIHostingController\(rootView:`, `UIViewControllerRepresentable`, `UIViewRepresentable`.
-- **`inventory_item.source.surface.nav-xml`**: storyboard `<segue>` graphs.
+- **`inventory_item.source.surface.nav-xml`**: storyboard `<segue>` graphs — typically n/a for `.swift` grep; populate from `.storyboard` / `.xib` XML inspection only.
 - **`inventory_item.source.surface.nav-compose`**: `NavigationStack \{`, `NavigationLink\(`, `\.navigationDestination\(for:`.
 - **`inventory_item.hotspot.type.feature-flag`**: `FeatureFlagType\.`, `FeatureFlagManager\.`, `ImplementationSwitch\.`, `RemoteConfig\.`, `LaunchDarkly\.`.
 - **`inventory_item.hotspot.type.permission`**: `staff\.can[A-Z]`, `user\.hasRole\(`, `AVCaptureDevice\.authorizationStatus`, `CLLocationManager`, `UNUserNotificationCenter`, `PHPhotoLibrary`.
@@ -130,7 +130,7 @@ grep list).
 - **`code_inventory.unwalked_destinations.reason.dynamic-identifier`**: `instantiate.*WithIdentifier:`, `Selector\("`.
 - **`code_inventory.unwalked_destinations.reason.swiftui-bridge`**: `UIHostingController`, `UIViewControllerRepresentable`, `UIViewRepresentable`.
 - **`code_inventory.unwalked_destinations.reason.external-module`**: `import` from a Pod/SPM module declared in `Podfile` / `Package.swift`.
-- **`code_inventory.unwalked_destinations.reason.unresolved-class`**: anchors that didn't resolve to any walked file.
+- **`code_inventory.unwalked_destinations.reason.unresolved-class`**: anchors that didn't resolve to any walked file — detected by process (post-walk diff), not a grep pattern.
 
 #### Android
 
