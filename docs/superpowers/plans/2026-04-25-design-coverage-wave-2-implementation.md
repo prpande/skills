@@ -1085,78 +1085,26 @@ Expected: FAIL — current `scripts/validate.py::validate_hint_file` does not ch
 
 - [ ] **Step 3: Update `scripts/validate.py::validate_hint_file` to call the new module.**
 
-In `scripts/validate.py`:
+The lint script already needs `sys.path` access to the design-coverage skill's `lib/` to import `hint_frontmatter`. Reuse that same `sys.path` insertion to import `sealed_enum_index` directly — no duplicated `_walk_schema` helper. The lint script is run by humans / CI from a checkout that already has the skill source, so importing skill code at lint time is safe and keeps a single source of truth for the registry derivation.
 
-(a) At the top of the file, after the existing imports, add:
-
-```python
-import json
-```
-
-(if it's not already imported — confirm by reading the existing imports first).
-
-(b) Add a helper to derive sealed keys by walking the schemas directory under the skill being linted:
-
-```python
-def _sealed_keys_for_skill(skill_root: pathlib.Path) -> list[str]:
-    """Walk skill_root/schemas/*.json for x-platform-pattern enum values.
-
-    Mirrors lib/sealed_enum_index.py's logic (kept in sync by hand — the
-    lint script must not import from skill libs at runtime so it remains
-    self-contained for CI).
-    """
-    keys: list[str] = []
-    schemas_dir = skill_root / "schemas"
-    if not schemas_dir.is_dir():
-        return keys
-
-    def walk(node: object, path: str, depth: int = 0) -> None:
-        if not isinstance(node, dict) or depth > 20:
-            return
-        if node.get("x-platform-pattern") and "enum" in node:
-            for value in node["enum"]:
-                keys.append(f"{path}.{value}")
-        for child_name, child in (node.get("properties") or {}).items():
-            walk(child, f"{path}.{child_name}", depth + 1)
-        items = node.get("items")
-        if isinstance(items, dict):
-            for child_name, child in (items.get("properties") or {}).items():
-                walk(child, f"{path}.{child_name}", depth + 1)
-
-    for schema_file in sorted(schemas_dir.glob("*.json")):
-        try:
-            schema = json.loads(schema_file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            continue
-        walk(schema, schema_file.stem)
-    return sorted(keys)
-```
-
-(c) Rewrite `validate_hint_file` to call into the new shared validator. Replace the existing body with:
+In `scripts/validate.py`, rewrite `validate_hint_file`:
 
 ```python
 def validate_hint_file(path: pathlib.Path) -> list[str]:
     """Return list of error strings for a platforms/*.md hint file."""
-    # Locate the enclosing skill so we can derive sealed keys for it.
-    skill_root = None
-    for ancestor in path.parents:
-        if (ancestor / "schemas").is_dir() and (ancestor / "platforms").is_dir():
-            skill_root = ancestor
-            break
-    sealed_keys = _sealed_keys_for_skill(skill_root) if skill_root else []
-
     text = path.read_text(encoding="utf-8")
     # Reuse the existing FRONTMATTER regex to check presence; reuse the
     # body section-header check; delegate frontmatter shape/keys/values to
-    # the shared validator.
+    # the shared validator from the design-coverage skill lib.
     m = FRONTMATTER.match(text)
     if not m:
         return [f"{path}: missing frontmatter block"]
     body = text[m.end():]
 
-    # Lazy-import the shared module from the design-coverage skill lib —
-    # this keeps the lint script runnable without skill installs but lets
-    # us share the validator with runtime SKILL.md loading.
+    # The lint script lives at <repo>/scripts/validate.py; the design-coverage
+    # skill lib is a fixed sibling under skills/. Insert it on sys.path so we
+    # can reuse the runtime validator AND the schema-derived registry —
+    # avoids hand-maintaining a parallel _walk_schema implementation here.
     import sys as _sys
     skill_lib = (
         pathlib.Path(__file__).resolve().parent.parent
@@ -1165,6 +1113,29 @@ def validate_hint_file(path: pathlib.Path) -> list[str]:
     if str(skill_lib) not in _sys.path:
         _sys.path.insert(0, str(skill_lib))
     from hint_frontmatter import parse_hint_frontmatter, validate_hint_frontmatter
+    from sealed_enum_index import get_sealed_enum_pattern_keys
+
+    # Locate the enclosing skill — the registry is per-skill (different
+    # skills could declare different x-platform-pattern enums in their
+    # schemas). Walk up from the hint file to the directory containing
+    # both schemas/ and platforms/.
+    skill_root = None
+    for ancestor in path.parents:
+        if (ancestor / "schemas").is_dir() and (ancestor / "platforms").is_dir():
+            skill_root = ancestor
+            break
+    # Point the registry at the right skill via the existing skill_root
+    # module; sealed_enum_index reads through it dynamically.
+    sealed_keys: list[str] = []
+    if skill_root is not None:
+        import skill_root as _skill_root_mod
+        original = _skill_root_mod.get_skill_root
+        _skill_root_mod.get_skill_root = lambda r=skill_root: r
+        try:
+            sealed_keys = get_sealed_enum_pattern_keys()
+        finally:
+            _skill_root_mod.get_skill_root = original
+
     fm = parse_hint_frontmatter(text)
     errors = [f"{path}: {e}" for e in validate_hint_frontmatter(fm, sealed_keys)]
 
@@ -1175,6 +1146,8 @@ def validate_hint_file(path: pathlib.Path) -> list[str]:
             errors.append(f"{path}: missing required section header {section!r}")
     return errors
 ```
+
+The monkeypatch-then-restore pattern around `get_skill_root` mirrors how `test_sealed_enum_index.py::test_dynamically_picks_up_new_x_platform_pattern_value` redirects the registry at the schemas of a fake skill — it is the established way to point the schema-derived registry at a skill that is not the one this Python process was started from.
 
 - [ ] **Step 4: Run the tests and verify they pass.**
 
@@ -1340,13 +1313,31 @@ Note which tests fail because of the move and which were already passing because
 
 Concretely, if any test does `from skill_root import get_skill_root; (get_skill_root() / "platforms" / "ios.md").read_text()`, change it to construct a tmp `platforms/` and use that — mirror the existing `make_hint` helper in `test_platform_detection.py`. (Most existing tests already do this; the move is unlikely to break them.)
 
-- [ ] **Step 3: Delete `test_agnostic_mode.py` (agnostic mode is removed in Task 9).**
+- [ ] **Step 3: Delete `test_agnostic_mode.py` and update `test_hint_injection.py` (agnostic mode is removed in Task 12).**
 
 ```bash
 git rm skill-tests/design-coverage/tests/test_agnostic_mode.py
 ```
 
-If any other test file imports from it, remove those imports too. The agnostic-related assertions in those tests should be inverted to assert refuse-loud behavior instead.
+A grep for `agnostic` across `skill-tests/` returns four hits (run this yourself to confirm):
+
+```bash
+grep -rn agnostic skill-tests/
+```
+
+- `skill-tests/design-coverage/tests/test_agnostic_mode.py` — **delete entirely** (above).
+- `skill-tests/design-coverage/tests/test_hint_injection.py` — has an `if platform == "agnostic"` branch in its replica `inject_hint` helper at line 8, and a `test_agnostic_removes_marker` test at line 70. Both must go: delete the `if platform == "agnostic": return core_prompt.replace("<!-- PLATFORM_HINTS -->", "")` early-return from `inject_hint`, and `git rm` the `test_agnostic_removes_marker` test function.
+- `skill-tests/design-coverage/tests/test_renderer_report.py` — only contains the comment string `'iOS / agnostic runs'` in a docstring (line 22-24). Leave it; the comment is about platform-neutrality of the matrix column header, not the agnostic flag, and removing it would be unnecessary churn.
+- `skill-tests/design-coverage/tests/test_severity_matrix.py` — the words `clarification-agnostic` and `hotspot-agnostic` are inline comments describing the matrix's tuple-key semantics (lines 130, 137), unrelated to the `--platform agnostic` flag. Leave as-is.
+
+After the edits, confirm:
+
+```bash
+grep -rn '"agnostic"' skill-tests/
+grep -rn "platform.*agnostic" skill-tests/
+```
+
+Both should return zero hits (the only remaining matches should be the unrelated comments in `test_renderer_report.py` and `test_severity_matrix.py` flagged above).
 
 - [ ] **Step 4: Run the suite.**
 
@@ -1354,7 +1345,7 @@ If any other test file imports from it, remove those imports too. The agnostic-r
 python -m pytest skill-tests/ -q
 ```
 
-Expected: all tests pass. If a test still fails because it relies on agnostic mode, defer the fix to Task 9 (where SKILL.md is rewritten and the agnostic branch goes away).
+Expected: all tests pass after Step 3's edits. If any remaining failure traces to the agnostic flag, that is a Step 3 oversight — fix it in this commit, do not defer.
 
 - [ ] **Step 5: Commit.**
 
@@ -2027,19 +2018,27 @@ def render_draft_to_md(
     return "\n".join(fm_lines) + "\n\n" + "\n".join(body_parts)
 ```
 
-- [ ] **Step 4: Update the test import to point at the helper.**
+- [ ] **Step 4: Consolidate `test_render_draft.py` onto the new `render_draft_to_md` helper.**
 
-In `skill-tests/design-coverage-scout/tests/test_render_draft.py`, ensure the import matches:
+The existing file has a local helper `render_hint_from_draft(draft: dict) -> str` (lines 16–43) and two tests (`test_rendered_hint_satisfies_validator`, `test_rendered_hint_omits_unresolved_when_empty`) that call it. We are deliberately consolidating onto a single rendering implementation — keeping two would let them drift.
+
+(a) **Delete the local `render_hint_from_draft` function entirely.** It is replaced by `render_draft_to_md`.
+
+(b) **Add the import** at the top of the file (after the existing `import textwrap`):
 
 ```python
 import sys
-from pathlib import Path
-SCOUT_LIB = Path(__file__).resolve().parents[3] / "skills" / "design-tooling" / "design-coverage-scout" / "lib"
-sys.path.insert(0, str(SCOUT_LIB))
-from render_draft import render_draft_to_md
+SCOUT_LIB = REPO / "skills" / "design-tooling" / "design-coverage-scout" / "lib"
+if str(SCOUT_LIB) not in sys.path:
+    sys.path.insert(0, str(SCOUT_LIB))
+from render_draft import render_draft_to_md  # noqa: E402
 ```
 
-(adjust position so the import sits before the new test).
+(c) **Update both existing tests** to call `render_draft_to_md(draft)` instead of `render_hint_from_draft(draft)`. The signatures are compatible (both take a single `draft` dict and return the .md string). No other changes needed in those two tests.
+
+(d) **Do NOT change** the path `skill / "platforms" / "react-native.md"` in `test_rendered_hint_satisfies_validator`. That path is the **lint-test's fake-skill platforms dir** — `scripts/validate.py` scans `skills/design-tooling/<skill>/platforms/*.md` to enforce frontmatter shape. Wave 2 changes the **runtime** hint path (consuming-repo `.claude/skills/...`), not the lint path. The fake-skill structure used by this lint test is unchanged.
+
+(e) The new wave-2 test added in Step 1 (`test_render_includes_sealed_enum_patterns_block`) uses the same `render_draft_to_md` import.
 
 - [ ] **Step 5: Update scout stage 03's MD to use the helper.**
 
@@ -2167,21 +2166,75 @@ Repo-local hints live at `<repo>/.claude/skills/design-coverage/platforms/`,
 NOT at the skill install. Each consuming repo owns its hints; the skill
 ships none.
 
-1. Resolve the platforms dir:
+1. **Capture the consuming repo path BEFORE the Preflight `cd`.** The
+   existing Preflight block changes the shell's CWD to the skill root so
+   inline Python can do `sys.path.insert(0, str(Path.cwd() / "lib"))`.
+   Once that `cd` runs, `Path.cwd()` no longer points at the consuming
+   repo. So we capture the consuming repo path first and export it as an
+   env var that subsequent Python reads:
 
 ```bash
-PLATFORMS_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/skills/design-coverage/platforms"
-mkdir -p "$PLATFORMS_DIR"
+# Capture the consuming repo's root and platforms dir BEFORE the cd to
+# the skill root. Both are exported so inline Python can read them after
+# Path.cwd() becomes the skill root.
+export DESIGN_COVERAGE_REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+export DESIGN_COVERAGE_PLATFORMS_DIR="$DESIGN_COVERAGE_REPO_ROOT/.claude/skills/design-coverage/platforms"
+mkdir -p "$DESIGN_COVERAGE_PLATFORMS_DIR"
+# (existing Preflight cd to the skill root follows, unchanged)
+cd "$(python -c '...lookup-skill-root...')"
 ```
 
-2. If `--platform <name>` is provided, load `<PLATFORMS_DIR>/<name>.md`.
-   If missing, refuse loudly:
+2. If `--platform <name>` is provided, load
+   `$DESIGN_COVERAGE_PLATFORMS_DIR/<name>.md`. If missing, refuse loudly:
    `No hint file at <path>. Available: <list glob of platforms dir>.`
 
-3. Else, glob each existing `<PLATFORMS_DIR>/*.md` and check its frontmatter
-   `detect:` patterns against CWD using `lib/detect.detect_match`. Use the
-   same Python snippet as wave 1; substitute `<PLATFORMS_DIR>` for
-   `SKILL_ROOT / "platforms"`.
+3. Else, glob each existing `$DESIGN_COVERAGE_PLATFORMS_DIR/*.md` and
+   check its frontmatter `detect:` patterns against the consuming repo
+   (NOT against the skill-root CWD) using `lib/detect.detect_match`.
+   The Python:
+
+```python
+import os
+import re
+import sys
+from pathlib import Path
+# Path.cwd() is now the skill root (post-Preflight cd) — its lib/ is
+# correctly the skill's lib/. The consuming repo path comes from env.
+sys.path.insert(0, str(Path.cwd() / "lib"))
+from detect import detect_match
+
+REPO_ROOT = Path(os.environ["DESIGN_COVERAGE_REPO_ROOT"])
+PLATFORMS_DIR = Path(os.environ["DESIGN_COVERAGE_PLATFORMS_DIR"])
+
+fm_pat = re.compile(r"\A---\s*\r?\n(.*?)\r?\n---\s*\r?\n", re.DOTALL)
+matches: list[str] = []
+for hint in sorted(PLATFORMS_DIR.glob("*.md")):
+    text = hint.read_text(encoding="utf-8")
+    m = fm_pat.match(text)
+    if not m:
+        continue  # README.md or other non-hint file
+    fm = m.group(1)
+    name = ""
+    detect_globs: list[str] = []
+    in_detect = False
+    for line in fm.splitlines():
+        if line.startswith("name:"):
+            name = line.split(":", 1)[1].strip()
+            in_detect = False
+        elif line.startswith("detect:"):
+            in_detect = True
+        elif in_detect:
+            stripped = line.lstrip()
+            if stripped.startswith("- "):
+                detect_globs.append(stripped[2:].strip().strip('"'))
+            elif line and not line[0].isspace():
+                in_detect = False
+    for g in detect_globs:
+        if detect_match(REPO_ROOT, g):
+            matches.append(name)
+            break
+print(matches)
+```
 
 4. Branch on the match count:
    - **Exactly one** → `context.platform = matches[0]`,
@@ -2191,17 +2244,21 @@ mkdir -p "$PLATFORMS_DIR"
    - **Zero** → unknown-stack branch below.
 
 5. Whichever branch hands off a hint, run the runtime hint-frontmatter
-   validator before continuing:
+   validator before continuing. Imports use `Path.cwd() / "lib"` because
+   the Preflight bash block has cd'd to the skill root:
 
 ```python
+import os
 import sys
 from pathlib import Path
+# Path.cwd() is the skill root after the Preflight cd; its lib/ is the
+# skill's lib/. NOT the consuming repo's lib/.
 sys.path.insert(0, str(Path.cwd() / "lib"))
-from skill_root import get_skill_root
 from hint_frontmatter import parse_hint_frontmatter, validate_hint_frontmatter
 from sealed_enum_index import get_sealed_enum_pattern_keys
 
-hint_text = (Path("<PLATFORMS_DIR>") / f"{context.platform}.md").read_text(encoding="utf-8")
+PLATFORMS_DIR = Path(os.environ["DESIGN_COVERAGE_PLATFORMS_DIR"])
+hint_text = (PLATFORMS_DIR / f"{context.platform}.md").read_text(encoding="utf-8")
 fm = parse_hint_frontmatter(hint_text)
 errors = validate_hint_frontmatter(fm, sealed_keys=get_sealed_enum_pattern_keys())
 if errors:
@@ -2214,28 +2271,29 @@ if errors:
 ```markdown
 ## Unknown-stack branch (auto-invoke scout)
 
-When no repo-local hint matches CWD, run the companion scout in-session:
+When no repo-local hint matches the consuming repo, run the companion scout in-session:
 
 1. Dispatch the `Agent` tool with `subagent_type: "general-purpose"`,
    prompt:
    _"Follow the instructions in the `design-coverage-scout` skill's
    SKILL.md to generate a hint for this repo. Write the approved hint
-   to `<repo>/.claude/skills/design-coverage/platforms/<auto-name>.md`."_
+   to `$DESIGN_COVERAGE_PLATFORMS_DIR/<auto-name>.md`."_
 2. Wait for the scout to finish and the user to approve the draft. The
-   scout writes the final file to `<PLATFORMS_DIR>/<auto-name>.md` and
-   returns the absolute path.
+   scout writes the final file to
+   `$DESIGN_COVERAGE_PLATFORMS_DIR/<auto-name>.md` and returns the
+   absolute path.
 3. On success, restart platform resolution from step 1 above. The new
    hint will detect this time.
 4. On scout refusal (multi-UI monorepo, no UI detected, user rejects
    draft) — **abort the run**. Print:
    `design-coverage cannot proceed without a platform hint. Re-run after
    resolving the scout refusal, or pass --platform <name> if you have a
-   hand-authored hint at <PLATFORMS_DIR>/<name>.md.`
+   hand-authored hint at $DESIGN_COVERAGE_PLATFORMS_DIR/<name>.md.`
    No silent agnostic fallback. The `--platform agnostic` flag was
    removed in wave 2.
 ```
 
-(e) Update "Hint injection" to drop the `if platform == "agnostic"` branch:
+(e) Update "Hint injection" to drop the `if platform == "agnostic"` branch and read the consuming-repo platforms dir from the same env var the Preflight block exports:
 
 Old:
 ```python
@@ -2248,7 +2306,9 @@ else:
 
 New:
 ```python
-hint_file = Path("<PLATFORMS_DIR>") / f"{platform}.md"
+import os
+PLATFORMS_DIR = Path(os.environ["DESIGN_COVERAGE_PLATFORMS_DIR"])
+hint_file = PLATFORMS_DIR / f"{platform}.md"
 hint_text = hint_file.read_text(encoding="utf-8")
 section_map = {
     "01": "## 01 Flow locator",
