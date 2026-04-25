@@ -67,7 +67,8 @@ Severity **must** be set on every row (including `present` and `new-in-figma`). 
 ## Atomic write pattern
 
 ```bash
-cd ~/.claude/skills/design-coverage/
+# Resolve the skill root portably: walk up from CWD to find SKILL.md.
+cd "$(python -c 'from pathlib import Path; p=Path.cwd(); print(next(q for q in [p, *p.parents] if (q/"SKILL.md").exists()))')"
 ```
 
 ```python

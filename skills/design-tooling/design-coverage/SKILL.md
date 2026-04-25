@@ -22,10 +22,12 @@ into a `<!-- PLATFORM_HINTS -->` marker). Stages 04, 05, 06 are agnostic.
 ## Preflight
 
 At the top of any Python snippet, normalize the working directory so `lib.*`
-imports resolve regardless of where the skill was invoked:
+imports resolve regardless of where the skill was invoked. Resolve the skill
+root portably by walking up from CWD to find `SKILL.md`:
 
 ```bash
-cd ~/.claude/skills/design-coverage/
+# Resolve the skill root portably: walk up from CWD to find SKILL.md.
+cd "$(python -c 'from pathlib import Path; p=Path.cwd(); print(next(q for q in [p, *p.parents] if (q/"SKILL.md").exists()))')"
 ```
 
 Then add `Path.cwd() / "lib"` to `sys.path` before importing.
@@ -47,7 +49,7 @@ Store in `context.args`.
 1. If `--platform <name>` is provided:
    - If `name == "agnostic"`, set `context.platform = "agnostic"`,
      `context.hint_source = "flag"`, skip hint loading.
-   - Else, load `~/.claude/skills/design-coverage/platforms/<name>.md`.
+   - Else, load `platforms/<name>.md` from the skill root.
      If missing, refuse loudly:
      `No hint file for platform '<name>'. Available: <list glob>`.
 
@@ -56,10 +58,12 @@ Store in `context.args`.
 
 ```python
 import sys, pathlib, re
-sys.path.insert(0, str(pathlib.Path.home() / ".claude" / "skills" / "design-coverage" / "lib"))
+sys.path.insert(0, str(pathlib.Path.cwd() / "lib"))
+from skill_root import get_skill_root
 from detect import detect_match
 
-platforms_dir = pathlib.Path.home() / ".claude" / "skills" / "design-coverage" / "platforms"
+SKILL_ROOT = get_skill_root()
+platforms_dir = SKILL_ROOT / "platforms"
 fm_pat = re.compile(r"\A---\s*\r?\n(.*?)\r?\n---\s*\r?\n", re.DOTALL)
 matches = []
 for hint in sorted(platforms_dir.glob("*.md")):
@@ -113,8 +117,8 @@ Ask the user, directly in this session:
 > (c) proceed agnostic (no hint file)
 
 - **(a)** — dispatch the `Agent` tool with `subagent_type: "general-purpose"`,
-  prompt: _"Follow the instructions in `~/.claude/skills/design-coverage-scout/SKILL.md`
-  to generate a hint for this repo."_ Wait for scout to produce
+  prompt: _"Follow the instructions in the `design-coverage-scout` skill's
+  `SKILL.md` to generate a hint for this repo."_ Wait for scout to produce
   `platforms/<name>.md` (user approves the draft). On success, reload platform
   resolution and proceed. On scout refusal, fall through to (c).
 - **(b)** — set `context.platform`, `context.hint_source = "user-prompt"`,
@@ -125,7 +129,8 @@ Ask the user, directly in this session:
 ## Run directory
 
 ```bash
-cd ~/.claude/skills/design-coverage/
+# Resolve the skill root portably: walk up from CWD to find SKILL.md.
+cd "$(python -c 'from pathlib import Path; p=Path.cwd(); print(next(q for q in [p, *p.parents] if (q/"SKILL.md").exists()))')"
 # Pass the flow name via env var so apostrophes / quotes / `$` in the value
 # don't break the inline `python -c` invocation.
 FLOW_SLUG=$(FLOW_NAME="<flow-name>" python -c "import sys, os; sys.path.insert(0, 'lib'); from slugify import slugify; print(slugify(os.environ['FLOW_NAME']))")
@@ -144,7 +149,7 @@ Write `00-run-config.json` (see spec "Run config artifact (day-one shape)" — t
   "old_flow_hint": "<from args or null>",
   "platform": "<resolved>",
   "hint_source": "<resolved>",
-  "skill_version": "<git SHA of ~/.claude/skills/design-coverage/ realpath>"
+  "skill_version": "<git SHA of the skill root realpath>"
 }
 ```
 
@@ -155,15 +160,18 @@ For each of stages 01, 02, 03, compose the stage prompt by replacing the
 file (or with nothing when agnostic):
 
 ```python
-import pathlib
-skill_root = pathlib.Path.home() / ".claude" / "skills" / "design-coverage"
-stage_file = skill_root / "stages" / "01-flow-locator.md"  # or 02, 03
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd() / "lib"))
+from skill_root import get_skill_root
+SKILL_ROOT = get_skill_root()
+stage_file = SKILL_ROOT / "stages" / "01-flow-locator.md"  # or 02, 03
 platform = context.platform
 core = stage_file.read_text(encoding="utf-8")
 if platform == "agnostic":
     composed = core.replace("<!-- PLATFORM_HINTS -->", "")
 else:
-    hint_file = skill_root / "platforms" / f"{platform}.md"
+    hint_file = SKILL_ROOT / "platforms" / f"{platform}.md"
     hint_text = hint_file.read_text(encoding="utf-8")
     section_map = {
         "01": "## 01 Flow locator",

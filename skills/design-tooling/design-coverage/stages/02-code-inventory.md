@@ -8,12 +8,13 @@
 ## Preflight
 
 ```bash
-cd ~/.claude/skills/design-coverage/
+# Resolve the skill root portably: walk up from CWD to find SKILL.md.
+cd "$(python -c 'from pathlib import Path; p=Path.cwd(); print(next(q for q in [p, *p.parents] if (q/"SKILL.md").exists()))')"
 ```
 
 ## Objective
 
-For each screen in the flow, enumerate its inventory items — screens, states, actions, fields — and emit `02-code-inventory.json` conforming to `~/.claude/skills/design-coverage/schemas/code_inventory.json` with rows conforming to the shared `inventory_item.json` fragment.
+For each screen in the flow, enumerate its inventory items — screens, states, actions, fields — and emit `02-code-inventory.json` conforming to the skill's `schemas/code_inventory.json` with rows conforming to the shared `inventory_item.json` fragment.
 
 ## Method (platform-agnostic)
 

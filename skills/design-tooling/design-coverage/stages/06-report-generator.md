@@ -33,12 +33,13 @@ Shape:
 
 Then regenerate `<run_dir>/06-report.md` via `lib/renderer.py:render_report`. The renderer orders the summary errors-first and prints the matrix as a Markdown table.
 
-## Python environment note — `cd` before importing `lib.renderer`
+## Python environment note — `cd` to the skill root before importing `lib.renderer`
 
-Any Python snippet that imports `lib.renderer` must `cd` into `~/.claude/skills/design-coverage/` first, otherwise the module resolution will fail because `lib/` is not on the default import path from the run dir. This is an iOS review-fix carried over.
+Any Python snippet that imports `lib.renderer` must `cd` into the skill root first, otherwise the module resolution will fail because `lib/` is not on the default import path from the run dir. This is an iOS review-fix carried over.
 
 ```bash
-cd ~/.claude/skills/design-coverage/
+# Resolve the skill root portably: walk up from CWD to find SKILL.md.
+cd "$(python -c 'from pathlib import Path; p=Path.cwd(); print(next(q for q in [p, *p.parents] if (q/"SKILL.md").exists()))')"
 ```
 
 Then:

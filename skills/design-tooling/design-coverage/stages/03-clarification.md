@@ -8,7 +8,8 @@
 ## Preflight
 
 ```bash
-cd ~/.claude/skills/design-coverage/
+# Resolve the skill root portably: walk up from CWD to find SKILL.md.
+cd "$(python -c 'from pathlib import Path; p=Path.cwd(); print(next(q for q in [p, *p.parents] if (q/"SKILL.md").exists()))')"
 ```
 
 ## Objective
@@ -30,7 +31,7 @@ Resolve hotspots — decision points whose rendered UI depends on runtime data t
 
 ## Output
 
-Write `03-clarifications.json` to the run dir conforming to `~/.claude/skills/design-coverage/schemas/clarifications.json`, then regenerate the Markdown view:
+Write `03-clarifications.json` to the run dir conforming to the skill's `schemas/clarifications.json`, then regenerate the Markdown view:
 
 ```python
 import sys

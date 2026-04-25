@@ -49,7 +49,8 @@ If a **specific** frame's MCP call fails, record the failure on that frame's ent
 ## Atomic write pattern
 
 ```bash
-cd ~/.claude/skills/design-coverage/
+# Resolve the skill root portably: walk up from CWD to find SKILL.md.
+cd "$(python -c 'from pathlib import Path; p=Path.cwd(); print(next(q for q in [p, *p.parents] if (q/"SKILL.md").exists()))')"
 ```
 
 ```python
