@@ -43,33 +43,24 @@ the user in the live session, and on explicit approval move `.draft` →
    clar = sanitize_section(draft["sections"]["clarification"])
    ```
 
-4. **Render to draft.** Read `hint-draft.json`. Emit `<name>.md.draft`:
+4. **Render to draft.** Read `hint-draft.json`. Delegate rendering to `lib/render_draft.py` which handles the wave-2 frontmatter fields (`sealed_enum_patterns`, `multi_anchor_suffixes`, `default_in_scope_hops`, `hotspot_question_overrides`) in addition to the core fields:
 
-   ```markdown
-   ---
-   name: <name>
-   detect:
-     - "<detect glob 1>"
-     - "<detect glob 2>"
-   description: <description>
-   confidence: <confidence>
-   ---
+   ```python
+   import sys
+   from pathlib import Path
+   sys.path.insert(0, str(Path.home() / ".claude" / "skills" / "design-coverage-scout" / "lib"))
+   from render_draft import render_draft_to_md
+   from sanitize import sanitize_section
 
-   ## 01 Flow locator
-   <sanitized flow>
-
-   ## 02 Code inventory
-   <sanitized code>
-
-   ## 03 Clarification
-   <sanitized clar>
-
-   ## Unresolved questions
-   <unresolved_questions bullets, if any>
+   sanitized = {
+       "flow_locator": sanitize_section(draft["sections"]["flow_locator"]),
+       "code_inventory": sanitize_section(draft["sections"]["code_inventory"]),
+       "clarification": sanitize_section(draft["sections"]["clarification"]),
+   }
+   content = render_draft_to_md(draft, sanitized_sections=sanitized)
+   draft_path = target_dir / f"{draft['name']}.md.draft"
+   draft_path.write_text(content, encoding="utf-8")
    ```
-
-   Drop the `## Unresolved questions` section entirely if the array is empty
-   or absent.
 
 5. **Pre-preview validation.** Run `python scripts/validate.py` against the
    `.draft` file (the draft is already written at step 4 but not yet moved).

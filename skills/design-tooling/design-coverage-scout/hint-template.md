@@ -53,6 +53,31 @@ A list of hotspot topics stage 3 should ask the human about. Each item should
 be one line describing what to look for and what to confirm (feature flags,
 permission gates, server-driven content, responsive branches, etc.).
 
+## Wave-2 optional frontmatter (auto-populated by scout)
+
+```yaml
+multi_anchor_suffixes:                 # Optional. Suffixes that distinguish
+  - "New"                              #   multiple class anchors of the same
+  - "V2"                               #   logical screen (consumed by wave-3 #4).
+
+default_in_scope_hops: 2               # Optional. Hops for stage 02's nav walk
+                                       #   (consumed by stage 02 of design-coverage).
+
+hotspot_question_overrides: {}         # Optional. Per-platform overrides for the
+                                       #   hotspot question registry (stage 03).
+
+sealed_enum_patterns:                  # Optional. Schema-derived registry; keys
+  inventory_item.kind.screen:          #   must match get_sealed_enum_pattern_keys().
+    grep:                              #   Unknown keys are rejected at hint-load.
+      - "class \\w+ViewController"
+    description: "iOS UIViewController" # Optional, may be null.
+```
+
+The scout populates these on first run for any platform it has knowledge
+of; you may also hand-author or hand-edit them afterwards. Adding a key
+that is not in the schema-derived registry causes the runtime validator
+to refuse the hint loud.
+
 ## Optional sections
 
 ### `## Unresolved questions`
