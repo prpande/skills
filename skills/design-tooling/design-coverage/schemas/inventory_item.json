@@ -4,14 +4,22 @@
   "required": ["id", "kind", "title", "parent_id", "source", "confidence"],
   "properties": {
     "id": {"type": "string", "minLength": 1},
-    "kind": {"type": "string", "enum": ["screen", "state", "action", "field"]},
+    "kind": {
+      "type": "string",
+      "x-platform-pattern": true,
+      "enum": ["screen", "state", "action", "field"]
+    },
     "title": {"type": "string", "minLength": 1},
     "parent_id": {"type": ["string", "null"]},
     "source": {
       "type": "object",
       "required": ["surface", "file"],
       "properties": {
-        "surface": {"type": "string", "enum": ["compose", "xml", "hybrid", "nav-xml", "nav-compose"]},
+        "surface": {
+          "type": "string",
+          "x-platform-pattern": true,
+          "enum": ["compose", "xml", "hybrid", "nav-xml", "nav-compose"]
+        },
         "file": {"type": "string", "minLength": 1},
         "line": {"type": ["integer", "null"], "minimum": 0},
         "symbol": {"type": ["string", "null"]}
@@ -21,7 +29,11 @@
       "type": ["object", "null"],
       "required": ["type", "question"],
       "properties": {
-        "type": {"type": "string", "enum": ["feature-flag", "permission", "server-driven", "config-qualifier", "form-factor", "process-death", "view-type", "viewpager-tab", "sheet-dialog"]},
+        "type": {
+          "type": "string",
+          "x-platform-pattern": true,
+          "enum": ["feature-flag", "permission", "server-driven", "config-qualifier", "form-factor", "process-death", "view-type", "viewpager-tab", "sheet-dialog"]
+        },
         "question": {"type": "string", "minLength": 1}
       }
     },
