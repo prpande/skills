@@ -278,37 +278,71 @@ Add to platform-hint frontmatter:
 - `hotspot_question_overrides: dict[str, str]` (default `{}`) — consumed by wave 1 #1.
 - `sealed_enum_patterns: dict[str, {grep: list[str], description: str | null}]` — consumed by stage 02 + scout.
 
-A new `lib/sealed_enum_index.py` enumerates the canonical list of `<enum_path>.<value>` keys the frontmatter can declare:
+**The registry of "which enum values need platform-specific patterns" is derived from the schemas, not hand-maintained.** Annotate the relevant enum fields in the schemas with a custom JSON Schema keyword `x-platform-pattern: true` (the `x-` prefix is the convention for keywords validators ignore but tooling can read):
 
-```python
-SEALED_ENUM_PATTERN_KEYS = [
-    "hotspot.type.feature-flag",
-    "hotspot.type.permission",
-    "hotspot.type.server-driven",
-    "hotspot.type.view-type",
-    "hotspot.type.form-factor",
-    "hotspot.type.process-death",
-    "hotspot.type.sheet-dialog",
-    "hotspot.type.viewpager-tab",
-    "hotspot.type.config-qualifier",
-    "inventory_item.kind.screen",
-    "inventory_item.kind.state",
-    "inventory_item.kind.action",
-    "inventory_item.kind.field",
-    "inventory_item.source.surface.compose",
-    "inventory_item.source.surface.xml",
-    "inventory_item.source.surface.hybrid",
-    "inventory_item.source.surface.nav-xml",
-    "inventory_item.source.surface.nav-compose",
-    "unwalked_destinations.reason.adapter-hosted",
-    "unwalked_destinations.reason.external-module",
-    "unwalked_destinations.reason.swiftui-bridge",
-    "unwalked_destinations.reason.dynamic-identifier",
-    "unwalked_destinations.reason.platform-bridge",
-]
+```json
+// schemas/inventory_item.json (excerpt)
+{
+  "properties": {
+    "kind": {
+      "type": "string",
+      "x-platform-pattern": true,
+      "enum": ["screen", "state", "action", "field", "screen-group"]
+    },
+    "source": {
+      "properties": {
+        "surface": {
+          "type": "string",
+          "x-platform-pattern": true,
+          "enum": ["compose", "xml", "hybrid", "nav-xml", "nav-compose"]
+        }
+      }
+    },
+    "hotspot": {
+      "properties": {
+        "type": {
+          "type": "string",
+          "x-platform-pattern": true,
+          "enum": ["feature-flag", "permission", "server-driven", "view-type",
+                   "form-factor", "process-death", "viewpager-tab",
+                   "sheet-dialog", "config-qualifier"]
+        }
+      }
+    }
+  }
+}
 ```
 
-Validator gate: hint frontmatter that declares an unknown key is rejected.
+The closed enum on `unwalked_destinations.reason` (introduced by wave 1 #3) gets the same annotation in `schemas/code_inventory.json`.
+
+A new `lib/sealed_enum_index.py` exposes a derivation function — **no hand-maintained list**:
+
+```python
+def get_sealed_enum_pattern_keys() -> list[str]:
+    """Walk schemas/ and yield <dotted_path>.<value> for every enum field
+    annotated with x-platform-pattern: true. Sorted for deterministic order.
+
+    Adding a new enum value requires editing ONLY the schema file. The
+    registry, validator, stage 02, and scout all pick up the change
+    automatically on next invocation.
+    """
+    keys: list[str] = []
+    for schema_file in (get_skill_root() / "schemas").glob("*.json"):
+        schema = json.loads(schema_file.read_text(encoding="utf-8"))
+        for path, field in _walk_schema(schema):
+            if field.get("x-platform-pattern") and "enum" in field:
+                for value in field["enum"]:
+                    keys.append(f"{path}.{value}")
+    return sorted(keys)
+```
+
+`_walk_schema` is a helper that yields `(dotted_path, field_subtree)` for every field in the schema, recursing into `properties` and following `$ref`s.
+
+**Why schema-derived, not hand-coded:** the schemas are the existing source of truth for what enums exist; a hand-maintained registry duplicates that information and silently drifts when a new enum value lands without a corresponding registry edit. With derivation, adding a new enum value is a one-place change. The validator, stage 02, and the scout all read from `get_sealed_enum_pattern_keys()` — none of them sees a hardcoded list.
+
+**Why not scout-per-codebase inference:** the enum values themselves are universal across platforms (the `hotspot.type` enum has the same values whether the run is iOS, Android, or Flutter); what varies per platform is the **grep patterns mapped to each enum value**. If each platform invented its own enum values, the cross-platform comparator would break. The scout's job is to populate the per-platform `grep:` lists for an already-defined registry, not to invent the registry itself.
+
+Validator gate: hint frontmatter that declares an unknown `sealed_enum_patterns` key (one not returned by `get_sealed_enum_pattern_keys()`) is rejected at load time.
 
 #### 10b — Backfill iOS + Android hints
 
@@ -320,17 +354,22 @@ Both `platforms/ios.md` and `platforms/android.md` get the same migration.
 
 The `design-coverage-scout/stages/02-pattern-extraction.md` stage gets new responsibilities:
 
-For each key in `SEALED_ENUM_PATTERN_KEYS`:
+For each key returned by `get_sealed_enum_pattern_keys()`:
 1. Run platform-appropriate discovery against the unfamiliar codebase (e.g., for `hotspot.type.feature-flag`, look for naming patterns like `*FeatureFlag*`, `*RemoteConfig*`, `*LaunchDarkly*`, `*Optimizely*`).
 2. Emit candidate `grep:` patterns (regex strings).
 3. Persist to the draft hint's frontmatter under `sealed_enum_patterns.{key}`.
 
 The existing draft/approve gate stays — the user reviews inferred patterns before the hint is finalized.
 
+Because the registry is schema-derived, the scout automatically picks up new enum values added to schemas without any code change in the scout itself. Adding `viewpager-tab` to `hotspot.type` (for example) makes the scout try to detect viewpager patterns on next run.
+
 **Definition of done.**
-- Frontmatter schema accepts the new fields; rejects unknown `sealed_enum_patterns` keys.
-- iOS + Android hints include populated `sealed_enum_patterns` for every applicable enum value.
-- Scout `02-pattern-extraction.md` produces candidate patterns for at least 80% of `SEALED_ENUM_PATTERN_KEYS` on a smoke-test repo (e.g., a Flutter project).
+- `lib/sealed_enum_index.py::get_sealed_enum_pattern_keys()` exists and derives the registry by walking `schemas/` for `x-platform-pattern: true` annotations.
+- The four target schemas (`inventory_item.json`, `code_inventory.json`) carry `x-platform-pattern` annotations on every field whose enum values need platform-specific grep patterns.
+- Frontmatter schema accepts the new fields; rejects `sealed_enum_patterns` keys not returned by the derivation function.
+- iOS + Android hints include populated `sealed_enum_patterns` for every key the derivation function yields.
+- Scout `02-pattern-extraction.md` produces candidate patterns for at least 80% of derived keys on a smoke-test repo (e.g., a Flutter project).
+- A unit test confirms that adding a new `x-platform-pattern: true` enum value to a schema causes `get_sealed_enum_pattern_keys()` to surface it on the next call without any other code change.
 
 ### #11 — Scratch-file policy
 
