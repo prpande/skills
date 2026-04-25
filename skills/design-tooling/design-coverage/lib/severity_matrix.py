@@ -64,6 +64,16 @@ _MISS_BUFFER: list[tuple] = []
 _MISSES_PATH = Path("_severity_lookup_misses.json")  # caller overrides via flush_misses(path)
 
 
+def reset_misses() -> None:
+    """Clear the in-memory miss buffer.
+
+    Stage 05 calls this once at the start of the stage so each run produces a
+    fresh miss audit. Public alias for `_MISS_BUFFER.clear()` so call sites
+    don't reach into the module's private state.
+    """
+    _MISS_BUFFER.clear()
+
+
 def lookup(
     status: str,
     kind: Optional[str],
@@ -72,13 +82,19 @@ def lookup(
 ) -> str:
     """Return the severity for a comparator row's (status, kind, hotspot_type, clarification) tuple.
 
-    Walks from most-specific to most-general:
-      1. Exact (status, kind, hotspot, clarification) match.
-      2. (status, kind, hotspot, None).
-      3. (status, kind, None, None).
-      4. (status, None, None, None).
+    Walks from most-specific to most-general (drop-most-recent-field first):
+      1. (status, kind, hotspot, clarification) — exact.
+      2. (status, kind, hotspot, None) — clarification-agnostic.
+      3. (status, kind, None, None) — hotspot-agnostic.
+      4. (status, None, None, None) — kind-agnostic catch-all.
     First match wins. If nothing matches, falls back to "warn" and records
     the miss for later audit.
+
+    Note: this ordering is asymmetric — `(status, None, hotspot, *)` is NOT
+    walked. The current matrix has no kind-agnostic-with-hotspot entries, so
+    this is a forward-compatibility limitation rather than a current bug. If
+    such an entry is ever added, also extend the walk here and add a covering
+    test in test_severity_matrix.py (`test_fallback_walk_order`).
     """
     for key in (
         (status, kind, hotspot_type, clarification_answer),
@@ -93,7 +109,13 @@ def lookup(
 
 
 def flush_misses(path: Optional[Path] = None) -> None:
-    """Write the in-memory miss buffer to JSON. Caller invokes at end of stage 05.
+    """Write the in-memory miss buffer to JSON, replacing any prior file.
+
+    Stage 05 calls reset_misses() at the start of each run, so the on-disk
+    file represents only the current run — overwrite (not append) is the
+    correct semantic. Reading the existing file and concatenating, as an
+    earlier draft did, accumulated duplicate entries on every re-run and
+    corrupted the audit signal.
 
     The miss file lives at the run-dir top level (alongside numbered artifacts);
     its name `_severity_lookup_misses.json` is the ONE allowed underscore-prefixed
@@ -104,13 +126,7 @@ def flush_misses(path: Optional[Path] = None) -> None:
     if not _MISS_BUFFER:
         return
     target.parent.mkdir(parents=True, exist_ok=True)
-    existing = []
-    if target.exists():
-        try:
-            existing = json.loads(target.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            existing = []
-    payload = existing + [
+    payload = [
         {
             "status": s,
             "kind": k,

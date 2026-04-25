@@ -38,8 +38,9 @@ Then regenerate `<run_dir>/06-report.md` via `lib/renderer.py:render_report`. Th
 Any Python snippet that imports `lib.renderer` must `cd` into the skill root first, otherwise the module resolution will fail because `lib/` is not on the default import path from the run dir. This is an iOS review-fix carried over.
 
 ```bash
-# Resolve the skill root portably: walk up from CWD to find SKILL.md.
-cd "$(python -c 'from pathlib import Path; p=Path.cwd(); print(next(q for q in [p, *p.parents] if (q/"SKILL.md").exists()))')"
+# Resolve the skill root portably: walk up from CWD to find SKILL.md, with
+# fallback to the standard install location when CWD is outside the skill tree.
+cd "$(python -c 'import sys; from pathlib import Path; p=Path.cwd(); fb=Path.home()/".claude"/"skills"/"design-tooling"/"design-coverage"; cands=[q for q in [p,*p.parents,fb] if (q/"SKILL.md").exists()]; print(cands[0]) if cands else sys.exit("design-coverage skill not found")')"
 ```
 
 Then:

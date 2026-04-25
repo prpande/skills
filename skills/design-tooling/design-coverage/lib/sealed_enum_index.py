@@ -61,3 +61,7 @@ def _walk_schema(node: dict, path: str) -> Iterator[tuple[str, dict]]:
         # as if direct children of the array's containing field.
         for child_name, child in (items.get("properties") or {}).items():
             yield from _walk_schema(child, f"{path}.{child_name}")
+    # Tuple-typed items (JSON-Schema's `items: [<sub>, <sub>]` form) are not
+    # used anywhere under schemas/ today. If a future schema introduces one,
+    # extend this branch — silently skipping would drop platform-pattern
+    # annotations on the tuple members.

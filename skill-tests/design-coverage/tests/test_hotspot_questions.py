@@ -108,3 +108,50 @@ def test_registry_covers_every_hotspot_type_value():
     }
     missing = hotspot_types_in_schema - set(HOTSPOT_QUESTIONS.keys())
     assert not missing, f"hotspot_questions registry missing entries for: {sorted(missing)}"
+
+
+def test_emitted_question_carries_canonical_answers():
+    """Stage 03 must present canonical_answers (default + alternatives) to the
+    user; persisting any other string breaks stage 05's matrix lookup."""
+    from hotspot_questions import emit_questions_for_inventory
+    inv = _inventory_with([
+        {"type": "feature-flag", "symbol": "someFlag"},
+    ])
+    questions = emit_questions_for_inventory(inv, platform_overrides={})
+    assert len(questions) == 1
+    q = questions[0]
+    # default_answer always leads the canonical set.
+    assert q.canonical_answers[0] == q.default_answer
+    # Set is non-trivial: the registry declares alternatives for every type.
+    assert len(q.canonical_answers) >= 2
+    # Default + alternatives are unique.
+    assert len(set(q.canonical_answers)) == len(q.canonical_answers)
+
+
+def test_every_template_declares_alternatives():
+    """A template with only `default_answer` (no alternatives) gives the user
+    no choice and silently produces drift if anyone hand-edits the answer.
+    Every registry entry must offer at least one alternative."""
+    from hotspot_questions import HOTSPOT_QUESTIONS
+    for hotspot_type, tmpl in HOTSPOT_QUESTIONS.items():
+        assert tmpl.alternatives, (
+            f"{hotspot_type} template has no alternatives — the user has no canonical "
+            "non-default answer to choose from"
+        )
+        assert tmpl.default_answer not in tmpl.alternatives, (
+            f"{hotspot_type} template duplicates default_answer in alternatives"
+        )
+
+
+def test_view_type_template_phrasing_does_not_imply_per_symbol_multiplicity():
+    """Wave-1 fix: the prior wording 'Multiple variants of {symbol} exist'
+    misled the user when applies_when_count_gte=2 actually counts distinct
+    *symbols* of the type, not variants of one symbol."""
+    from hotspot_questions import HOTSPOT_QUESTIONS
+    tmpl = HOTSPOT_QUESTIONS["view-type"]
+    # The template should NOT say "Multiple variants of {symbol}" — that phrase
+    # implies the symbol itself has multiple variants, which is not what the
+    # gating logic measures.
+    assert "Multiple variants of {symbol}" not in tmpl.template
+    # The replacement phrasing references the {N}-of-symbols framing.
+    assert "{N}" in tmpl.template

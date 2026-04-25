@@ -8,8 +8,9 @@
 ## Preflight
 
 ```bash
-# Resolve the skill root portably: walk up from CWD to find SKILL.md.
-cd "$(python -c 'from pathlib import Path; p=Path.cwd(); print(next(q for q in [p, *p.parents] if (q/"SKILL.md").exists()))')"
+# Resolve the skill root portably: walk up from CWD to find SKILL.md, with
+# fallback to the standard install location when CWD is outside the skill tree.
+cd "$(python -c 'import sys; from pathlib import Path; p=Path.cwd(); fb=Path.home()/".claude"/"skills"/"design-tooling"/"design-coverage"; cands=[q for q in [p,*p.parents,fb] if (q/"SKILL.md").exists()]; print(cands[0]) if cands else sys.exit("design-coverage skill not found")')"
 ```
 
 ## Objective
@@ -45,10 +46,23 @@ platform_overrides: dict[str, str] = {}
 questions = emit_questions_for_inventory(inventory, platform_overrides)
 ```
 
-For each Question, present the rendered_text, capture the user's answer, and
-record it in `03-clarifications.json`'s `resolved` array. For each Question,
-format `hotspot_id` as `f"{hotspot_type}:{symbol}"` when persisting to
-`resolved[]` — stage 05 joins on this exact string.
+For each Question, present `rendered_text` to the user via the live
+`AskUserQuestion` interface and pass `canonical_answers` as the multi-choice
+options (do NOT accept free-form text). The user selects exactly one of those
+strings; persist that string verbatim to `clarifications.resolved[].answer`.
+
+This is load-bearing: stage 05's severity matrix only matches against the
+canonical strings (`"on"`, `"granted"`, `"all_variants_required"`, etc.). A
+free-form answer falls through to the generic `("missing", "<kind>", None,
+None)` bucket and silently downgrades what should have been an error to
+`warn`. If the user truly needs to answer outside the canonical set, treat
+that as a registry gap and add the alternative to
+`lib/hotspot_questions.py`'s `QuestionTemplate.alternatives` AND a matching
+entry to `lib/severity_matrix.py`'s `SEVERITY_MATRIX` — do not persist the
+free-form string.
+
+For each Question, format `hotspot_id` as `f"{hotspot_type}:{symbol}"` when
+persisting to `resolved[]` — stage 05 joins on this exact string.
 
 ### B. Candidate-destination scope (one multi-select per parent screen)
 

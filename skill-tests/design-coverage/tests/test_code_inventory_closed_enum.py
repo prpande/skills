@@ -54,8 +54,11 @@ def test_candidate_destinations_field_exists_and_is_array():
     cd = schema["properties"]["candidate_destinations"]
     assert cd["type"] == "array"
     item_props = cd["items"]["properties"]
-    for required_key in ("symbol", "file", "hop_distance", "why_not_walked"):
+    for required_key in ("parent_screen", "symbol", "file", "hop_distance", "why_not_walked"):
         assert required_key in item_props
+    assert set(cd["items"]["required"]) == {
+        "parent_screen", "symbol", "file", "hop_distance", "why_not_walked",
+    }
 
 
 def test_candidate_destination_item_validates():

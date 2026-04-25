@@ -26,8 +26,10 @@ imports resolve regardless of where the skill was invoked. Resolve the skill
 root portably by walking up from CWD to find `SKILL.md`:
 
 ```bash
-# Resolve the skill root portably: walk up from CWD to find SKILL.md.
-cd "$(python -c 'from pathlib import Path; p=Path.cwd(); print(next(q for q in [p, *p.parents] if (q/"SKILL.md").exists()))')"
+# Resolve the skill root portably: walk up from CWD to find SKILL.md, with
+# fallback to the standard install location when CWD is outside the skill
+# tree (the typical case — the skill is invoked from a user repo).
+cd "$(python -c 'import sys; from pathlib import Path; p=Path.cwd(); fb=Path.home()/".claude"/"skills"/"design-tooling"/"design-coverage"; cands=[q for q in [p,*p.parents,fb] if (q/"SKILL.md").exists()]; print(cands[0]) if cands else sys.exit("design-coverage skill not found")')"
 ```
 
 Then add `Path.cwd() / "lib"` to `sys.path` before importing.
@@ -129,8 +131,9 @@ Ask the user, directly in this session:
 ## Run directory
 
 ```bash
-# Resolve the skill root portably: walk up from CWD to find SKILL.md.
-cd "$(python -c 'from pathlib import Path; p=Path.cwd(); print(next(q for q in [p, *p.parents] if (q/"SKILL.md").exists()))')"
+# Resolve the skill root portably: walk up from CWD to find SKILL.md, with
+# fallback to the standard install location when CWD is outside the skill tree.
+cd "$(python -c 'import sys; from pathlib import Path; p=Path.cwd(); fb=Path.home()/".claude"/"skills"/"design-tooling"/"design-coverage"; cands=[q for q in [p,*p.parents,fb] if (q/"SKILL.md").exists()]; print(cands[0]) if cands else sys.exit("design-coverage skill not found")')"
 # Pass the flow name via env var so apostrophes / quotes / `$` in the value
 # don't break the inline `python -c` invocation.
 FLOW_SLUG=$(FLOW_NAME="<flow-name>" python -c "import sys, os; sys.path.insert(0, 'lib'); from slugify import slugify; print(slugify(os.environ['FLOW_NAME']))")

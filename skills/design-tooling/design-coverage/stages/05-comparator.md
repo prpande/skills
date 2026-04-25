@@ -61,26 +61,52 @@ tuple `(status, kind, hotspot_type, clarification_answer)` and call
 `hotspot_id` format is `f"{hotspot_type}:{symbol}"` and MUST match the
 format stage 03 uses when persisting to `clarifications.resolved[]`.
 
+`kind` and `hotspot_type` are NOT carried on the comparator row itself
+(`schemas/comparison.json` keeps rows minimal — `pass`, `status`, `severity`,
+`code_ref`, `figma_ref`, `evidence`). Both fields are derived by joining
+`row.code_ref` against the stage-2 inventory's `items[].id`. The join is
+ephemeral — do NOT persist `code_kind` or `inventory_item_hotspot` onto
+the comparison row, only the resulting `severity`.
+
+For `pass: "screen"` rows whose `code_ref` is a sub-screen item (state /
+action / field) and whose hotspot lives on the parent screen, walk up
+through `parent_id` until a hotspot is found or `parent_id` is null —
+this propagates the screen-level clarification to its descendants.
+
 ```python
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd() / "lib"))
 from skill_root import get_skill_root
-from severity_matrix import lookup, flush_misses
+from severity_matrix import lookup, flush_misses, reset_misses
 from skill_io import read_json
-import severity_matrix
 
 # Start of stage: clear miss buffer to keep audit per-run.
-severity_matrix._MISS_BUFFER.clear()
+reset_misses()
 
 # Load clarifications and build hotspot_id -> answer map.
 # hotspot_id format is "<hotspot_type>:<symbol>" (must match stage 03's write).
 clarifications = read_json(run_dir / "03-clarifications.json") or {"resolved": []}
 hotspot_answers = {r["hotspot_id"]: r["answer"] for r in clarifications.get("resolved", [])}
 
-# For each comparator row, derive the clarification answer for its hotspot:
+# Load stage-2 inventory and index by id for the join.
+inventory = read_json(run_dir / "02-code-inventory.json") or {"items": []}
+items_by_id = {i["id"]: i for i in inventory.get("items", [])}
+
+def _hotspot_for(item: dict | None) -> dict | None:
+    """Walk up parent_id until a hotspot is found or the chain ends."""
+    cur = item
+    while cur is not None:
+        if cur.get("hotspot"):
+            return cur["hotspot"]
+        cur = items_by_id.get(cur.get("parent_id")) if cur.get("parent_id") else None
+    return None
+
+# For each comparator row, join into stage-2 inventory and look up severity.
 for row in rows:
-    hotspot = row.get("inventory_item_hotspot")  # the hotspot dict from stage-2 inventory
+    item = items_by_id.get(row.get("code_ref")) if row.get("code_ref") else None
+    code_kind = item.get("kind") if item else None
+    hotspot = _hotspot_for(item)
     hotspot_type = hotspot.get("type") if hotspot else None
     if hotspot:
         hotspot_id = f"{hotspot_type}:{hotspot['symbol']}"
@@ -90,7 +116,7 @@ for row in rows:
 
     severity = lookup(
         status=row["status"],
-        kind=row.get("code_kind"),
+        kind=code_kind,
         hotspot_type=hotspot_type,
         clarification_answer=clarification_answer,
     )
@@ -112,8 +138,9 @@ severity looks wrong, the fix is to add an entry to `lib/severity_matrix.py`'s
 ## Atomic write pattern
 
 ```bash
-# Resolve the skill root portably: walk up from CWD to find SKILL.md.
-cd "$(python -c 'from pathlib import Path; p=Path.cwd(); print(next(q for q in [p, *p.parents] if (q/"SKILL.md").exists()))')"
+# Resolve the skill root portably: walk up from CWD to find SKILL.md, with
+# fallback to the standard install location when CWD is outside the skill tree.
+cd "$(python -c 'import sys; from pathlib import Path; p=Path.cwd(); fb=Path.home()/".claude"/"skills"/"design-tooling"/"design-coverage"; cands=[q for q in [p,*p.parents,fb] if (q/"SKILL.md").exists()]; print(cands[0]) if cands else sys.exit("design-coverage skill not found")')"
 ```
 
 ```python

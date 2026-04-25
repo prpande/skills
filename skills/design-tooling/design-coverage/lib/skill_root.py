@@ -17,14 +17,18 @@ _MAX_DEPTH = 5
 def get_skill_root() -> Path:
     """Return the directory containing SKILL.md, walking up from this file.
 
-    Raises RuntimeError if SKILL.md is not found within _MAX_DEPTH parents.
+    Raises RuntimeError if SKILL.md is not found within _MAX_DEPTH parents
+    OR if the walk reaches the filesystem root before finding SKILL.md.
     """
-    here = Path(__file__).resolve().parent
+    start = Path(__file__).resolve()
+    here = start.parent
     for _ in range(_MAX_DEPTH):
         if (here / "SKILL.md").exists():
             return here
+        if here == here.parent:  # filesystem root — going further is a no-op
+            break
         here = here.parent
     raise RuntimeError(
         f"Could not locate skill root: SKILL.md not found within "
-        f"{_MAX_DEPTH} parent directories of {Path(__file__).resolve()}"
+        f"{_MAX_DEPTH} parent directories of {start} (last checked: {here})"
     )

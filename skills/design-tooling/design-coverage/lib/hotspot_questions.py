@@ -31,6 +31,12 @@ class QuestionTemplate:
     default_answer: str
     severity_if_violated: str  # "info" | "warn" | "error"
     applies_when_count_gte: int = 1  # Minimum distinct symbols of this type for the Q to apply.
+    # Canonical answer set the user may select from. Stage 03 MUST present
+    # these as multiple-choice options via AskUserQuestion and persist exactly
+    # one of them as `clarifications.resolved[].answer` — stage 05's severity
+    # matrix only matches against these literal strings, so a free-form answer
+    # would silently fall through to the generic "warn" bucket.
+    alternatives: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -41,6 +47,10 @@ class Question:
     rendered_text: str
     default_answer: str
     severity_if_violated: str
+    # Full canonical answer set (default_answer plus any alternatives). Stage 03
+    # MUST present these as the only valid answers; persisting anything else
+    # breaks the join with severity_matrix.SEVERITY_MATRIX.
+    canonical_answers: tuple[str, ...] = ()
 
 
 # Registry — one entry per hotspot.type enum value.
@@ -52,54 +62,67 @@ HOTSPOT_QUESTIONS: dict[str, QuestionTemplate] = {
         default_answer="on",
         severity_if_violated="error",
         applies_when_count_gte=1,
+        alternatives=("off", "both"),
     ),
     "permission": QuestionTemplate(
         template="Assume the {symbol} permission is granted unless a Figma frame explicitly shows the denied state?",
         default_answer="granted",
         severity_if_violated="warn",
         applies_when_count_gte=1,
+        alternatives=("denied", "both"),
     ),
     "server-driven": QuestionTemplate(
         template="For the {symbol} server-driven section, must Figma cover BOTH the populated and the empty states?",
         default_answer="both_states_required",
         severity_if_violated="error",
         applies_when_count_gte=1,
+        alternatives=("populated_only", "empty_only"),
     ),
     "view-type": QuestionTemplate(
-        template="Multiple variants of {symbol} exist in code. Must Figma cover all of them?",
+        # `applies_when_count_gte=2` gates on the *count of distinct view-type
+        # symbols in code*, not multiplicity of one symbol — phrase the prompt
+        # accordingly so the user understands they're confirming coverage of
+        # the whole class of variants, not variants of a single cell.
+        template="{symbol} is one of {N} view-type variants in code. Must Figma cover all variants of this view-type group?",
         default_answer="all_variants_required",
         severity_if_violated="error",
         applies_when_count_gte=2,  # Only ask if >=2 distinct symbols of this type.
+        alternatives=("single_variant_only", "out_of_scope"),
     ),
     "form-factor": QuestionTemplate(
         template="The {symbol} branch differs by form factor (compact/regular/landscape/etc.). Are all axes in scope?",
         default_answer="all_in_scope",
         severity_if_violated="warn",
         applies_when_count_gte=1,
+        alternatives=("default_only",),
     ),
     "config-qualifier": QuestionTemplate(
         template="The {symbol} branch depends on a configuration qualifier (e.g., business-setting flag). Assume the default qualifier value, or are all values in scope?",
         default_answer="default_only",
         severity_if_violated="info",
         applies_when_count_gte=1,
+        alternatives=("all_in_scope",),
     ),
     "process-death": QuestionTemplate(
         template="The {symbol} state-restoration path handles process death. Is this path in scope for the audit?",
         default_answer="out_of_scope",
         severity_if_violated="info",
         applies_when_count_gte=1,
+        alternatives=("in_scope",),
     ),
     "viewpager-tab": QuestionTemplate(
         template="The {symbol} tab/page navigation has multiple destinations. Are all tabs in scope?",
         default_answer="all_in_scope",
         severity_if_violated="warn",
         applies_when_count_gte=1,
+        alternatives=("default_tab_only",),
     ),
     "sheet-dialog": QuestionTemplate(
         template="The {symbol} sheet/dialog overlay can be presented from multiple states. Must Figma cover the presented variant?",
         default_answer="presented_variant_required",
         severity_if_violated="warn",
         applies_when_count_gte=1,
+        alternatives=("dismissed_only",),
     ),
 }
 
@@ -143,5 +166,6 @@ def emit_questions_for_inventory(inventory: dict, platform_overrides: dict[str, 
             rendered_text=rendered,
             default_answer=tmpl.default_answer,
             severity_if_violated=tmpl.severity_if_violated,
+            canonical_answers=(tmpl.default_answer,) + tmpl.alternatives,
         ))
     return questions

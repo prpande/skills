@@ -21,6 +21,29 @@
 
 **Test invocation:** `cd /c/src/skills-design-coverage-improvements/skill-tests/design-coverage && pytest tests/<test_file>.py -v` (the `conftest.py` in that directory adds `lib/` to `sys.path`).
 
+## Implementation-vs-plan reconciliation (post-hoc)
+
+This plan was written before implementation began. The shipping code in this PR
+diverges from the plan in two narrow places, called out here so the plan stays
+useful as a reference rather than misleading future readers:
+
+1. **`schemas/inventory_item.json` `hotspot.required`** — plan specifies
+   `["type", "question"]` (Task 2.2, line ~528). The shipping schema requires
+   `["type", "symbol"]` and makes `question` optional/nullable. Rationale:
+   `symbol` is the dedup key for `lib/hotspot_questions.py` and the join key
+   for stage 05's hotspot_id; `question` is now generated deterministically by
+   the registry and is no longer load-bearing. This is a knowing break of the
+   spec's "additive only" non-goal — the skill is newly-shipped, no production
+   run-dirs depend on the legacy shape, and the validator does not support
+   `anyOf` for a write-strict / read-tolerant compromise.
+
+2. **Stage 05 severity-loop join** — earlier draft snippets read `code_kind`
+   and `inventory_item_hotspot` directly off comparator rows. The shipping
+   stage MD performs an explicit join: load `02-code-inventory.json`, index
+   by `items[].id`, look up by `row.code_ref`, walk parents for hotspot
+   inheritance. The join is ephemeral (results are not persisted onto rows),
+   keeping `schemas/comparison.json` minimal.
+
 ---
 
 ## Phase 0 — File 3 GitHub issues against `prpande/skills`
