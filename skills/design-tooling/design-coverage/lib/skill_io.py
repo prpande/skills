@@ -46,3 +46,35 @@ def record_retry(run_dir: Path, stage: str) -> None:
 def get_retry_count(run_dir: Path, stage: str) -> int:
     data = read_json(Path(run_dir) / _RETRY_FILE) or {}
     return int(data.get(stage, 0))
+
+_schema_cache: dict[tuple[str, str], Any] = {}
+
+
+def validate_and_write_json(path: Path, obj: Any, schema_name: str,
+                            schemas_dir: Path) -> None:
+    """Validate `obj` against `schemas_dir/<schema_name>` then write atomically.
+
+    On validation failure: raise ValidationError with the JSON-pointer-style
+    path of the failing field. The file is NOT written on failure; no tmp
+    file is left behind.
+
+    Schema files are cached in-process so repeated calls (e.g. stage 04
+    writing one frame at a time) avoid redundant disk reads.
+    """
+    import json as _json
+    from validator import Validator
+
+    schemas_dir = Path(schemas_dir)
+    cache_key = (str(schemas_dir), schema_name)
+    if cache_key not in _schema_cache:
+        schema_path = schemas_dir / schema_name
+        if not schema_path.exists():
+            raise FileNotFoundError(
+                f"validate_and_write_json: schema not found at {schema_path}"
+            )
+        _schema_cache[cache_key] = _json.loads(
+            schema_path.read_text(encoding="utf-8")
+        )
+    schema = _schema_cache[cache_key]
+    Validator(schemas_dir).validate(obj, schema)
+    atomic_write_json(path, obj)

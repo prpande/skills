@@ -93,13 +93,23 @@ Write `02-code-inventory.json` to the run dir, then regenerate the Markdown view
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd() / "lib"))
-from skill_io import atomic_write_json, read_json
+from skill_io import validate_and_write_json, read_json
 from renderer import render_code_inventory
+from skill_root import get_skill_root
 
 inventory = read_json(run_dir / "02-code-inventory.json") or {"items": [], "unwalked_destinations": []}
 # ...populate inventory...
-atomic_write_json(run_dir / "02-code-inventory.json", inventory)
+validate_and_write_json(
+    run_dir / "02-code-inventory.json",
+    inventory,
+    "code_inventory.json",
+    get_skill_root() / "schemas",
+)
 (run_dir / "02-code-inventory.md").write_text(render_code_inventory(inventory))
 ```
+
+> Scratch reminder: any intermediate file produced by this stage (debug
+> dumps, classification scratch) goes to `<run_dir>/.scratch/`, never the
+> run-dir top level.
 
 <!-- PLATFORM_HINTS -->

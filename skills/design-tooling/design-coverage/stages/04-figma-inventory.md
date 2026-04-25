@@ -58,11 +58,21 @@ cd "$(python -c 'import sys; from pathlib import Path; p=Path.cwd(); fb=Path.hom
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd() / "lib"))
-from skill_io import atomic_write_json, read_json
+from skill_io import validate_and_write_json, read_json
+from skill_root import get_skill_root
 
 inventory = read_json(run_dir / "04-figma-inventory.json") or {"items": [], "frames": []}
 # append new items + frame entry
-atomic_write_json(run_dir / "04-figma-inventory.json", inventory)
+validate_and_write_json(
+    run_dir / "04-figma-inventory.json",
+    inventory,
+    "figma_inventory.json",
+    get_skill_root() / "schemas",
+)
 ```
 
 Write incrementally — after each frame — so an interrupted session resumes without re-querying frames already processed.
+
+> Scratch reminder: any intermediate file produced by this stage (debug
+> dumps, classification scratch) goes to `<run_dir>/.scratch/`, never the
+> run-dir top level.

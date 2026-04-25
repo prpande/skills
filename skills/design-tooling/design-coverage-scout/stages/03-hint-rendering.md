@@ -7,9 +7,10 @@
 
 ## Objective
 
-Render `<design-coverage-install>/platforms/<name>.md.draft`, preview it to
-the user in the live session, and on explicit approval move `.draft` →
-`<name>.md`.
+Render `<target_dir>/<name>.md.draft` (where `<target_dir>` is
+`<repo>/.claude/skills/design-coverage/platforms/` in the consuming repo),
+preview it to the user in the live session, and on explicit approval move
+`.draft` → `<target_dir>/<name>.md`.
 
 ## Method
 
@@ -23,9 +24,10 @@ the user in the live session, and on explicit approval move `.draft` →
    target_dir = resolve_target_dir()
    ```
 
-2. **Refuse-overwrite.** If `<target_dir>/<name>.md` exists and `--force` was
-   NOT passed, refuse loudly and tell the user to pass `--force` or choose a
-   different `--platform-name`.
+2. **Refuse-overwrite.** If `<target_dir>/<name>.md` **or** `<target_dir>/<name>.md.draft`
+   exists and `--force` was NOT passed, refuse loudly: an existing `.md.draft`
+   means a previous scout run is in progress. Tell the user to pass `--force`
+   to overwrite, or choose a different `--platform-name`.
 
 3. **Sanitize harvested section content before substitution.** Pass each
    `<sections.*>` string through `sanitize_section` to neutralize `---` and
@@ -43,33 +45,24 @@ the user in the live session, and on explicit approval move `.draft` →
    clar = sanitize_section(draft["sections"]["clarification"])
    ```
 
-4. **Render to draft.** Read `hint-draft.json`. Emit `<name>.md.draft`:
+4. **Render to draft.** Read `hint-draft.json`. Delegate rendering to `lib/render_draft.py` which handles the wave-2 frontmatter fields (`sealed_enum_patterns`, `multi_anchor_suffixes`, `default_in_scope_hops`, `hotspot_question_overrides`) in addition to the core fields:
 
-   ```markdown
-   ---
-   name: <name>
-   detect:
-     - "<detect glob 1>"
-     - "<detect glob 2>"
-   description: <description>
-   confidence: <confidence>
-   ---
+   ```python
+   import sys
+   from pathlib import Path
+   sys.path.insert(0, str(Path.home() / ".claude" / "skills" / "design-coverage-scout" / "lib"))
+   from render_draft import render_draft_to_md
+   from sanitize import sanitize_section
 
-   ## 01 Flow locator
-   <sanitized flow>
-
-   ## 02 Code inventory
-   <sanitized code>
-
-   ## 03 Clarification
-   <sanitized clar>
-
-   ## Unresolved questions
-   <unresolved_questions bullets, if any>
+   sanitized = {
+       "flow_locator": sanitize_section(draft["sections"]["flow_locator"]),
+       "code_inventory": sanitize_section(draft["sections"]["code_inventory"]),
+       "clarification": sanitize_section(draft["sections"]["clarification"]),
+   }
+   content = render_draft_to_md(draft, sanitized_sections=sanitized)
+   draft_path = target_dir / f"{draft['name']}.md.draft"
+   draft_path.write_text(content, encoding="utf-8")
    ```
-
-   Drop the `## Unresolved questions` section entirely if the array is empty
-   or absent.
 
 5. **Pre-preview validation.** Run `python scripts/validate.py` against the
    `.draft` file (the draft is already written at step 4 but not yet moved).
@@ -84,7 +77,7 @@ the user in the live session, and on explicit approval move `.draft` →
    === DRAFT PLATFORM HINT ===
    <full file content>
    === END DRAFT ===
-   Approve writing this to platforms/<name>.md? (yes / no / edit)
+   Approve writing this to <target_dir>/<name>.md? (yes / no / edit)
    ```
 
 7. **Branch on response:**
