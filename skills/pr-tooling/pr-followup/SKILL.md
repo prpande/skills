@@ -33,7 +33,7 @@ Optional positional arguments:
   default 10.
 
 Flags:
-- `--wait <minutes>` — override the fallback poll delay (default 30
+- `--wait <minutes>` — override the fallback poll delay (default 10
   minutes). **Floor: 1 minute.** Values less than 1 minute are clamped
   to 1 with a warning log event. Applies to second-iteration-onwards
   even when `--no-wait` / the `pr-followup` default

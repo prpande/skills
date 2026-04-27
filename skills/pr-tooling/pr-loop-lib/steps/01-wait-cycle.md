@@ -3,7 +3,7 @@
 Subscribes to PR activity via the GitHub MCP webhook tool so that
 reviewer-bot comments and CI events wake the loop immediately, rather
 than relying on a blind timer. A `ScheduleWakeup` fallback fires after
-30 minutes in case webhook delivery is delayed or unavailable.
+10 minutes in case webhook delivery is delayed or unavailable.
 
 ## Entry modes
 
@@ -90,7 +90,7 @@ Log a `webhook_subscribed` event:
   (60-second floor — prevents a misconfigured override from creating a
   tight poll loop, but no 10-minute floor: this is a fallback, not the
   primary wait mechanism)
-- Else: `fallback_seconds = 1800` (30 minutes)
+- Else: `fallback_seconds = 600` (10 minutes)
 
 ### 3. Schedule fallback wakeup
 
@@ -190,7 +190,7 @@ event triggers the next iteration. There is no race because step 02
 always does a full fetch of all current comments — it is not
 incremental.
 
-The 30-minute fallback still ensures the loop does not hang forever if
+The 10-minute fallback still ensures the loop does not hang forever if
 webhook delivery fails. Operators who previously relied on `--wait N`
 to extend the polling interval can use it to extend the fallback
 timeout instead.
@@ -199,7 +199,7 @@ timeout instead.
 
 ## Cache note
 
-Delays > 300 s pay the Anthropic prompt-cache TTL cost. The 1800 s
+Delays > 300 s pay the Anthropic prompt-cache TTL cost. The 600 s
 fallback is past that boundary. Accepted tradeoff — the skill is
 optimizing for bot-response capture, not cache warmth.
 
