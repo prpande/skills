@@ -115,7 +115,7 @@ Phase 5 — Report (and optional UI-deferred approval)
 - **Never skip the wait cycle on the basis of repo inspection.** The
   loop MUST subscribe to PR activity and yield in step 01 (Mode W)
   unless an explicit skip flag is set. The subscription delivers
-  events immediately when bots post; the 10-minute fallback catches
+  events immediately when bots post; the fallback (default 10 min) catches
   any missed deliveries. Neither may be bypassed because the repo has
   no visible `.github/workflows/`, because prior PRs show no bot
   activity, because the repo is personal or a fork, or because the
