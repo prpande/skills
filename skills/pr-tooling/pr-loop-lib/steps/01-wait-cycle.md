@@ -1,9 +1,11 @@
 # Loop step 01 — Wait cycle (event-driven)
 
-Subscribes to PR activity via the GitHub MCP webhook tool so that
-reviewer-bot comments and CI events wake the loop immediately, rather
-than relying on a blind timer. A `ScheduleWakeup` fallback fires after
-10 minutes in case webhook delivery is delayed or unavailable.
+On GitHub, subscribes to PR activity via the GitHub MCP webhook tool so
+that reviewer-bot comments and CI events wake the loop immediately. A
+`ScheduleWakeup` fallback fires after 10 minutes in case webhook
+delivery is delayed or unavailable. On AzDO, falls back to a pure
+`ScheduleWakeup` polling wait with the original 10-minute reviewer-bot
+floor (AzDO has no equivalent webhook tool).
 
 ## Entry modes
 
@@ -20,8 +22,8 @@ A webhook event has just arrived. Jump straight to step 02. See
 "Mode E" below.
 
 **Mode W — Wait** (none of the above):
-Subscribe to PR activity, set the fallback wakeup, and yield. See
-"Mode W" below.
+Subscribe (GitHub) or schedule a polling wakeup (AzDO), then yield.
+See "Mode W" below.
 
 ---
 
@@ -64,16 +66,42 @@ Proceed to step 02.
 
 ## Mode W — Wait
 
-### 1. Subscribe to PR activity
+Behavior depends on `context.platform`. Both paths set
+`context.wait_done_for_iteration` and issue a `ScheduleWakeup` as a
+fallback; the difference is whether a webhook subscription is also
+established.
 
-Call `mcp__github__subscribe_pr_activity` with:
-- `owner` and `repo` from `context` (extracted from the remote URL at
-  step 01-detect-context, or via `gh repo view --json nameWithOwner`)
-- `pullNumber = context.pr_number`
+> **`wait_done_for_iteration` note:** Mode W sets this field to
+> `context.iteration` before yielding. It is never explicitly reset
+> between iterations — it is simply overwritten by the next Mode W
+> entry. Mode E does not touch it, so after a webhook wake on
+> iteration N the field still holds N. When iteration N+1 enters
+> Mode W, it overwrites the field with N+1. The invariant is:
+> `wait_done_for_iteration == context.iteration` if and only if a
+> wakeup has been issued for the **current** iteration.
+
+---
+
+### GitHub path (`context.platform == "github"`)
+
+#### Step 1 — Subscribe to PR activity
+
+Extract `owner` and `repo` for the current repository:
+
+```
+- Prefer `gh repo view --json nameWithOwner` and split the returned
+  `owner/repo` string on `/`.
+- If that is unavailable, parse the Git remote URL
+  (`git remote get-url origin`) to determine them.
+```
+
+Call `mcp__github__subscribe_pr_activity` with the extracted `owner`,
+`repo`, and `pullNumber = context.pr_number`.
 
 This call is **idempotent** — safe on every iteration even if already
-subscribed. Set `context.webhook_subscribed = true`. Write state.
+subscribed.
 
+**On success:** Set `context.webhook_subscribed = true`. Write state.
 Log a `webhook_subscribed` event:
 ```json
 {"event": "webhook_subscribed", "data": {
@@ -82,17 +110,42 @@ Log a `webhook_subscribed` event:
 }}
 ```
 
-### 2. Compute fallback delay
+**On failure** (network error, tool unavailable, permission error):
+Log a `webhook_subscribe_failed` event:
+```json
+{"event": "webhook_subscribe_failed", "data": {
+  "iteration": <context.iteration>,
+  "pr_number": <context.pr_number>
+}}
+```
+Leave `context.webhook_subscribed = false`. Continue to steps 2–5 —
+the fallback wakeup becomes the primary wait mechanism for this
+iteration.
+
+#### Step 2 — Compute fallback delay
 
 `fallback_seconds`:
 - If `context.wait_override_minutes` is set:
   `fallback_seconds = max(60, wait_override_minutes * 60)`
-  (60-second floor — prevents a misconfigured override from creating a
-  tight poll loop, but no 10-minute floor: this is a fallback, not the
-  primary wait mechanism)
+  If the clamp fires (user asked for less than 1 minute), emit a
+  `wait_clamped` log event:
+  ```json
+  {"event": "wait_clamped", "data": {
+    "requested_minutes": <N>,
+    "effective_minutes": 1,
+    "reason": "minimum fallback interval (webhook-primary path)"
+  }}
+  ```
 - Else: `fallback_seconds = 600` (10 minutes)
 
-### 3. Schedule fallback wakeup
+The 1-minute floor prevents a misconfigured `--wait` from creating a
+tight poll loop. Note: in environments where webhook delivery is
+unavailable (e.g., self-hosted runners behind strict network policies),
+the fallback becomes the primary mechanism and very short `--wait`
+values will cause rapid polling. A minimum of 5 minutes is recommended
+when operating without webhook support.
+
+#### Step 3 — Schedule fallback wakeup
 
 ```
 ScheduleWakeup(
@@ -102,13 +155,7 @@ ScheduleWakeup(
 )
 ```
 
-The fallback fires if no webhook event arrives within `fallback_seconds`.
-When it fires the skill re-enters; step 01 will be in Mode W again
-with `context.wait_done_for_iteration == context.iteration` (set in
-step 4 below), which signals "wakeup already issued for this iteration
-→ proceed to step 02" (see "Wakeup re-entry" below).
-
-### 4. Mark wait issued for this iteration
+#### Step 4 — Mark wait issued + log
 
 Set `context.wait_done_for_iteration = context.iteration`. Write state.
 
@@ -128,11 +175,67 @@ Will wake on the next reviewer comment or CI event.
 Fallback poll in <M> min if nothing arrives.
 ```
 
-### 5. Yield
+#### Step 5 — Yield
 
 Stop generating output. The session now awaits either:
 - A `<github-webhook-activity>` message → Mode E on next step 01 entry.
-- The fallback `ScheduleWakeup` firing → re-entry (see below).
+- The fallback `ScheduleWakeup` firing → re-entry (see "Wakeup
+  re-entry detection" below).
+
+---
+
+### AzDO path (`context.platform == "azdo"`)
+
+No webhook MCP tool is available. Use a pure `ScheduleWakeup` with
+the original 10-minute reviewer-bot floor.
+
+#### Step 1 — Compute delay
+
+`delay_seconds`:
+- If `context.wait_override_minutes` is set:
+  `delay_seconds = max(600, wait_override_minutes * 60)`
+  If the clamp fires (user asked for less than 10 minutes), emit a
+  `wait_clamped` log event:
+  ```json
+  {"event": "wait_clamped", "data": {
+    "requested_minutes": <N>,
+    "effective_minutes": 10,
+    "reason": "reviewer-bot response window (AzDO polling path)"
+  }}
+  ```
+- Else: `delay_seconds = 600` (10 minutes)
+
+The 10-minute floor on AzDO is a hard rule: reviewer bots can post
+follow-up findings 2–10 minutes after an initial review. A shorter
+wait observably misses the second batch.
+
+#### Step 2 — Schedule wakeup
+
+```
+ScheduleWakeup(
+  delaySeconds = delay_seconds,
+  reason = "polling wait for PR #<pr_number> (cycle <iteration>)",
+  prompt = <the verbatim invocation prompt that entered this skill>
+)
+```
+
+#### Step 3 — Mark wait issued + log
+
+Set `context.wait_done_for_iteration = context.iteration`. Write state.
+
+Log a `wait_cycle` event:
+```json
+{"event": "wait_cycle", "data": {
+  "iteration": <context.iteration>,
+  "mode": "azdo-poll",
+  "delay_seconds": <delay_seconds>
+}}
+```
+
+#### Step 4 — Yield
+
+Stop generating output. The session resumes at step 02 after the
+wakeup fires (see "Wakeup re-entry detection" below).
 
 ---
 
@@ -146,15 +249,18 @@ subscription + wakeup, check:
 
 ```
 if context.wait_done_for_iteration == context.iteration:
-    # fallback wakeup fired; the wait for this iteration is complete
+    # fallback/polling wakeup fired; the wait for this iteration is complete
     → proceed to step 02
 ```
 
-Log a `wait_fallback_fired` event:
+Re-derive `fallback_seconds` (or `delay_seconds` on AzDO) using the
+same formula as Mode W step 2 for the current platform — the value is
+deterministic from `context.wait_override_minutes` and
+`context.platform`. Then log a `wait_fallback_fired` event:
 ```json
 {"event": "wait_fallback_fired", "data": {
   "iteration": <context.iteration>,
-  "fallback_seconds": <fallback_seconds used>
+  "delay_seconds": <re-derived value>
 }}
 ```
 
@@ -166,16 +272,17 @@ Then proceed to step 02.
 
 | Field | Used for |
 |---|---|
+| `context.platform` | Selects GitHub webhook path vs. AzDO polling path |
 | `context.iteration` | Current iteration (1-indexed once loop starts) |
 | `context.no_wait_first_iteration` | Mode S skip flag |
-| `context.wait_override_minutes` | Fallback delay override |
-| `context.pr_number` | PR to subscribe to |
+| `context.wait_override_minutes` | Fallback/polling delay override |
+| `context.pr_number` | PR to subscribe to (GitHub path) |
 | `context.wait_done_for_iteration` | Wakeup re-entry detection |
 | `context.webhook_subscribed` | Informational; subscription is idempotent regardless |
 
 ---
 
-## Why the 10-minute floor is gone
+## Why the 10-minute floor is gone (GitHub only)
 
 The former step used a hard 600-second `ScheduleWakeup` floor to give
 reviewer bots a window to post follow-up findings. That floor was a
@@ -195,13 +302,16 @@ webhook delivery fails. Operators who previously relied on `--wait N`
 to extend the polling interval can use it to extend the fallback
 timeout instead.
 
+The AzDO path retains the 10-minute floor unchanged since it remains
+a polling-only mechanism.
+
 ---
 
 ## Cache note
 
 Delays > 300 s pay the Anthropic prompt-cache TTL cost. The 600 s
-fallback is past that boundary. Accepted tradeoff — the skill is
-optimizing for bot-response capture, not cache warmth.
+fallback / floor is past that boundary. Accepted tradeoff — the skill
+is optimizing for bot-response capture, not cache warmth.
 
 ---
 
@@ -209,4 +319,4 @@ optimizing for bot-response capture, not cache warmth.
 
 - Mode S and Mode E proceed to step 02 inline (no suspension).
 - Mode W calls `ScheduleWakeup` and then stops. The loop continues
-  at step 02 after either a webhook event or the fallback wakeup.
+  at step 02 after either a webhook event (GitHub) or the wakeup timer.

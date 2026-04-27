@@ -101,16 +101,20 @@ prints counts to keep the terminal output scannable.
 
 Immediately after the report is printed, before the UI-deferred
 approval phase and before lock release, if
-`context.webhook_subscribed == true` and `context.pr_number` is set,
-call:
+`context.platform == "github"` AND `context.webhook_subscribed == true`
+AND `context.pr_number` is set, call:
 
 ```
 mcp__github__unsubscribe_pr_activity(
-  owner = <owner>,
-  repo  = <repo>,
+  owner      = <owner>,
+  repo       = <repo>,
   pullNumber = context.pr_number
 )
 ```
+
+Extract `owner` and `repo` using the `gh repo view --json nameWithOwner`
+snippet documented in `pr-loop-lib/platform/github.md` under "Owner /
+repo extraction".
 
 Log a `webhook_unsubscribed` event:
 ```json
@@ -121,8 +125,8 @@ Unsubscribing here — before the UI-deferred re-dispatch — prevents
 incoming `<github-webhook-activity>` events triggered by the
 re-dispatch's pushes from arriving in the middle of step 11's
 approval flow. Idempotent: safe to call even if the subscription was
-never established (e.g., non-GitHub platform, or skill reached step
-11 before step 01 ever ran).
+never established. Skip entirely on AzDO (`context.platform == "azdo"`)
+— no webhook subscription was created.
 
 ## UI-deferred user-approval phase
 

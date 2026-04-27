@@ -44,9 +44,10 @@ Flags supported (parse from the raw invocation string):
   `pr-loop-lib/steps/01-wait-cycle.md` "Mode W").
 - `--dry-run` → execute every step except `gh/az pr create`, push, and
   thread resolve mutations. Print what would happen.
-- `--no-wait` → skip the **first** wait cycle only (useful when bots
-  are known to have already posted). Subsequent iterations still honor
-  the 10-minute floor.
+- `--no-wait` → skip the **first** wait cycle only (sets
+  `no_wait_first_iteration = true`). Subsequent iterations use the
+  normal webhook-driven wait (GitHub) or polling wait (AzDO); `--wait`
+  controls the fallback/polling timeout for those iterations.
 
 ## Execution
 

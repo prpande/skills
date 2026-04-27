@@ -45,7 +45,7 @@ Required fields are marked as such.
 | `iteration` | integer | default `0` | Current loop iteration (1-indexed once loop starts) |
 | `user_iteration_cap` | integer | default `10` | Cap from skill argument |
 | `no_wait_first_iteration` | boolean | default `false` | Set by pr-followup |
-| `wait_override_minutes` | integer or null | no | From `--wait N`. Interpreted as `max(1, N)` by `pr-loop-lib/steps/01-wait-cycle.md` — the 1-minute floor prevents a misconfigured override from creating a tight poll loop. Values below 1 are clamped up in step 01 with a warning log event. This is the fallback poll delay; the loop normally wakes on webhook events before the fallback fires. |
+| `wait_override_minutes` | integer or null | no | From `--wait N`. On GitHub: `max(1, N)` minutes (1-minute floor; clamp emits a `wait_clamped` log event). On AzDO: `max(10, N)` minutes (10-minute floor; same clamp event). This is the fallback/polling delay; on GitHub the loop normally wakes on webhook events before the fallback fires. |
 | `webhook_subscribed` | boolean | default `false` | True after `mcp__github__subscribe_pr_activity` succeeds for this PR |
 | `wait_done_for_iteration` | integer or null | default `null` | Set by step 01 (Mode W) when `ScheduleWakeup` is issued; equals `context.iteration`. On re-entry with no webhook event and this value == `context.iteration`, the fallback wakeup has fired and step 01 proceeds to step 02 without re-issuing the wakeup. |
 | `last_push_timestamp` | string (ISO-8601) or null | no | Committer timestamp of most recent push |

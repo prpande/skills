@@ -43,8 +43,10 @@ Flags:
   `pr-loop-lib/steps/01-wait-cycle.md` "Mode W").
 - `--dry-run` — same semantics as pr-autopilot.
 - `--no-wait` — default TRUE for pr-followup (comments are presumed
-  already visible). Skips ONLY the first-iteration wait; the floor
-  still applies to every subsequent iteration.
+  already visible). Skips ONLY the first-iteration wait (Mode S in
+  step 01). Subsequent iterations use the normal webhook-driven wait
+  (GitHub) or polling wait (AzDO); `--wait` controls the
+  fallback/polling timeout for those iterations.
 
 ## Execution
 
