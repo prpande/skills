@@ -46,6 +46,8 @@ Required fields are marked as such.
 | `user_iteration_cap` | integer | default `10` | Cap from skill argument |
 | `no_wait_first_iteration` | boolean | default `false` | Set by pr-followup |
 | `wait_override_minutes` | integer or null | no | From `--wait N`. Interpreted as `max(10, N)` by `pr-loop-lib/steps/01-wait-cycle.md` — the 10-minute floor applies to the *effective* delay, not the raw user input. Values below 10 are accepted at parse time but clamped up in step 01 with a warning log event. |
+| `webhook_subscribed` | boolean | default `false` | True after `mcp__github__subscribe_pr_activity` succeeds for this PR |
+| `wait_done_for_iteration` | integer or null | default `null` | Set by step 01 (Mode W) when `ScheduleWakeup` is issued; equals `context.iteration`. On re-entry with no webhook event and this value == `context.iteration`, the fallback wakeup has fired and step 01 proceeds to step 02 without re-issuing the wakeup. |
 | `last_push_timestamp` | string (ISO-8601) or null | no | Committer timestamp of most recent push |
 | `last_handled_timestamp` | string (ISO-8601) or null | no | Set by step 08 after suspicious-only iterations |
 | `last_push_sha` | string (hex) or null | no | HEAD SHA after most recent push |

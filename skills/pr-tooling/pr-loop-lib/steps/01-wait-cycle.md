@@ -1,139 +1,212 @@
-# Loop step 01 — Wait cycle
+# Loop step 01 — Wait cycle (event-driven)
 
-Delays the next comment fetch to give reviewer bots time to post. Uses
-`ScheduleWakeup` with a default delay of 600 seconds (10 minutes).
+Subscribes to PR activity via the GitHub MCP webhook tool so that
+reviewer-bot comments and CI events wake the loop immediately, rather
+than relying on a blind timer. A `ScheduleWakeup` fallback fires after
+30 minutes in case webhook delivery is delayed or unavailable.
 
-## Minimum wait (floor)
+## Entry modes
 
-**Hard rule: `delay_seconds` must be >= 600.** Reviewer bots (Copilot,
-SonarCloud, mergewatch, `/code-review` after-action rounds) routinely
-post follow-up findings 2–10 minutes after an initial review. A shorter
-wait observably misses the second batch — the skill races its own push
-against the bots' response window. `--wait N` where `N < 10` is clamped
-up to 10; a warning is logged but the loop proceeds with the clamped
-value rather than failing.
+Determine the entry mode before doing anything else:
 
-This floor is a β addition (Section 5-adjacent) motivated by a real
-incident during the β smoke-test run: a manual 0-minute "wait" between
-iterations missed a second batch of Copilot findings that arrived 12
-minutes after the first. The floor prevents that race mechanically.
+**Mode S — Skip** (`context.no_wait_first_iteration == true` AND
+`context.iteration == 1`):
+`pr-followup` sets this flag because the user knows comments have
+already arrived. Jump straight to step 02. See "Mode S" below.
+
+**Mode E — Event-driven** (a `<github-webhook-activity>` message is
+present in the current conversation turn):
+A webhook event has just arrived. Jump straight to step 02. See
+"Mode E" below.
+
+**Mode W — Wait** (none of the above):
+Subscribe to PR activity, set the fallback wakeup, and yield. See
+"Mode W" below.
+
+---
+
+## Mode S — Skip
+
+Set `context.no_wait_first_iteration = false`. Write state.
+
+Log a `wait_skipped` event:
+```json
+{"event": "wait_skipped", "data": {"iteration": 1, "reason": "no_wait_first_iteration"}}
+```
+
+Proceed to step 02.
+
+**This is the only skip path.** The orchestrator MUST NOT skip the wait
+because the repo has no CI, because prior PRs show no bot activity,
+because the repo is personal or a fork, or for any other inferred
+reason. Reviewer-bot latency is invisible until a comment lands. The
+only legitimate bypass is the explicit `no_wait_first_iteration` flag.
+
+---
+
+## Mode E — Event-driven
+
+A `<github-webhook-activity>` message has arrived. Extract the event
+type from the message if discernible (e.g., `pull_request_review`,
+`pull_request_review_comment`, `issue_comment`, `check_run`).
+
+Log a `webhook_event_received` event:
+```json
+{"event": "webhook_event_received", "data": {
+  "iteration": <context.iteration>,
+  "event_type": "<type or 'unknown'>"
+}}
+```
+
+Proceed to step 02.
+
+---
+
+## Mode W — Wait
+
+### 1. Subscribe to PR activity
+
+Call `mcp__github__subscribe_pr_activity` with:
+- `owner` and `repo` from `context` (extracted from the remote URL at
+  step 01-detect-context, or via `gh repo view --json nameWithOwner`)
+- `pullNumber = context.pr_number`
+
+This call is **idempotent** — safe on every iteration even if already
+subscribed. Set `context.webhook_subscribed = true`. Write state.
+
+Log a `webhook_subscribed` event:
+```json
+{"event": "webhook_subscribed", "data": {
+  "iteration": <context.iteration>,
+  "pr_number": <context.pr_number>
+}}
+```
+
+### 2. Compute fallback delay
+
+`fallback_seconds`:
+- If `context.wait_override_minutes` is set:
+  `fallback_seconds = max(60, wait_override_minutes * 60)`
+  (60-second floor — prevents a misconfigured override from creating a
+  tight poll loop, but no 10-minute floor: this is a fallback, not the
+  primary wait mechanism)
+- Else: `fallback_seconds = 1800` (30 minutes)
+
+### 3. Schedule fallback wakeup
+
+```
+ScheduleWakeup(
+  delaySeconds = fallback_seconds,
+  reason = "fallback poll for PR #<pr_number> (cycle <iteration>) — waiting for webhook event",
+  prompt = <the verbatim invocation prompt that entered this skill>
+)
+```
+
+The fallback fires if no webhook event arrives within `fallback_seconds`.
+When it fires the skill re-enters; step 01 will be in Mode W again
+with `context.wait_done_for_iteration == context.iteration` (set in
+step 4 below), which signals "wakeup already issued for this iteration
+→ proceed to step 02" (see "Wakeup re-entry" below).
+
+### 4. Mark wait issued for this iteration
+
+Set `context.wait_done_for_iteration = context.iteration`. Write state.
+
+Log a `wait_cycle` event:
+```json
+{"event": "wait_cycle", "data": {
+  "iteration": <context.iteration>,
+  "mode": "webhook",
+  "fallback_seconds": <fallback_seconds>
+}}
+```
+
+Emit to the user:
+```
+Waiting for PR #<N> activity (iteration <N>).
+Will wake on the next reviewer comment or CI event.
+Fallback poll in <M> min if nothing arrives.
+```
+
+### 5. Yield
+
+Stop generating output. The session now awaits either:
+- A `<github-webhook-activity>` message → Mode E on next step 01 entry.
+- The fallback `ScheduleWakeup` firing → re-entry (see below).
+
+---
+
+## Wakeup re-entry detection
+
+When `ScheduleWakeup` fires the skill re-enters from the invocation
+prompt. Step 01 is reached again. The entry mode is **not** Mode E
+(no webhook event in this turn) and **not** Mode S (skip flag is
+false). Before falling into Mode W again and issuing a duplicate
+subscription + wakeup, check:
+
+```
+if context.wait_done_for_iteration == context.iteration:
+    # fallback wakeup fired; the wait for this iteration is complete
+    → proceed to step 02
+```
+
+Log a `wait_fallback_fired` event:
+```json
+{"event": "wait_fallback_fired", "data": {
+  "iteration": <context.iteration>,
+  "fallback_seconds": <fallback_seconds used>
+}}
+```
+
+Then proceed to step 02.
+
+---
 
 ## Inputs from context
 
-- `context.iteration` — current iteration number (1-indexed)
-- `context.no_wait_first_iteration` — bool, set by `pr-followup`
-- `context.wait_override_minutes` — optional int from `--wait N` argument
-- `context.pr_number`
+| Field | Used for |
+|---|---|
+| `context.iteration` | Current iteration (1-indexed once loop starts) |
+| `context.no_wait_first_iteration` | Mode S skip flag |
+| `context.wait_override_minutes` | Fallback delay override |
+| `context.pr_number` | PR to subscribe to |
+| `context.wait_done_for_iteration` | Wakeup re-entry detection |
+| `context.webhook_subscribed` | Informational; subscription is idempotent regardless |
 
-## No assumption-based skip
+---
 
-**The wait is MANDATORY on every iteration unless an explicit flag set
-by the user or by `pr-followup` says otherwise.** The only two skip
-paths are:
-- `context.no_wait_first_iteration == true` (set by `pr-followup`, or
-  by the user's `--no-wait` flag on `pr-autopilot`), AND
-- `context.iteration == 1`.
+## Why the 10-minute floor is gone
 
-No other condition — no matter how persuasive — justifies shortening
-or skipping the wait. In particular, the orchestrator **MUST NOT**
-skip the wait because:
+The former step used a hard 600-second `ScheduleWakeup` floor to give
+reviewer bots a window to post follow-up findings. That floor was a
+polling-era approximation: because the skill fetched on a fixed timer,
+a shorter wait observably missed second-batch comments.
 
-- The repo has no `.github/workflows/` directory or no visible CI.
-- Prior PRs on the repo show no reviewer-bot activity.
-- The repo is personal, a fork, a sandbox, or "looks bot-free".
-- The only current comment on the PR is the orchestrator's own
-  `/code-review` post.
-- The session is interactive and the user "is sitting right there".
-- The loop "obviously has nothing to do" — triage would be
-  degenerate.
+With webhook subscriptions the loop wakes on the actual event, not on
+a timer. A first bot comment at 2 minutes wakes the loop, which
+fetches all comments at that moment (including any that arrived in the
+seconds before the fetch). If a second bot posts at 8 minutes, that
+event triggers the next iteration. There is no race because step 02
+always does a full fetch of all current comments — it is not
+incremental.
 
-These signals are **not reliable evidence of the absence of async
-reviewers.** GitHub Copilot code review, org-level review policies,
-SonarCloud, CodeQL, mergewatch, and human reviewers all operate
-server-side or out-of-band; their activity is invisible from the
-repo tree until a comment actually lands. The whole point of the
-10-minute wait is to give them that window.
+The 30-minute fallback still ensures the loop does not hang forever if
+webhook delivery fails. Operators who previously relied on `--wait N`
+to extend the polling interval can use it to extend the fallback
+timeout instead.
 
-If the orchestrator catches itself constructing a rationale like
-"this repo doesn't have bots, so I'll skip the wait" — that is the
-exact failure mode the floor prevents. Do the wait.
-
-The only correct way to bypass the wait is for the *user* to invoke
-`pr-followup` (which sets the flag because the user knows comments
-have arrived) or to pass `--no-wait` to `pr-autopilot` explicitly.
-Neither can be inferred from repo inspection.
-
-## Behavior
-
-1. If `context.iteration == 1` AND `context.no_wait_first_iteration` is
-   true, skip the wait entirely. Set `no_wait_first_iteration = false`
-   for subsequent iterations. (Rationale: `pr-followup` is invoked by
-   the user *after* new comments are known to have arrived; no point
-   waiting another 10 minutes. `--no-wait` on `pr-autopilot` is the
-   equivalent user-driven bypass.) **This is the ONLY skip path. See
-   "No assumption-based skip" above — no other condition skips the
-   wait.**
-2. Otherwise, compute `delay_seconds`:
-   - If `context.wait_override_minutes` is set: `delay_seconds =
-     max(600, wait_override_minutes * 60)`. If the clamp fires
-     (user asked for less than 10 minutes), emit a `wait_clamped`
-     log event so the operator sees that the floor kicked in:
-     ```json
-     {"event": "wait_clamped", "data": {
-       "requested_minutes": <N>,
-       "effective_minutes": 10,
-       "reason": "reviewer-bot response window"
-     }}
-     ```
-     Do not error out — the clamp is a feature, not a failure.
-   - Else use 600 (10 minutes).
-3. Call `ScheduleWakeup`:
-   ```
-   ScheduleWakeup(
-     delaySeconds = delay_seconds,
-     reason = f"waiting for reviewer activity on PR #{context.pr_number} (cycle {context.iteration})",
-     prompt = <the verbatim invocation prompt that entered this skill>
-   )
-   ```
-   The invocation prompt is passed back so when the wakeup fires, the
-   skill re-enters at the next step (02-fetch-comments).
+---
 
 ## Cache note
 
-Delays > 300s pay the Anthropic prompt-cache TTL cost. 600s (the
-floor) is past that boundary. Accepted tradeoff — the skill is
+Delays > 300 s pay the Anthropic prompt-cache TTL cost. The 1800 s
+fallback is past that boundary. Accepted tradeoff — the skill is
 optimizing for bot-response capture, not cache warmth.
 
-## Manual orchestration
-
-Operators (including LLM orchestrators) running the skill by hand —
-not via `ScheduleWakeup` — MUST still honor the 10-minute floor
-between fetches. Budgeting less than 10 minutes of wall-clock between
-a push and the next fetch is a known footgun: reviewer bots can post
-with arbitrary latency within that window.
-
-**Required procedure:**
-1. Record the start timestamp (UTC) before sleeping.
-2. Sleep (or suspend via `ScheduleWakeup`) until at least 600 s have
-   elapsed.
-3. Verify elapsed time >= 600 s before invoking step 02.
-4. Log a `wait_cycle` event with
-   `{iteration, start_ts, end_ts, elapsed_seconds}`.
-
-The elapsed-time check is the authoritative gate — a manual
-`ScheduleWakeup` with `delaySeconds < 600` or a no-op sleep is a
-skill violation regardless of how confident the operator is that
-"nothing will arrive in that window."
-
-**Never rationalize skipping the wait on grounds like "no CI
-workflows visible", "personal repo", "no prior bot activity on this
-repo", or "the only comment is my own code review."** Reviewer
-latency is unknowable from the repo tree. If the user wants a
-shorter cycle, the correct interface is `pr-followup` or
-`pr-autopilot --no-wait` — both of which are explicit user consent,
-not orchestrator inference.
+---
 
 ## Exit
 
-The step does not "return" — `ScheduleWakeup` suspends the session.
-The loop continues at step 02 after the wakeup fires.
+- Mode S and Mode E proceed to step 02 inline (no suspension).
+- Mode W calls `ScheduleWakeup` and then stops. The loop continues
+  at step 02 after either a webhook event or the fallback wakeup.
