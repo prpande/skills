@@ -9,7 +9,7 @@ description: >
   when the user says "publish the PR", "ship with autopilot", "run
   pr-autopilot", "/pr-autopilot", or similar.
 argument-hint: "[iteration-cap]"
-allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, ScheduleWakeup, AskUserQuestion
+allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, ScheduleWakeup, AskUserQuestion, mcp__github__subscribe_pr_activity, mcp__github__unsubscribe_pr_activity
 ---
 
 # pr-autopilot
@@ -36,17 +36,18 @@ Optional single positional argument: an integer iteration cap.
 Store in `context.user_iteration_cap`.
 
 Flags supported (parse from the raw invocation string):
-- `--wait <minutes>` → override loop wait delay. **Floor: 10 minutes.**
-  Values less than 10 are clamped up to 10 with a warning log event;
-  the skill never waits less than 10 minutes between iterations (see
-  `pr-loop-lib/steps/01-wait-cycle.md` "Minimum wait"). The 10-minute
-  floor is a hard rule; reviewer bots can take up to ~10 min to post
-  follow-up findings, and a shorter wait observably misses them.
+- `--wait <minutes>` → override the fallback poll delay (default 10
+  minutes). **Floor: 1 minute.** Values less than 1 minute are clamped
+  to 1 with a warning log event. The fallback fires only when no
+  webhook event arrives within the window; with an active subscription
+  the loop wakes on real activity instead (see
+  `pr-loop-lib/steps/01-wait-cycle.md` "Mode W").
 - `--dry-run` → execute every step except `gh/az pr create`, push, and
   thread resolve mutations. Print what would happen.
-- `--no-wait` → skip the **first** wait cycle only (useful when bots
-  are known to have already posted). Subsequent iterations still honor
-  the 10-minute floor.
+- `--no-wait` → skip the **first** wait cycle only (sets
+  `no_wait_first_iteration = true`). Subsequent iterations use the
+  normal webhook-driven wait (GitHub) or polling wait (AzDO); `--wait`
+  controls the fallback/polling timeout for those iterations.
 
 ## Execution
 
@@ -111,19 +112,17 @@ Phase 5 — Report (and optional UI-deferred approval)
   always use `--paginate` (or the equivalent for the platform).
   Default page sizes silently truncate long lists; missing a page
   means missing feedback.
-- **Never skip or shorten the wait cycle on the basis of repo
-  inspection.** The 10-minute `ScheduleWakeup` (or manual-sleep
-  equivalent) between iterations is MANDATORY. It cannot be bypassed
-  because the repo has no visible `.github/workflows/`, because
-  prior PRs show no bot activity, because the repo is personal or a
-  fork, because the only PR comment is the orchestrator's own
-  `/code-review` post, or because the session is interactive.
-  Reviewer latency — Copilot code review, org-level policies,
-  SonarCloud, human reviewers — is invisible until a comment lands.
-  The only legitimate bypasses are the explicit user flags
-  `--no-wait` (on `pr-autopilot`) or the `no_wait_first_iteration`
-  set by `pr-followup`. See `pr-loop-lib/steps/01-wait-cycle.md`
-  "No assumption-based skip".
+- **Never skip the wait cycle on the basis of repo inspection.** The
+  loop MUST subscribe to PR activity and yield in step 01 (Mode W)
+  unless an explicit skip flag is set. The subscription delivers
+  events immediately when bots post; the fallback (default 10 min) catches
+  any missed deliveries. Neither may be bypassed because the repo has
+  no visible `.github/workflows/`, because prior PRs show no bot
+  activity, because the repo is personal or a fork, or because the
+  only PR comment is the orchestrator's own `/code-review` post.
+  The only legitimate skip is `no_wait_first_iteration` (set by
+  `pr-followup` or `--no-wait`). See
+  `pr-loop-lib/steps/01-wait-cycle.md` "Mode S".
 
 ## Security
 

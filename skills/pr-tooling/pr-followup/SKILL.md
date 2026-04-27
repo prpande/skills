@@ -7,7 +7,7 @@ description: >
   iteration. Use when the user says "follow up on the PR", "new comments
   came in", "address the latest review feedback", "/pr-followup", or similar.
 argument-hint: "[pr-number] [iteration-cap]"
-allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, ScheduleWakeup, AskUserQuestion
+allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, ScheduleWakeup, AskUserQuestion, mcp__github__subscribe_pr_activity, mcp__github__unsubscribe_pr_activity
 ---
 
 # pr-followup
@@ -33,16 +33,20 @@ Optional positional arguments:
   default 10.
 
 Flags:
-- `--wait <minutes>` — override loop wait delay. **Floor: 10 minutes.**
-  Values less than 10 are clamped up to 10 with a warning log event;
-  the skill never waits less than 10 minutes between iterations (see
-  `pr-loop-lib/steps/01-wait-cycle.md` "Minimum wait"). Applies to
-  second-iteration-onwards even when `--no-wait` / the `pr-followup`
-  default `no_wait_first_iteration = true` skipped the first wait.
+- `--wait <minutes>` — override the fallback poll delay (default 10
+  minutes). **Floor: 1 minute.** Values less than 1 minute are clamped
+  to 1 with a warning log event. Applies to second-iteration-onwards
+  even when `--no-wait` / the `pr-followup` default
+  `no_wait_first_iteration = true` skipped the first wait. With an
+  active subscription the loop normally wakes on real activity rather
+  than waiting for the fallback (see
+  `pr-loop-lib/steps/01-wait-cycle.md` "Mode W").
 - `--dry-run` — same semantics as pr-autopilot.
 - `--no-wait` — default TRUE for pr-followup (comments are presumed
-  already visible). Skips ONLY the first-iteration wait; the floor
-  still applies to every subsequent iteration.
+  already visible). Skips ONLY the first-iteration wait (Mode S in
+  step 01). Subsequent iterations use the normal webhook-driven wait
+  (GitHub) or polling wait (AzDO); `--wait` controls the
+  fallback/polling timeout for those iterations.
 
 ## Execution
 
