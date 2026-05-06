@@ -2,7 +2,39 @@
 
 Decide whether to start another iteration or exit to the CI gate.
 
-## Exit conditions (any one triggers exit)
+## Quiescence confirmation rule
+
+Soft-quiescent iterations (`quiescent-zero-actionable` and
+`quiescent-no-code-change`, items 1 and 2 in the Exit conditions list
+below) DO NOT exit the loop on their own. They increment a counter,
+emit a `quiescence_pending` log event, and route back to step 01 for
+another iteration. Only when **two consecutive** soft-quiescent
+iterations have occurred does the loop exit to step 09 with
+`loop_exit_reason = quiescent-confirmed`.
+
+The counter lives in `context.consecutive_quiescent_iterations`
+(default 0). Per `references/context-schema.md`:
+- Soft-quiescent iteration: `consecutive_quiescent_iterations += 1`,
+  `last_quiescence_reason = <the soft-quiescent reason>`. Either of the
+  two soft-quiescent reasons counts toward the same counter — a mixed
+  sequence (`quiescent-zero-actionable` then `quiescent-no-code-change`,
+  or vice versa) is two consecutive quiescent iterations.
+- Non-quiescent iteration (actionable items dispatched, code pushed):
+  `consecutive_quiescent_iterations = 0`,
+  `last_quiescence_reason = null`.
+- `iteration-cap` and `runaway-detected` (items 3 and 4) **bypass the
+  rule entirely** and exit immediately. If the iteration cap is hit on
+  what would have been a confirmation iteration, the exit reason is
+  `iteration-cap`, NOT `quiescent-confirmed` — never claim a
+  confirmation that did not happen. The counter and
+  `last_quiescence_reason` are left as they are (visible in the state
+  file for the report).
+
+The confirmation iteration always waits — `pr-followup`'s
+`no_wait_first_iteration` is reset to `false` after iteration 1 by step
+01, so this falls out of the existing flow without a special case.
+
+## Exit conditions (any one triggers exit, subject to the confirmation rule above)
 
 1. **Zero actionable items** in this iteration's step 03 output
    (`context.actionable == []`). Suspicious items do not block exit —
@@ -45,27 +77,62 @@ is the outer runaway bound.
 
 ## Recording the exit reason
 
-Set BOTH fields so the final report has a single authoritative source:
+`context.loop_exit_reason` is one of `quiescent-confirmed`,
+`iteration-cap`, or `runaway-detected` (per the schema rewrite in
+2026-05-06). It is set ONLY on actual loop exit:
 
-- `context.loop_exit_reason` — the fine-grained loop-level reason (one of
-  `quiescent-zero-actionable`, `quiescent-no-code-change`, `iteration-cap`,
-  `runaway-detected`).
-- `context.termination_reason` — the top-level termination label used by
-  step 11. When step 08 exits directly (cap / runaway), set this too so
-  the report is never missing the field:
-  - `loop_exit_reason == quiescent-*` → leave `termination_reason`
-    unset; step 09 will populate it (`ci-green` / `ci-timeout`) or step 10
-    will (`ci-pre-existing-failures` / `ci-reentry-cap`).
-  - `loop_exit_reason == iteration-cap` → set
-    `termination_reason = "iteration-cap"`.
-  - `loop_exit_reason == runaway-detected` → set
-    `termination_reason = "runaway-detected"`.
+- First soft-quiescent iteration (counter goes 0 → 1): do NOT set
+  `loop_exit_reason`; do set `last_quiescence_reason` to the
+  soft-quiescent reason; emit `quiescence_pending`; route back to
+  step 01.
+- Second consecutive soft-quiescent iteration (counter goes 1 → 2):
+  set `loop_exit_reason = "quiescent-confirmed"`; emit the existing
+  `quiescence` event; route to step 09. Leave `termination_reason`
+  unset — step 09 will populate it (`ci-green` / `ci-timeout`) or
+  step 10 will (`ci-pre-existing-failures` / `ci-reentry-cap`).
+- `iteration-cap`: set `loop_exit_reason = "iteration-cap"` and
+  `termination_reason = "iteration-cap"`.
+- `runaway-detected`: set `loop_exit_reason = "runaway-detected"` and
+  `termination_reason = "runaway-detected"`.
+
+`context.last_quiescence_reason` is the most recent soft-quiescent
+reason; carried for the report. It is set on each soft-quiescent
+iteration and cleared (set to `null`) on each non-quiescent iteration.
+On a `quiescent-confirmed` exit, it reflects the second iteration's
+reason.
 
 ## Routing
 
-- If exit reason is `quiescent-zero-actionable` OR `quiescent-no-code-change`
-  → proceed to step 09 (CI gate).
-- If exit reason is `iteration-cap` OR `runaway-detected` → skip step 09
-  and proceed directly to step 11 (final report). The user decides next
-  steps; do not gate on CI because the user may intend to abandon the
-  branch or investigate manually.
+Pseudocode (operator may follow the conditional ladder directly):
+
+```
+exit_reason = <one of: quiescent-zero-actionable | quiescent-no-code-change | iteration-cap | runaway-detected | none>
+
+if exit_reason in {iteration-cap, runaway-detected}:
+    set context.loop_exit_reason = exit_reason
+    set context.termination_reason = exit_reason
+    emit quiescence event {reason: exit_reason, loop_exit_reason: exit_reason, termination_reason: exit_reason}
+    proceed to step 11 (final report)
+
+elif exit_reason in {quiescent-zero-actionable, quiescent-no-code-change}:
+    context.consecutive_quiescent_iterations += 1
+    context.last_quiescence_reason = exit_reason
+    if context.consecutive_quiescent_iterations >= 2:
+        context.loop_exit_reason = "quiescent-confirmed"
+        emit quiescence event {reason: exit_reason, loop_exit_reason: "quiescent-confirmed", termination_reason: null}
+        proceed to step 09 (CI gate)
+    else:
+        emit quiescence_pending event {iteration: context.iteration, reason: exit_reason, next_wait_seconds: <300 or context.wait_override_minutes*60>}
+        route back to step 01 (next iteration)
+
+else:
+    # non-quiescent iteration: items dispatched and pushed; loop continues normally
+    context.consecutive_quiescent_iterations = 0
+    context.last_quiescence_reason = null
+    route back to step 01 (next iteration)
+```
+
+`iteration-cap` and `runaway-detected` skip step 09 and go directly to
+step 11 — the user decides next steps; do not gate on CI because the
+user may intend to abandon the branch or investigate manually.
+`quiescent-confirmed` proceeds through the CI gate as before.
