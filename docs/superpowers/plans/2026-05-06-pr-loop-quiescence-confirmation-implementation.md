@@ -839,11 +839,12 @@ Run from the worktree root:
 ```bash
 grep -nE 'loop_exit_reason' \
   skills/pr-tooling/pr-loop-lib/references/context-schema.md \
+  skills/pr-tooling/pr-loop-lib/references/invariants.md \
   skills/pr-tooling/pr-loop-lib/steps/08-quiescence-check.md \
   skills/pr-tooling/pr-loop-lib/steps/11-final-report.md
 ```
 
-Expected: every value written to `loop_exit_reason` in step 08's pseudocode is one of `quiescent-confirmed`, `iteration-cap`, `runaway-detected`. `11-final-report.md` should not name a `loop_exit_reason` value that was removed from the enum. (If step 11 references `loop_exit_reason` at all, sanity-check those mentions; the report's printed "Termination reason" is `termination_reason`, not `loop_exit_reason`, so no template change is expected — but the file may name the field in commentary.)
+Expected: every value written to `loop_exit_reason` in step 08's pseudocode is one of `quiescent-confirmed`, `iteration-cap`, `runaway-detected`. `references/invariants.md` predicates S08.1 and S08.3 must enumerate (or reference) only those three values — a stale "4 enum values" or `{quiescent-*}` wildcard in invariants is the failure mode this PR's preflight caught. `11-final-report.md` should not name a `loop_exit_reason` value that was removed from the enum. (If step 11 references `loop_exit_reason` at all, sanity-check those mentions; the report's printed "Termination reason" is `termination_reason`, not `loop_exit_reason`, so no template change is expected — but the file may name the field in commentary.)
 
 - [ ] **Step 4: Walk through the routing scenarios from the spec**
 
