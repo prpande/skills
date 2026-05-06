@@ -33,12 +33,17 @@ Optional positional arguments:
   default 10.
 
 Flags:
-- `--wait <minutes>` — override loop wait delay. **Floor: 10 minutes.**
-  Values less than 10 are clamped up to 10 with a warning log event;
-  the skill never waits less than 10 minutes between iterations (see
+- `--wait <minutes>` — override loop wait delay. **Floor: 5 minutes.**
+  Values less than 5 are clamped up to 5 with a warning log event;
+  the skill never waits less than 5 minutes between iterations (see
   `pr-loop-lib/steps/01-wait-cycle.md` "Minimum wait"). Applies to
   second-iteration-onwards even when `--no-wait` / the `pr-followup`
   default `no_wait_first_iteration = true` skipped the first wait.
+  The 5-minute floor is paired with step 08's two-consecutive-quiescent-
+  iteration exit rule, which together preserve the ~10-minute wall-clock
+  window for late-arriving reviewer-bot comments — a quiet first
+  iteration loops back through step 01 for another wait before the loop
+  is allowed to exit.
 - `--dry-run` — same semantics as pr-autopilot.
 - `--no-wait` — default TRUE for pr-followup (comments are presumed
   already visible). Skips ONLY the first-iteration wait; the floor
