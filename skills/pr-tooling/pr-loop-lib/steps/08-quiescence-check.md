@@ -138,7 +138,7 @@ elif exit_reason in {quiescent-zero-actionable, quiescent-no-code-change}:
         emit quiescence event {reason: exit_reason, loop_exit_reason: "quiescent-confirmed", termination_reason: null}
         proceed to step 09 (CI gate)
     else:
-        emit quiescence_pending event {iteration: context.iteration, reason: exit_reason, next_wait_seconds: <300 or context.wait_override_minutes*60>}
+        emit quiescence_pending event {iteration: context.iteration, reason: exit_reason, next_wait_seconds: max(300, (context.wait_override_minutes or 5) * 60)}  // matches step 01's `delay_seconds` computation; sub-floor `--wait` values are clamped to 300
         route back to step 01 (next iteration)
 
 else:

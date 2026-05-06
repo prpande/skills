@@ -135,16 +135,23 @@ a known footgun: reviewer bots can post with arbitrary latency within
 that window. The two protections are paired, not independent.
 
 **Required procedure:**
-1. Record the start timestamp (UTC) before sleeping.
-2. Sleep (or suspend via `ScheduleWakeup`) until at least 300 s have
-   elapsed.
-3. Verify elapsed time >= 300 s before invoking step 02.
-4. Log a `wait_cycle` event with
+1. Compute the same `delay_seconds` the `ScheduleWakeup` path uses (see
+   the "Behavior" section above): `max(300, (context.wait_override_minutes
+   or 5) * 60)`. This honors `--wait N` for `N > 5` (e.g., `--wait 60` →
+   3600 s) while still applying the 300 s floor when the user passed a
+   sub-floor value or no override at all. Manual runs MUST use the same
+   `delay_seconds` as the automated path, otherwise manual and
+   `ScheduleWakeup`-driven runs would behave differently.
+2. Record the start timestamp (UTC) before sleeping.
+3. Sleep (or suspend via `ScheduleWakeup`) until at least `delay_seconds`
+   have elapsed.
+4. Verify elapsed time >= `delay_seconds` before invoking step 02.
+5. Log a `wait_cycle` event with
    `{iteration, start_ts, end_ts, elapsed_seconds}`.
 
 The elapsed-time check is the authoritative gate — a manual
-`ScheduleWakeup` with `delaySeconds < 300` or a no-op sleep is a
-skill violation regardless of how confident the operator is that
+`ScheduleWakeup` with `delaySeconds < delay_seconds` or a no-op sleep is
+a skill violation regardless of how confident the operator is that
 "nothing will arrive in that window."
 
 **Never rationalize skipping the wait on grounds like "no CI

@@ -110,7 +110,7 @@ equivalent predicates live in `P02.*`.
 
 | # | Predicate |
 |---|---|
-| S08.1 | `loop_exit_reason` is set to exactly one of the 3 enum values: `quiescent-confirmed`, `iteration-cap`, `runaway-detected` (per the `loop_exit_reason` rewrite in `2026-05-06-pr-loop-quiescence-confirmation-design.md`; the soft-quiescent values `quiescent-zero-actionable` and `quiescent-no-code-change` no longer settle on `loop_exit_reason` — they are recorded on `last_quiescence_reason` and the loop continues to the confirmation iteration) |
+| S08.1 | The invariant fires **only on actual loop exit** — i.e., when step 08 routes to step 09 or step 11. On a first soft-quiescent iteration (counter goes 0 → 1, `quiescence_pending` emitted, route back to step 01), `loop_exit_reason` is left **unset** by design and S08.1 does not apply. On actual loop exit, `loop_exit_reason` is set to exactly one of the 3 enum values: `quiescent-confirmed`, `iteration-cap`, `runaway-detected` (per the `loop_exit_reason` rewrite in `2026-05-06-pr-loop-quiescence-confirmation-design.md`; the soft-quiescent values `quiescent-zero-actionable` and `quiescent-no-code-change` no longer settle on `loop_exit_reason` — they are recorded on `last_quiescence_reason` and the loop continues to the confirmation iteration) |
 | S08.2 | If `loop_exit_reason` ∈ {`iteration-cap`, `runaway-detected`}, `termination_reason` is also set (to the matching value) |
 | S08.3 | If `loop_exit_reason == "quiescent-confirmed"`, routing goes to step 09 (not step 11 directly) |
 
