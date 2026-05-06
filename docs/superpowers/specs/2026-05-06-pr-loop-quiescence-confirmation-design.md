@@ -107,6 +107,7 @@ else:
 - `skills/pr-tooling/pr-followup/SKILL.md` — update the `--wait` flag description (floor 5, default 5); update the "default 10" prose; mention that quiescence now requires a confirming iteration so users understand why a quiet first iteration doesn't immediately exit.
 - `skills/pr-tooling/pr-autopilot/SKILL.md` — same updates: the `--wait` flag block, the "Hard rules" section's reference to the 10-minute wait, and any other 10-min/600-s callouts. The implementation should grep the file for the strings `10 minute`, `10-minute`, `600`, and re-evaluate each hit.
 - `skills/pr-tooling/pr-loop-lib/steps/11-final-report.md` — no template change. The report's "Termination reason" enum is `termination_reason`, not `loop_exit_reason`, so `quiescent-confirmed` does not surface in the printed termination line. Step 09/10 still set `termination_reason` (`ci-green`/`ci-timeout`/`ci-pre-existing-failures`/`ci-reentry-cap`) afterward. If the report should mention the number of confirming iterations, that is a follow-up; not in scope here.
+- `skills/pr-tooling/pr-loop-lib/references/invariants.md` — rewrite S08.1 to enumerate the 3-value enum (`quiescent-confirmed`, `iteration-cap`, `runaway-detected`) explicitly instead of the now-stale "4 enum values" wording, and replace S08.3's `{quiescent-*}` wildcard with the literal `quiescent-confirmed` since the wildcard would otherwise match removed enum members. Touched in this PR.
 
 ### Edge cases
 
@@ -136,7 +137,7 @@ To be expanded in the implementation plan, but the spec asserts the following mu
 4. `pr-followup --no-wait` + immediately quiescent first iteration: iteration 1 fetches immediately and is quiescent; iteration 2 waits the full 5 min, also quiescent; exits with `quiescent-confirmed`.
 5. Mixed soft-quiescent reasons: iteration N exits `quiescent-zero-actionable` (counter=1), iteration N+1 exits `quiescent-no-code-change` (counter=2) → exits with `quiescent-confirmed`. Confirms "either reason counts."
 6. `--wait 3` (under floor): clamped to 5; `wait_clamped` event fires; loop proceeds normally with two 5-min legs.
-7. `runaway-detected` exit: ignores the counter; exits immediately even if the counter happens to be 1 from a prior iteration (which can happen if the prior iteration was quiescent and the current one is the runaway exit on a previously-fixed comment that re-appeared).
+7. `runaway-detected` exit: ignores the counter; exits immediately. The runaway predicate (a comment addressed in 2 consecutive cycles that re-appears in `actionable`) implies the prior two cycles were non-quiescent and reset the counter to 0, so at the moment runaway fires `consecutive_quiescent_iterations` is 0 — the test asserts the counter and `last_quiescence_reason` are left untouched on runaway exit (visible in the report) and that `loop_exit_reason = runaway-detected` is recorded regardless of any prior-state values.
 
 ## Open questions
 

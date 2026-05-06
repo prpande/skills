@@ -75,6 +75,16 @@ classify) triggers a re-entry, the iteration counter resets to 1. The CI
 re-entry counter (max 3, tracked separately in `context.ci_reentry_count`)
 is the outer runaway bound.
 
+The confirmation counter is also scoped per comment-loop entry. CI
+re-entry from step 10 MUST reset
+`context.consecutive_quiescent_iterations = 0` and
+`context.last_quiescence_reason = null` alongside the iteration counter.
+Without this, a counter value carried over from the previous loop entry
+(e.g., 1 from a soft-quiescent iteration that preceded the
+`quiescent-confirmed` exit) would let a single quiescent iteration in
+the new entry trip a premature `quiescent-confirmed` exit. Step 10's
+re-entry preamble is the canonical reset site.
+
 ## Recording the exit reason
 
 `context.loop_exit_reason` is one of `quiescent-confirmed`,
@@ -94,6 +104,12 @@ is the outer runaway bound.
   `termination_reason = "iteration-cap"`.
 - `runaway-detected`: set `loop_exit_reason = "runaway-detected"` and
   `termination_reason = "runaway-detected"`.
+
+The `quiescence` log event (per `references/log-format.md`) fires on
+**every** loop exit, including `iteration-cap` and `runaway-detected` —
+see the routing pseudocode below for the exact emit shape. The first
+soft-quiescent iteration emits the separate `quiescence_pending` event
+instead and does NOT emit `quiescence`, because no exit occurs.
 
 `context.last_quiescence_reason` is the most recent soft-quiescent
 reason; carried for the report. It is set on each soft-quiescent
