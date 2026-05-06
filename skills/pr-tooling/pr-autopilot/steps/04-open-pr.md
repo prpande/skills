@@ -135,7 +135,7 @@ These seed the loop library.
 Print:
 ```
 PR opened: <url>
-Entering comment loop. Next fetch in 10 minutes.
+Entering comment loop. Next fetch in 5 minutes (loop exits after two consecutive quiescent iterations).
 ```
 
 Then hand off to `pr-loop-lib/steps/01-wait-cycle.md` (the wait is on —
