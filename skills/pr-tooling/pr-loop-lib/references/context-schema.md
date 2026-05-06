@@ -45,7 +45,7 @@ Required fields are marked as such.
 | `iteration` | integer | default `0` | Current loop iteration (1-indexed once loop starts) |
 | `user_iteration_cap` | integer | default `10` | Cap from skill argument |
 | `no_wait_first_iteration` | boolean | default `false` | Set by pr-followup |
-| `wait_override_minutes` | integer or null | no | From `--wait N`. Interpreted as `max(10, N)` by `pr-loop-lib/steps/01-wait-cycle.md` — the 10-minute floor applies to the *effective* delay, not the raw user input. Values below 10 are accepted at parse time but clamped up in step 01 with a warning log event. |
+| `wait_override_minutes` | integer or null | no | From `--wait N`. Interpreted as `max(5, N)` by `pr-loop-lib/steps/01-wait-cycle.md` — the 5-minute floor applies to the *effective* delay, not the raw user input. Values below 5 are accepted at parse time but clamped up in step 01 with a warning log event. The floor's reduction from 10 to 5 minutes is paired with the two-consecutive-quiescent-iteration exit rule in step 08, which together preserve the original ~10-minute wall-clock window for late-arriving reviewer-bot comments. |
 | `last_push_timestamp` | string (ISO-8601) or null | no | Committer timestamp of most recent push |
 | `last_handled_timestamp` | string (ISO-8601) or null | no | Set by step 08 after suspicious-only iterations |
 | `last_push_sha` | string (hex) or null | no | HEAD SHA after most recent push |
@@ -58,6 +58,8 @@ Required fields are marked as such.
 | `needs_human_items` | array of objects | default `[]` | Items flagged for user attention |
 | `ui_deferred_items` | array of objects | default `[]` | Items the fixer judged to be UI / design / copy changes; deferred to end-of-run user approval. Each entry: `{feedback_id, thread_id?, path?, line?, author, body, proposal, reply_text}`. Step 11 prompts the user and may re-enter step 04 scoped to approved items. |
 | `ui_deferred_actionable` | array of objects | default `[]` | Scoped overlay written by step 11 before re-dispatching approved `ui_deferred_items`. During that one step-04 invocation, the dispatcher reads its actionable list from this field in place of `context.actionable`. Never replaces `context.actionable`; the persisted top-level `actionable` is left unchanged. Same shape as the individual items in `context.actionable`. |
+| `consecutive_quiescent_iterations` | integer | default `0` | Incremented on each soft-quiescent iteration (`quiescent-zero-actionable` or `quiescent-no-code-change`). Reset to `0` on any non-quiescent iteration outcome. Read by step 08 to decide between routing back to step 01 (counter == 1) or onward to step 09 (counter >= 2). |
+| `last_quiescence_reason` | enum or null | default `null` | The most recent soft-quiescent reason; one of `quiescent-zero-actionable` \| `quiescent-no-code-change`. Set on each soft-quiescent iteration (in lockstep with `consecutive_quiescent_iterations` increment). Cleared (set to `null`) when the counter resets. Carried for the report and for log readability. |
 | `sanity_check_passed` | object | default `{}` | `{ <iteration>: <bool> }` |
 
 ## CI gate
@@ -71,7 +73,7 @@ Required fields are marked as such.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `loop_exit_reason` | enum or null | no | `quiescent-zero-actionable` \| `quiescent-no-code-change` \| `iteration-cap` \| `runaway-detected` |
+| `loop_exit_reason` | enum or null | no | `quiescent-confirmed` \| `iteration-cap` \| `runaway-detected`. The two old soft-quiescent values (`quiescent-zero-actionable`, `quiescent-no-code-change`) were removed in 2026-05-06; they no longer cause a loop exit on their own — they are recorded on `last_quiescence_reason` (above) on the first quiescent iteration, and the loop continues. Only the second consecutive quiescent iteration writes `loop_exit_reason = quiescent-confirmed` and exits. State files written by older skill versions may contain the removed values; that is expected — schema validation runs at write time, not on every read. |
 | `termination_reason` | enum or null | no | `ci-green` \| `ci-red` \| `ci-skipped` \| `ci-timeout` \| `ci-reentry-cap` \| `ci-pre-existing-failures` \| `iteration-cap` \| `runaway-detected` \| `user-intervention-needed` |
 | `code_review_invoked` | boolean | default `false` | True after `/code-review` fires. Under β this means "captured locally and dispatched" — NOT "posted as a PR comment". |
 | `code_review_invoked_at` | string (ISO-8601) or null | no | When `/code-review` was dispatched |
