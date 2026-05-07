@@ -2,6 +2,45 @@
 
 All loop-library steps call into this file when `context.platform == "github"`.
 
+## Webhook activity subscription
+
+Used by `pr-loop-lib/steps/01-wait-cycle.md` (subscribe) and
+`pr-loop-lib/steps/11-final-report.md` (unsubscribe).
+
+### Subscribe (step 01, Mode W)
+
+```
+mcp__github__subscribe_pr_activity(
+  owner      = <owner>,
+  repo       = <repo>,
+  pullNumber = <pr_number>
+)
+```
+
+Idempotent. Delivers `<github-webhook-activity>` messages into the
+current conversation whenever a review comment, issue comment, review
+submission, or CI check event occurs on the PR. The session does not
+need to poll — events arrive in-band and trigger Mode E in step 01.
+
+### Unsubscribe (step 11, before lock release)
+
+```
+mcp__github__unsubscribe_pr_activity(
+  owner      = <owner>,
+  repo       = <repo>,
+  pullNumber = <pr_number>
+)
+```
+
+Idempotent. Stops further webhook deliveries for this PR. Called once
+the skill terminates so stale events do not arrive into a subsequent
+unrelated session.
+
+Use the "Owner / repo extraction" snippet below to populate `$OWNER`
+and `$REPO` before calling either tool.
+
+---
+
 ## Detection
 
 ```bash

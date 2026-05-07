@@ -1,4 +1,4 @@
-# Loop step 01 — Wait cycle
+# Loop step 01 — Wait cycle (event-driven)
 
 Delays the next comment fetch to give reviewer bots time to post. Uses
 `ScheduleWakeup` with a default delay of 300 seconds (5 minutes). The
@@ -7,7 +7,7 @@ comments is now provided by step 08's two-consecutive-quiescent-iteration
 exit rule (5 + 5 ≈ the original 10-minute window) rather than a single
 10-minute wait per iteration.
 
-## Minimum wait (floor)
+## Entry modes
 
 **Hard rule: `delay_seconds` must be >= 300.** Reviewer bots (Copilot,
 SonarCloud, mergewatch, `/code-review` after-action rounds) routinely
@@ -31,32 +31,32 @@ post in the first window.
 
 ## Inputs from context
 
-- `context.iteration` — current iteration number (1-indexed)
-- `context.no_wait_first_iteration` — bool, set by `pr-followup`
-- `context.wait_override_minutes` — optional int from `--wait N` argument
-- `context.pr_number`
+| Field | Used for |
+|---|---|
+| `context.platform` | Selects GitHub webhook path vs. AzDO polling path |
+| `context.iteration` | Current iteration (1-indexed once loop starts) |
+| `context.no_wait_first_iteration` | Mode S skip flag |
+| `context.wait_override_minutes` | Fallback/polling delay override |
+| `context.pr_number` | PR to subscribe to (GitHub path) |
+| `context.wait_done_for_iteration` | Wakeup re-entry detection |
+| `context.webhook_subscribed` | Informational; subscription is idempotent regardless |
 
-## No assumption-based skip
+---
 
-**The wait is MANDATORY on every iteration unless an explicit flag set
-by the user or by `pr-followup` says otherwise.** The only two skip
-paths are:
-- `context.no_wait_first_iteration == true` (set by `pr-followup`, or
-  by the user's `--no-wait` flag on `pr-autopilot`), AND
-- `context.iteration == 1`.
+## Why the 10-minute floor is gone (GitHub only)
 
-No other condition — no matter how persuasive — justifies shortening
-or skipping the wait. In particular, the orchestrator **MUST NOT**
-skip the wait because:
+The former step used a hard 600-second `ScheduleWakeup` floor to give
+reviewer bots a window to post follow-up findings. That floor was a
+polling-era approximation: because the skill fetched on a fixed timer,
+a shorter wait observably missed second-batch comments.
 
-- The repo has no `.github/workflows/` directory or no visible CI.
-- Prior PRs on the repo show no reviewer-bot activity.
-- The repo is personal, a fork, a sandbox, or "looks bot-free".
-- The only current comment on the PR is the orchestrator's own
-  `/code-review` post.
-- The session is interactive and the user "is sitting right there".
-- The loop "obviously has nothing to do" — triage would be
-  degenerate.
+With webhook subscriptions the loop wakes on the actual event, not on
+a timer. A first bot comment at 2 minutes wakes the loop, which
+fetches all comments at that moment (including any that arrived in the
+seconds before the fetch). If a second bot posts at 8 minutes, that
+event triggers the next iteration. There is no race because step 02
+always does a full fetch of all current comments — it is not
+incremental.
 
 These signals are **not reliable evidence of the absence of async
 reviewers.** GitHub Copilot code review, org-level review policies,
@@ -66,9 +66,8 @@ repo tree until a comment actually lands. The whole point of the
 two-leg 5-minute waits (paired with step 08's confirmation rule) is
 to give them that window.
 
-If the orchestrator catches itself constructing a rationale like
-"this repo doesn't have bots, so I'll skip the wait" — that is the
-exact failure mode the floor prevents. Do the wait.
+The AzDO path retains the 10-minute floor unchanged since it remains
+a polling-only mechanism.
 
 The only correct way to bypass the wait is for the *user* to invoke
 `pr-followup` (which sets the flag because the user knows comments
@@ -164,5 +163,6 @@ not orchestrator inference.
 
 ## Exit
 
-The step does not "return" — `ScheduleWakeup` suspends the session.
-The loop continues at step 02 after the wakeup fires.
+- Mode S and Mode E proceed to step 02 inline (no suspension).
+- Mode W calls `ScheduleWakeup` and then stops. The loop continues
+  at step 02 after either a webhook event (GitHub) or the wakeup timer.

@@ -7,7 +7,7 @@ description: >
   iteration. Use when the user says "follow up on the PR", "new comments
   came in", "address the latest review feedback", "/pr-followup", or similar.
 argument-hint: "[pr-number] [iteration-cap]"
-allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, ScheduleWakeup, AskUserQuestion
+allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, ScheduleWakeup, AskUserQuestion, mcp__github__subscribe_pr_activity, mcp__github__unsubscribe_pr_activity
 ---
 
 # pr-followup
@@ -46,8 +46,10 @@ Flags:
   is allowed to exit.
 - `--dry-run` — same semantics as pr-autopilot.
 - `--no-wait` — default TRUE for pr-followup (comments are presumed
-  already visible). Skips ONLY the first-iteration wait; the floor
-  still applies to every subsequent iteration.
+  already visible). Skips ONLY the first-iteration wait (Mode S in
+  step 01). Subsequent iterations use the normal webhook-driven wait
+  (GitHub) or polling wait (AzDO); `--wait` controls the
+  fallback/polling timeout for those iterations.
 
 ## Execution
 
