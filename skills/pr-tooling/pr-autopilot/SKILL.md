@@ -9,7 +9,7 @@ description: >
   when the user says "publish the PR", "ship with autopilot", "run
   pr-autopilot", "/pr-autopilot", or similar.
 argument-hint: "[iteration-cap]"
-allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, ScheduleWakeup, AskUserQuestion, mcp__github__subscribe_pr_activity, mcp__github__unsubscribe_pr_activity
+allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, ScheduleWakeup, AskUserQuestion
 ---
 
 # pr-autopilot
