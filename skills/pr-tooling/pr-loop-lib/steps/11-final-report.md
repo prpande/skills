@@ -203,10 +203,79 @@ run), log a `ui_deferred_prompt_skipped` event with
 release. The ui-deferred items remain visible in the report and the
 state file; a subsequent `pr-followup` invocation can re-prompt.
 
+## User notification and artifact surfacing
+
+Runs after the report is printed and the UI-deferred approval phase
+(if any) completes, BEFORE lock release. An autopilot run spans
+multiple 5-minute waits plus a CI gate of up to 30 minutes — the user
+has very likely walked away by the time the loop terminates. These two
+host tools pull them back only at the true terminal moment.
+
+Both are claude-code host tools. On other hosts (`context.host_platform
+!= "claude-code"`), skip the matching call and log `notify_skipped` /
+`artifact_skipped` with `{reason: "host-unmapped"}`.
+
+### Push notification (terminal state)
+
+Fire exactly **one** `PushNotification` at step end, with a one-line
+message (< 200 chars, no markdown) led by the actionable outcome. Map
+`context.termination_reason` to the lead:
+
+| `termination_reason` | Message lead (human-friendly — these reach a phone lock screen, so do not paste the raw enum value) |
+|---|---|
+| `ci-green` | `PR #<N> green — autopilot done` |
+| `user-intervention-needed` | `PR #<N> needs you: <K> open thread(s)` (K = `len(context.needs_human_items)`) |
+| `ci-red` | `PR #<N> CI failed — needs a fix` |
+| `ci-pre-existing-failures` | `PR #<N> CI red, but the failures pre-date this branch` |
+| `ci-reentry-cap` | `PR #<N> CI still red after 3 fix attempts` |
+| `ci-timeout` | `PR #<N> CI still pending — gate timed out` |
+| `iteration-cap` | `PR #<N> stopped — hit the iteration cap` |
+| `runaway-detected` | `PR #<N> stopped — a comment kept re-appearing (runaway)` |
+| `ci-skipped` | `PR #<N> done (no CI configured)` |
+
+Append `· <K> awaiting approval` when `context.ui_deferred_items` is
+non-empty and the approval phase was skipped (non-interactive host).
+Always `status: "proactive"` — this is unsolicited and meant to reach
+the user's phone.
+
+```
+PushNotification(
+  message = "<mapped lead> — <pr_url>",
+  status  = "proactive",
+)
+```
+
+Log a `user_notified {termination_reason, message}` event. If the tool
+reports the push was not sent (Remote Control not connected), that is
+expected — do not retry, do not treat as an error.
+
+### Surface the review-summary artifact
+
+The internal review summary
+(`context.internal_review_summary_path`, default
+`<repo-root>/.pr-autopilot/pr-<N>-review-summary.md`) holds the
+preflight + `/code-review` findings that are deliberately **not** posted
+to the PR. Surface it so the user can read it without hunting the path:
+
+```
+SendUserFile(
+  files   = [context.internal_review_summary_path],
+  caption = "Internal review summary (local, not on the PR) for #<N>",
+  status  = "proactive",
+)
+```
+
+Only call when the file exists (it always does after step 02 created it,
+but guard with a `test -f` for the rare `pr-followup`-on-foreign-PR case
+where no preflight ran). On success log `artifact_sent {path}`; when the
+file is absent log `artifact_skipped {reason: "absent"}` and do not call
+the tool.
+
 ## Lock release
 
-After the UI-deferred approval phase completes (no-op when the list
-is empty), and as the final action of this step:
+After the UI-deferred approval phase AND the notification/artifact
+surfacing complete (both no-ops when their inputs are empty), and as the
+final action of this step:
 ```bash
 rm -rf "<repo-root>/.pr-autopilot/pr-<N>.lock"
 ```

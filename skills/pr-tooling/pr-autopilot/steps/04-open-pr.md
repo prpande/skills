@@ -7,7 +7,10 @@ the PR.
 
 Apply `pr-loop-lib/references/secret-scan-rules.md` to every file in
 `context.uncommitted` (filtered to "related" per step 01) plus every file
-in `context.spec_updates` + any file modified by step 02 fixer dispatches.
+in `context.spec_updates` + any file modified by step 02 fixer dispatches
++ every file in `context.simplify_files` (folded `/simplify` edits from
+step 01.5's fold path — scanned and staged **unconditionally**, never
+re-filtered for relatedness; they are related by construction).
 
 Any match → halt with the BLOCK message from the secret-scan reference.
 Do not stage, do not push.
@@ -20,6 +23,10 @@ Stage exactly the files:
   in)
 - Files modified by step 02 preflight fixers
 - Files modified by step 03 spec updates
+- `context.simplify_files` (folded `/simplify` edits from step 01.5,
+  staged unconditionally — these are simplify output over already-in-scope
+  changed code, so they bypass the relatedness re-filter; empty unless
+  step 01.5 took the fold path)
 
 ```bash
 git add <specific paths>

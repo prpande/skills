@@ -27,6 +27,17 @@ Required fields are marked as such.
 | `uncommitted` | array of strings | default `[]` | `git status --porcelain` paths |
 | `spec_candidates` | array of strings | default `[]` | Globbed spec/plan file paths |
 
+## Pre-review simplify (step 01.5) output
+
+`pr-autopilot` only. Written by `pr-autopilot/steps/01.5-simplify.md`
+before any internal review. Absent on `pr-followup` runs (which never
+run `/simplify`).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `simplify_outcome` | enum or null | default `null` | `committed` \| `folded` \| `no-changes` \| `rolled-back` \| `skipped`. Result of the pre-review `/simplify` pass; `null` when the step has not run (e.g. on `pr-followup`, which never runs it). `committed`: cleanup committed separately and `head_sha` advanced. `folded`: edits left in the tree to be committed by step 04 (uncommitted work overlapped). `skipped`: non-claude-code host or empty range. |
+| `simplify_files` | array of strings | default `[]` | Relative paths `/simplify` touched. On the fold path these are also merged into `uncommitted` so step 04 stages them. |
+
 ## Preflight (step 02) output
 
 | Field | Type | Required | Description |

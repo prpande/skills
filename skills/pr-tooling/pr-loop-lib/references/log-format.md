@@ -79,6 +79,15 @@ Rules:
 | `ui_deferred_touched_files` | `{feedback_id, files_changed}` — emitted by step 04's validation when a fixer return with `verdict == "ui-deferred"` arrived with a non-empty `files_changed`. The orchestrator rolls back and demotes the return to `needs-human`; this event is the audit trail for S04.8. |
 | `ui_deferred_decision` | `{feedback_id, decision}` — emitted by step 11's UI-deferred approval phase, one per item, `decision ∈ {apply, reject, skip}`. `apply` triggers a re-dispatch through step 04 with `UI_DEFERRAL_OVERRIDE=true`. |
 | `ui_deferred_prompt_skipped` | `{reason, count}` — emitted by step 11 when the approval prompt could not run (e.g., non-interactive host). `count` is `len(context.ui_deferred_items)` at the time the prompt would have fired. |
+| `simplify_invoked` | `{skipped: true, reason, host}` — emitted by `pr-autopilot/steps/01.5-simplify.md` **only on the skip paths** (`reason: "host-unmapped" \| "no-changed-code"`). This is deliberately a skip-only marker: when the `/simplify` pass *does* run, no `{skipped: false}` event is emitted — the run is signalled instead by exactly one of the run-and-outcome events below (`simplify_no_changes` / `simplify_committed` / `simplify_folded` / `simplify_rolled_back`). `host` is `context.host_platform`. |
+| `simplify_no_changes` | `{}` — `/simplify` ran but produced no edits; step proceeds to step 02 with `head_sha` unchanged. |
+| `simplify_committed` | `{sha, files}` — separate-commit path: cleanup committed on its own; `sha` is the new HEAD, `files` the staged paths. `head_sha` advanced. |
+| `simplify_folded` | `{files, reason}` — fold path: edits left in the working tree (merged into `context.uncommitted`) for step 04 to commit with the related work. `reason` is `"intermingled-with-uncommitted-work"`. |
+| `simplify_rolled_back` | `{reason}` — separate-commit path only: local verify failed twice, simplify's edits reverted via scoped `git checkout`; PR proceeds un-simplified. `reason` is `"verify-failed-twice"`. (The fold path never auto-reverts; it HALTs instead, surfaced as an `error` event.) |
+| `user_notified` | `{termination_reason, message}` — emitted by step 11 after firing the single terminal `PushNotification`. `message` is the < 200-char body sent. Fires regardless of whether the push reached the user's phone (Remote Control may be disconnected). |
+| `notify_skipped` | `{reason}` — emitted by step 11 when the push is not attempted. `reason` is `"host-unmapped"` (non-claude-code host). |
+| `artifact_sent` | `{path}` — emitted by step 11 after `SendUserFile` surfaces the internal review-summary file. |
+| `artifact_skipped` | `{reason}` — emitted by step 11 when the review-summary file is not surfaced. `reason` is `"host-unmapped"` or `"absent"` (no preflight ran, e.g. `pr-followup` on a foreign PR). |
 
 ## Truncation
 

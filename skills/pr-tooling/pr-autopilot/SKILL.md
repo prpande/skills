@@ -2,14 +2,16 @@
 name: pr-autopilot
 description: >
   Autonomously publish a PR and drive it through the reviewer-bot feedback
-  loop until CI is green. Performs preflight self-review, spec/plan
-  alignment, template-filled PR open, then loops on reviewer comments
+  loop until CI is green. On Claude Code, first runs a quality-only
+  /simplify pass (host-gated; may be skipped); then preflight
+  self-review, spec/plan alignment, template-filled PR open, then loops
+  on reviewer comments
   (addressing them with parallel fixer subagents, build+test sanity
   checking before every push) until quiescent, then final CI gate. Use
   when the user says "publish the PR", "ship with autopilot", "run
   pr-autopilot", "/pr-autopilot", or similar.
 argument-hint: "[iteration-cap]"
-allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, ScheduleWakeup, AskUserQuestion
+allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, Skill, ScheduleWakeup, AskUserQuestion, PushNotification, SendUserFile
 ---
 
 # pr-autopilot
@@ -57,18 +59,25 @@ Flags supported (parse from the raw invocation string):
 Phase 1 — Pre-publish verification
 
 1. Perform step 01 per `steps/01-detect-context.md`. If it HALTs, stop.
-2. Perform step 02 per `steps/02-preflight-review.md`. Fix Critical +
+2. Perform step 01.5 per `steps/01.5-simplify.md` — the quality-only
+   `/simplify` pass, run **before** any internal review so step 02 and
+   step 04g critique already-clean code. On claude-code it commits the
+   cleanup separately and advances `context.head_sha`; on other hosts it
+   is skipped (logged). May HALT only in the fold path's
+   verify-fails-twice case (uncommitted work intermingled). `--dry-run`
+   suppresses the commit.
+3. Perform step 02 per `steps/02-preflight-review.md`. Fix Critical +
    Important findings in place, record Minor for the PR body.
-3. Perform step 03 per `steps/03-spec-alignment.md`. If it HALTs
+4. Perform step 03 per `steps/03-spec-alignment.md`. If it HALTs
    (`context.blocked_drifts` non-empty), stop and present the diagnostic.
 
 Phase 2 — Open PR
 
-4. Perform step 04 per `steps/04-open-pr.md`. Halts on secret-scan match.
+5. Perform step 04 per `steps/04-open-pr.md`. Halts on secret-scan match.
 
 Phase 3 — Shared comment loop
 
-5. Enter `~/.claude/skills/pr-loop-lib/steps/01-wait-cycle.md`.
+6. Enter `~/.claude/skills/pr-loop-lib/steps/01-wait-cycle.md`.
    Iterate through `02-fetch-comments.md` → `03-triage.md` →
    `04-dispatch-fixers.md` → `04.5-local-verify.md` →
    `06-commit-push.md` → `07-reply-resolve.md` → `08-quiescence-check.md`
@@ -81,13 +90,13 @@ Phase 3 — Shared comment loop
 
 Phase 4 — CI gate (if step 08 exited quiescent, not on cap/runaway)
 
-6. Perform `~/.claude/skills/pr-loop-lib/steps/09-ci-gate.md`.
-7. If red, perform `~/.claude/skills/pr-loop-lib/steps/10-ci-failure-classify.md`.
-   Up to 3 re-entries of Phase 3. On cap, proceed to step 8.
+7. Perform `~/.claude/skills/pr-loop-lib/steps/09-ci-gate.md`.
+8. If red, perform `~/.claude/skills/pr-loop-lib/steps/10-ci-failure-classify.md`.
+   Up to 3 re-entries of Phase 3. On cap, proceed to step 9.
 
 Phase 5 — Report (and optional UI-deferred approval)
 
-8. Perform `~/.claude/skills/pr-loop-lib/steps/11-final-report.md`.
+9. Perform `~/.claude/skills/pr-loop-lib/steps/11-final-report.md`.
    If `context.ui_deferred_items` is non-empty, step 11 also runs an
    interactive approval phase (per-item apply / reject / skip via
    `AskUserQuestion`). Approved items re-enter step 04 with
@@ -105,7 +114,8 @@ Phase 5 — Report (and optional UI-deferred approval)
   signing (`-c commit.gpgsign=false`, `--no-gpg-sign`). Commit signing
   follows the user's local git config; failures surface to the user
   rather than being silenced.
-- Never commit secrets. Secret scan is BLOCKING at steps 04 and 06.
+- Never commit secrets. Secret scan is BLOCKING at steps 01.5
+  (separate-commit path), 04 and 06.
 - Destructive git ops (reset --hard, clean -fd, push --force) are never
   used by this skill.
 - Rollback in step 04.5 uses `git checkout -- <file>` scoped to the current

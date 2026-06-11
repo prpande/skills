@@ -7,14 +7,18 @@ description: >
   iteration. Use when the user says "follow up on the PR", "new comments
   came in", "address the latest review feedback", "/pr-followup", or similar.
 argument-hint: "[pr-number] [iteration-cap]"
-allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, ScheduleWakeup, AskUserQuestion
+allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, ScheduleWakeup, AskUserQuestion, PushNotification, SendUserFile
 ---
 
 # pr-followup
 
 Thin re-entry wrapper around the shared `pr-loop-lib`. No pre-publish
-verification, no spec-alignment re-run — the PR already exists and was
-verified once.
+verification, no spec-alignment re-run, and no `/simplify` pass — the PR
+already exists and was verified at publish time. On Claude Code it also
+went through pr-autopilot's step 01.5 `/simplify` pass at publish (which
+may itself have been skipped on a non-claude-code host or rolled back on
+verify failure). Either way, `/simplify` is a pre-publish quality gate,
+not a per-followup one.
 
 ## Preconditions
 
