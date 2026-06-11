@@ -35,7 +35,7 @@ run `/simplify`).
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `simplify_outcome` | enum or null | no | `committed` \| `folded` \| `no-changes` \| `rolled-back` \| `skipped`. Result of the pre-review `/simplify` pass. `committed`: cleanup committed separately and `head_sha` advanced. `folded`: edits left in the tree to be committed by step 04 (uncommitted work overlapped). `skipped`: non-claude-code host or empty range. |
+| `simplify_outcome` | enum or null | default `null` | `committed` \| `folded` \| `no-changes` \| `rolled-back` \| `skipped`. Result of the pre-review `/simplify` pass; `null` when the step has not run (e.g. on `pr-followup`, which never runs it). `committed`: cleanup committed separately and `head_sha` advanced. `folded`: edits left in the tree to be committed by step 04 (uncommitted work overlapped). `skipped`: non-claude-code host or empty range. |
 | `simplify_files` | array of strings | default `[]` | Relative paths `/simplify` touched. On the fold path these are also merged into `uncommitted` so step 04 stages them. |
 
 ## Preflight (step 02) output

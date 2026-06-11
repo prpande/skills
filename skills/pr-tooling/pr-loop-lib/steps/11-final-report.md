@@ -221,13 +221,16 @@ Fire exactly **one** `PushNotification` at step end, with a one-line
 message (< 200 chars, no markdown) led by the actionable outcome. Map
 `context.termination_reason` to the lead:
 
-| `termination_reason` | Message lead |
+| `termination_reason` | Message lead (human-friendly — these reach a phone lock screen, so do not paste the raw enum value) |
 |---|---|
 | `ci-green` | `PR #<N> green — autopilot done` |
 | `user-intervention-needed` | `PR #<N> needs you: <K> open thread(s)` (K = `len(context.needs_human_items)`) |
-| `ci-red` / `ci-pre-existing-failures` / `ci-reentry-cap` | `PR #<N> CI red — <reason>` |
+| `ci-red` | `PR #<N> CI failed — needs a fix` |
+| `ci-pre-existing-failures` | `PR #<N> CI red, but the failures pre-date this branch` |
+| `ci-reentry-cap` | `PR #<N> CI still red after 3 fix attempts` |
 | `ci-timeout` | `PR #<N> CI still pending — gate timed out` |
-| `iteration-cap` / `runaway-detected` | `PR #<N> stopped: <reason>` |
+| `iteration-cap` | `PR #<N> stopped — hit the iteration cap` |
+| `runaway-detected` | `PR #<N> stopped — a comment kept re-appearing (runaway)` |
 | `ci-skipped` | `PR #<N> done (no CI configured)` |
 
 Append `· <K> awaiting approval` when `context.ui_deferred_items` is
