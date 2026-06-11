@@ -5,6 +5,15 @@ fan-out) was removed in favor of invoking the host's native code-review
 skill post-open (see step 04 sub-step 4g). Post-open review output
 flows back through the comment loop.
 
+**Reviews the post-`/simplify` head.** Step 01.5 runs the quality-only
+`/simplify` pass and (on claude-code, committed case) advances
+`context.head_sha` to the cleanup commit. The `{{DIFF}}` below therefore
+reflects already-simplified code, so the reviewer spends its budget on
+correctness rather than complexity churn `/simplify` has already
+removed. When step 01.5 was skipped, folded, or rolled back,
+`context.head_sha` is whatever it was at step 01 — the diff is still
+correct, just not pre-simplified.
+
 ## Subagent invocation
 
 Follow this procedure:
