@@ -14,9 +14,11 @@ allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, ScheduleWakeup, AskUs
 
 Thin re-entry wrapper around the shared `pr-loop-lib`. No pre-publish
 verification, no spec-alignment re-run, and no `/simplify` pass — the PR
-already exists and was verified and simplified once at publish time
-(pr-autopilot step 01.5). `/simplify` is a pre-publish quality gate, not
-a per-followup one.
+already exists and was verified at publish time. On Claude Code it also
+went through pr-autopilot's step 01.5 `/simplify` pass at publish (which
+may itself have been skipped on a non-claude-code host or rolled back on
+verify failure). Either way, `/simplify` is a pre-publish quality gate,
+not a per-followup one.
 
 ## Preconditions
 

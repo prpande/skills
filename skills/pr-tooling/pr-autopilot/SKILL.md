@@ -2,9 +2,10 @@
 name: pr-autopilot
 description: >
   Autonomously publish a PR and drive it through the reviewer-bot feedback
-  loop until CI is green. Runs a quality-only /simplify pass, then
-  preflight self-review, spec/plan alignment, template-filled PR open,
-  then loops on reviewer comments
+  loop until CI is green. On Claude Code, first runs a quality-only
+  /simplify pass (host-gated; may be skipped); then preflight
+  self-review, spec/plan alignment, template-filled PR open, then loops
+  on reviewer comments
   (addressing them with parallel fixer subagents, build+test sanity
   checking before every push) until quiescent, then final CI gate. Use
   when the user says "publish the PR", "ship with autopilot", "run
