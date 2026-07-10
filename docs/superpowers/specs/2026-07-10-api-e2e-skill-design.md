@@ -434,3 +434,6 @@ Neither criterion persists artifacts beyond the report's durable destination.
   the acceptance replay cannot verify the path deterministically. Decide:
   a fixed threshold in the skill text, or a per-run user choice at the
   interview. (scope-guardian, P2, confidence 75)
+  **Resolved (implementation plan, 2026-07-10):** fixed default in the
+  skill text — fan out when the phase-2 delta map contains ≥ 10
+  wire-observable deltas; the interview may override in either direction.
