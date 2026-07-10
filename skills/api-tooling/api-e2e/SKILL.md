@@ -16,8 +16,11 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion, WebF
 # api-e2e
 
 Orchestrator. Read each step file when its phase begins — do not preload
-them all. Run artifacts live under `{scratchpad}/api-e2e/`; create a task
-per phase for progress tracking.
+them all. Run artifacts live under `{scratchpad}/api-e2e/`. `{scratchpad}`
+is this session's private scratchpad/temp directory — never a repo path,
+never a shared temp dir. Resolve it to an absolute path once in phase 0 and
+substitute it in every command that mentions it. Create a task per phase for
+progress tracking.
 
 ## Doctrine (non-negotiable, applies to every phase)
 
@@ -38,9 +41,11 @@ per phase for progress tracking.
    contained and verify-live corrects it), ensemble diversity second
    (independent fresh runs are nondeterministic in different ways — many
    runs out-cover any curated matrix).
-3. **Method, zero environment facts.** This skill contains no service
-   names, URLs, tenant numbers, IDs, or quirks — the interview and the
-   repo head supply those per run.
+3. **Method, zero environment facts.** This skill contains no
+   target-environment service names, URLs, tenant numbers, IDs, or quirks —
+   the interview and the repo head supply those per run; generic vendor-tool
+   examples (`gh`, `az`, an MCP server name) that illustrate probing are
+   fine.
 4. **Never presume — interview.** Any missing capability, credential,
    permission, or fixture becomes a question to the user, including asking
    the user to create fixtures in domains not exposed to the run.
@@ -56,14 +61,14 @@ per phase for progress tracking.
 
 | # | Phase | File | Exit gate |
 |---|---|---|---|
-| 0 | Preflight | [steps/00-preflight.md](steps/00-preflight.md) | Capability table complete (tool or user-mediated fallback per need) |
-| 1 | Interview | [steps/01-interview.md](steps/01-interview.md) | Verified token per known domain; mode/target/permissions explicit |
-| 2 | Ground truth | [steps/02-ground-truth.md](steps/02-ground-truth.md) | Delta map, no-touch inventory, deploy model, fingerprint — all repo-head-traceable |
-| 3 | Environment gate | [steps/03-environment-gate.md](steps/03-environment-gate.md) | 3 consecutive fingerprint passes (rung-3: user-confirmed evidence, recorded) |
-| 4 | Matrix & scripting | [steps/04-matrix.md](steps/04-matrix.md) | Executed tier approved (all modes); fixture plan approved (when writes exist) |
-| 5 | Execution & triage | [steps/05-execute.md](steps/05-execute.md) | Zero undispositioned FAILs |
-| 6 | Report | [steps/06-report.md](steps/06-report.md) | Redacted report user-approved and delivered to the durable destination |
-| 7 | Cleanup | [steps/07-cleanup.md](steps/07-cleanup.md) | Cleanup verified by observation; sections handed to phase 6; method-improvement proposal presented if any |
+| 0 | Preflight | [`steps/00-preflight.md`](steps/00-preflight.md) | Capability table complete (tool or user-mediated fallback per need) |
+| 1 | Interview | [`steps/01-interview.md`](steps/01-interview.md) | Verified token per known domain; mode/target/permissions explicit |
+| 2 | Ground truth | [`steps/02-ground-truth.md`](steps/02-ground-truth.md) | Delta map, no-touch inventory, deploy model, fingerprint — all repo-head-traceable |
+| 3 | Environment gate | [`steps/03-environment-gate.md`](steps/03-environment-gate.md) | 3 consecutive fingerprint passes (rung-3: user-confirmed evidence, recorded) |
+| 4 | Matrix & scripting | [`steps/04-matrix.md`](steps/04-matrix.md) | Executed tier approved (all modes); fixture plan approved (when writes exist) |
+| 5 | Execution & triage | [`steps/05-execute.md`](steps/05-execute.md) | Zero undispositioned FAILs |
+| 6 | Report | [`steps/06-report.md`](steps/06-report.md) | Redacted report user-approved and delivered to the durable destination |
+| 7 | Cleanup | [`steps/07-cleanup.md`](steps/07-cleanup.md) | Cleanup verified by observation; sections handed to phase 6; method-improvement proposal presented if any |
 
 Phases run in order. Two sanctioned loop-backs: any phase may re-enter
 phase 1 for a newly discovered domain (token + permissions only), and

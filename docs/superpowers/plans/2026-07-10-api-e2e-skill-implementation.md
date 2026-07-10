@@ -69,6 +69,22 @@ docs/superpowers/specs/2026-07-10-api-e2e-skill-design.md (EDIT, Task 10 — rec
   first-segment branch silently changes resolution semantics repo-wide
   when a new skill directory temporarily lacks a direct `.md` — worth a
   separate hardening PR.
+- **Phase-7 gate de-circularized (5f529de):** delivery is phase 6's gate;
+  07-cleanup's gate is cleanup-verified + sections handed to phase 6. Spec
+  gate line aligned in this commit.
+- **Phase-4 fan-out rule added to 04-matrix.md (5f529de):** SKILL.md
+  promised it, the step file lacked it.
+- **Script numbering convention (5f529de):** `scripts/matrix-<n>.sh`
+  numbering convention documented in 04-matrix.md.
+- **Disposition-ledger location pinned (5f529de):** the ledger lives at
+  `{scratchpad}/api-e2e/matrix.md` per 05-execute.md, so phase 6 has a
+  producer.
+- **Final-review fix set (this commit):** fixture-ledger producer added to
+  05/07; `{scratchpad}` token defined in SKILL.md + 00; SKILL.md step
+  links made validator-visible (backticked link text); doctrine 3 scoped
+  to target-environment facts; fixture-policy "tiers" renamed "classes"
+  (spec mirrored); phase-2a fan-out recorded in the spec with an
+  effect-class partition; spec phase-7 gate aligned to the built files.
 
 ## Phase A — Step files (each self-contained; validator passes without SKILL.md, per the pr-loop-lib precedent)
 

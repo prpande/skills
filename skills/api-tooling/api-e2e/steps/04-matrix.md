@@ -27,7 +27,7 @@ coverage-gap row — never silently dropped.
 - **Probe before choosing.** Never assume a slot/fixture is free —
   enumerate live state first, including inactive/cancelled objects where
   the API hides them by default.
-- **Fixture policy (three tiers):** (1) the API under test gets
+- **Fixture policy (three classes):** (1) the API under test gets
   run-created disposable fixtures wherever a create API exists;
   (2) surrounding reference data is used-not-mutated, with user
   permission; (3) no-touch objects are never written to, directly or
@@ -46,16 +46,17 @@ coverage-gap row — never silently dropped.
   writes exist. The presentation MUST include an excluded-rows summary:
   per-category counts of unexecuted rows, with the highest-risk excluded
   rows named individually.
-- **Fan-out (optional intensity):** when the delta map crossed here holds
-  10 or more wire-observable deltas (default threshold; the interview may
+- **Fan-out (optional intensity):** when the phase-2 delta map holds 10 or
+  more wire-observable deltas (default threshold; the interview may
   override either way), fan out per-category matrix-derivation subagents —
   one per invariant category — and reconcile their rows into matrix.md
   before tiering. Below the threshold, derive inline.
-- **Executable scripts** in `{scratchpad}/api-e2e/scripts/matrix-<n>.sh` (numbered in execution order): bash + curl +
-  jq/python; PASS/FAIL asserts on status AND body content; full response
-  capture to `{scratchpad}/api-e2e/results/`; fingerprint gates at both
-  ends (per fingerprint.md, honoring the rung-3 compensating control);
-  cleanup functions; idempotent re-run safety where possible.
+- **Executable scripts** in `{scratchpad}/api-e2e/scripts/matrix-<n>.sh`
+  (numbered in execution order): bash + curl + jq/python; PASS/FAIL
+  asserts on status AND body content; full response capture to
+  `{scratchpad}/api-e2e/results/`; fingerprint gates at both ends (per
+  fingerprint.md, honoring the rung-3 compensating control); cleanup
+  functions; idempotent re-run safety where possible.
 - **Fixture-plan approval gate:** before ANY write executes, present what
   will be created, which pre-existing objects will be referenced, anything
   irreversible, and the executed tier. Cross-check every planned

@@ -5,8 +5,9 @@ each other's fixtures. Capture everything to results/.
 
 ## The four-way FAIL disposition
 
-Every FAIL must land in exactly one bucket, recorded with evidence in the disposition
-ledger — a `## Disposition ledger` section appended to `{scratchpad}/api-e2e/matrix.md` (phase 6 reads it from there):
+Every FAIL must land in exactly one bucket, recorded with evidence in the
+disposition ledger — a `## Disposition ledger` section appended to
+`{scratchpad}/api-e2e/matrix.md` (phase 6 reads it from there):
 
 1. **Build defect** — deployed code deviates from the derived expectation.
    Report with reproduction (redaction happens at phase 6).
@@ -19,6 +20,12 @@ ledger — a `## Disposition ledger` section appended to `{scratchpad}/api-e2e/m
 **Rule: a FAIL is not a build defect until the fixture assumption has been
 verified live.** The build being right and your fixture being wrong looks
 identical to a defect until you probe.
+
+**Fixture ledger:** as each write that creates a fixture succeeds, append a
+row `fixture id | type | domain | created-by check id` to a `## Fixture
+ledger` section of `{scratchpad}/api-e2e/run-context.md`. Phase 7 tears down
+from this ledger — a fixture that never made the ledger is a cleanup failure
+waiting to happen, so record it in the same breath as the write.
 
 ## Mid-run events
 

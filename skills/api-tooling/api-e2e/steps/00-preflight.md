@@ -3,6 +3,10 @@
 Detect what exists on this machine. Every gap degrades to "ask the user" —
 nothing is assumed installed, and no missing tool blocks the run.
 
+Resolve `{scratchpad}` to this session's private scratchpad directory
+(absolute path) before running anything; every later phase substitutes the
+same path.
+
 Create the run workspace first:
 
 ```bash

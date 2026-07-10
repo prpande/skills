@@ -4,7 +4,8 @@ Runs before the report's final delivery so its output sections are real.
 
 ## Teardown
 
-- Delete every run-created fixture. Verify each deletion **by
+- Delete every fixture enumerated in the `## Fixture ledger` section of
+  `{scratchpad}/api-e2e/run-context.md`. Verify each deletion **by
   observation** — re-read or enumerate the object and confirm it is gone
   or cancelled — never by trusting the delete's status code. Where the API
   soft-deletes, query with include-inactive flags to see the truth.

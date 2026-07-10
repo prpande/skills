@@ -19,10 +19,12 @@ test-only changes) get a justified skip — derive just enough to
 demonstrate the absence of observable effect, and record the skip in
 delta-map.md as a coverage-gap entry exactly like an unexecuted matrix row.
 
-**Fan-out (optional intensity):** if the delta map reaches 10 or more
-wire-observable deltas (default threshold; the interview may override
-either way), fan out per-category derivation subagents and reconcile their
-outputs into one delta-map.md. Below the threshold, derive inline.
+**Fan-out (optional intensity):** derive inline until the running delta
+count crosses 10 or more wire-observable deltas (default threshold; the
+interview may override either way), then fan out the remaining derivation
+across per-effect-class subagents — one per effect class (status codes,
+validation messages, payload shapes, precedence ordering, headers,
+side-effect witnesses) — and reconcile all outputs into one delta-map.md.
 
 ## b. No-touch inventory → no-touch.md
 

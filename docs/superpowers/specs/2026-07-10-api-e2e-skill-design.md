@@ -52,8 +52,10 @@ deploy, and fingerprinting are all derived or interviewed per run.
      teammates the team gets wider coverage than any curated matrix. This
      deliberately trades team-level knowledge pooling for containment:
      per-user memories will diverge, and that is accepted.
-3. **Skill text contains method, zero environment facts.** No service names,
-   IDs, URLs, tenant numbers, or quirks in the skill. All examples generic.
+3. **Skill text contains method, zero environment facts.** No
+   target-environment service names, IDs, URLs, tenant numbers, or quirks in
+   the skill. Generic vendor-tool examples (e.g., `gh`, `az`, an MCP server
+   name) that illustrate probing are fine.
 4. **Never presume — interview.** Any missing capability, credential,
    permission, or fixture becomes a question to the user. This includes asking
    the user to create fixtures in domains they have not exposed to the run
@@ -72,8 +74,11 @@ deploy, and fingerprinting are all derived or interviewed per run.
 `SKILL.md` (orchestrator, ~150 lines: trigger phrases, doctrine, phase
 sequence, gate summary) plus one file per phase under `steps/`. This mirrors
 the existing `pr-autopilot` convention in this repo. Each step file ends with
-its exit gate. Optional intensity — not architecture: for large diffs, the
-matrix-derivation step may fan out per-category subagents and reconcile.
+its exit gate. Optional intensity — not architecture: when the phase-2
+delta map holds 10 or more wire-observable deltas (interview-overridable),
+both the ground-truth step (phase 2a, partitioned by effect class) and the
+matrix-derivation step (phase 4, partitioned by invariant category) may
+fan out subagents and reconcile.
 
 Trigger phrases: "run e2e against PR #N", "e2e-validate this endpoint",
 "/api-e2e". Argument hint: `[PR number / PR URL / endpoint description]`.
@@ -264,7 +269,7 @@ Rules:
 - **Probe before choosing.** Never assume a slot/fixture is free; enumerate
   live state first (including inactive/cancelled objects where the API hides
   them by default).
-- **Fixture policy (three tiers):** (1) the API under test gets run-created
+- **Fixture policy (three classes):** (1) the API under test gets run-created
   disposable fixtures wherever a create API exists; (2) surrounding reference
   data is used-not-mutated, with user permission; (3) no-touch objects are
   never written to, directly or observably. Where creation isn't possible via
@@ -356,8 +361,9 @@ so coverage gaps survive the session.
   diff and present it to the user for approval — the doctrine-2 "propose a
   skill-text PR" behavior executes here, before the run is complete.
 
-**Gate:** cleanup verified; report delivered; any method-improvement proposal
-presented.
+**Gate:** cleanup verified by observation; residual-state and
+cleanup-verification sections handed to phase 6 (delivery is phase 6's gate,
+not phase 7's); any method-improvement proposal presented.
 
 ## Non-goals
 
@@ -434,6 +440,8 @@ Neither criterion persists artifacts beyond the report's durable destination.
   the acceptance replay cannot verify the path deterministically. Decide:
   a fixed threshold in the skill text, or a per-run user choice at the
   interview. (scope-guardian, P2, confidence 75)
-  **Resolved (implementation plan, 2026-07-10):** fixed default in the
-  skill text — fan out when the phase-2 delta map contains ≥ 10
-  wire-observable deltas; the interview may override in either direction.
+  **Resolved (implementation plan, 2026-07-10):** fixed default in the skill
+  text — fan out when the phase-2 delta map contains ≥ 10 wire-observable
+  deltas, in both delta-map derivation (phase 2a, partitioned by effect
+  class) and matrix derivation (phase 4, partitioned by invariant category);
+  the interview may override in either direction.
