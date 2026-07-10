@@ -46,7 +46,12 @@ coverage-gap row — never silently dropped.
   writes exist. The presentation MUST include an excluded-rows summary:
   per-category counts of unexecuted rows, with the highest-risk excluded
   rows named individually.
-- **Executable scripts** in `{scratchpad}/api-e2e/scripts/`: bash + curl +
+- **Fan-out (optional intensity):** when the delta map crossed here holds
+  10 or more wire-observable deltas (default threshold; the interview may
+  override either way), fan out per-category matrix-derivation subagents —
+  one per invariant category — and reconcile their rows into matrix.md
+  before tiering. Below the threshold, derive inline.
+- **Executable scripts** in `{scratchpad}/api-e2e/scripts/matrix-<n>.sh` (numbered in execution order): bash + curl +
   jq/python; PASS/FAIL asserts on status AND body content; full response
   capture to `{scratchpad}/api-e2e/results/`; fingerprint gates at both
   ends (per fingerprint.md, honoring the rung-3 compensating control);

@@ -63,7 +63,7 @@ per phase for progress tracking.
 | 4 | Matrix & scripting | [steps/04-matrix.md](steps/04-matrix.md) | Executed tier approved (all modes); fixture plan approved (when writes exist) |
 | 5 | Execution & triage | [steps/05-execute.md](steps/05-execute.md) | Zero undispositioned FAILs |
 | 6 | Report | [steps/06-report.md](steps/06-report.md) | Redacted report user-approved and delivered to the durable destination |
-| 7 | Cleanup | [steps/07-cleanup.md](steps/07-cleanup.md) | Cleanup verified by observation; method-improvement proposal presented if any |
+| 7 | Cleanup | [steps/07-cleanup.md](steps/07-cleanup.md) | Cleanup verified by observation; sections handed to phase 6; method-improvement proposal presented if any |
 
 Phases run in order. Two sanctioned loop-backs: any phase may re-enter
 phase 1 for a newly discovered domain (token + permissions only), and

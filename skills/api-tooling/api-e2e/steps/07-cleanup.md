@@ -29,6 +29,7 @@ Runs before the report's final delivery so its output sections are real.
 
 ## Gate
 
-Cleanup verified by observation; report delivered (phase 6); any
-method-improvement proposal presented. The run is complete only when all
-three hold.
+Cleanup verified by observation; residual-state and cleanup-verification
+sections handed to phase 6; any method-improvement proposal presented.
+The RUN is complete only when phase 6 then delivers the approved report —
+delivery is phase 6's gate, not this phase's.

@@ -5,8 +5,8 @@ each other's fixtures. Capture everything to results/.
 
 ## The four-way FAIL disposition
 
-Every FAIL must land in exactly one bucket, recorded in the disposition
-ledger with evidence:
+Every FAIL must land in exactly one bucket, recorded with evidence in the disposition
+ledger — a `## Disposition ledger` section appended to `{scratchpad}/api-e2e/matrix.md` (phase 6 reads it from there):
 
 1. **Build defect** — deployed code deviates from the derived expectation.
    Report with reproduction (redaction happens at phase 6).
