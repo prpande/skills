@@ -35,6 +35,8 @@ deploy, and fingerprinting are all derived or interviewed per run.
      for repo-head derivation or for pre-write probing.
    - *Write — local per-user memory only.* Runs may save durable learnings to
      the user's local Claude memory, with provenance (date, run context).
+     Anything saved is scrubbed of personally identifying fixture fields
+     first, using the same rule phase 6 applies before report delivery.
    - *The repo and the skill text carry zero run state, ever.* No fixture
      inventories, testbed files, or environment profiles are committed
      anywhere. Run reports go to a durable user-approved destination
@@ -128,16 +130,24 @@ Collect:
   designates as *mutable*. Explicitly ask about anything ambiguous.
   **Read-only fallback:** if the user cannot confidently answer a
   data-permission or tenant-safety question, the run proceeds in read-only
-  mode (no-write matrix; write coverage recorded as gaps) until an
-  authoritative answer arrives.
+  mode until an authoritative answer arrives. Read-only means safe verbs
+  only — write-verb requests, including expected-rejection probes (e.g., a
+  POST asserted to 400), count as write coverage and are recorded as gaps.
+  When the phase-2 delta map shows the target's coverage is predominantly
+  write-dependent, the run states the projected coverage of a read-only
+  pass and obtains an explicit proceed-or-defer decision before continuing
+  past phase 2.
 - **Deploy preference** (PR mode): user deploys (preferred — deployment
   variables are theirs to set), user provides a run URL to monitor, or user
   authorizes the skill to trigger the pipeline after confirming its identity.
 - **Report destination:** a durable, user-approved destination is mandatory
-  in both modes (PR comment in PR mode; a user-chosen durable location such
-  as a wiki page or tracker entry in deployed mode), alongside the session
-  scratchpad working copy. The skill never commits reports to a repo, and no
-  future run reads a past report as authority.
+  in both modes, alongside the session scratchpad working copy. PR mode uses
+  the PR itself (comment). Deployed mode uses one canonical per-service
+  destination (e.g., a fixed per-service wiki index page every deployed-mode
+  run appends its report to), agreed once and confirmed at interview — so
+  the union of runs stays observable instead of scattering across ad-hoc
+  locations. The skill never commits reports to a repo, and no future run
+  reads a past report as authority.
 
 **Gate:** every interview-known domain has a verified token; the mode,
 target, and data permissions are explicit. **Re-interview loop-back:** any
@@ -155,7 +165,11 @@ a. **Wire-observable behavior map.** In PR mode, map every commit in the diff
    failures, headers (e.g., Retry-After), side effects and the read APIs that
    witness them. In deployed mode, do the same for the target endpoint's
    handlers, validators, and data access. The output is an explicit list of
-   expected behaviors, each traceable to a code location.
+   expected behaviors, each traceable to a code location. Commits with no
+   wire-observable surface (pure refactors, comment- or test-only changes)
+   get a justified skip — derive just enough to demonstrate the absence of
+   observable effect, and record the skip as a coverage-gap entry exactly
+   like an unexecuted matrix row.
 b. **No-touch inventory.** Read the repo's contract/behavioral test sources
    and extract every fixture the tests depend on (hardcoded ids, seeded
    objects, counted collections). Record collection-level predicates, not
@@ -171,15 +185,27 @@ c. **Deployment model.** Derive from the repo's infra/pipeline config how a
    build reaches the environment (canary vs. direct, promotion behavior,
    racing deploys). Never assume; verify empirically in phase 3.
 d. **Build fingerprint.** Establish how the run will recognize the build
-   under test, via a fallback ladder: (1) a *read-observable* behavior unique
+   under test, via a fallback ladder: (1) a build-identity endpoint
+   (version/build-info/assembly hash) whenever the service exposes one —
+   defect-independent, so preferred; (2) a *read-observable* behavior unique
    to the build (e.g., a new validation message or endpoint the previous
    build lacks) — write-dependent behaviors are ineligible, since the
-   fingerprint must pass before any write is permitted; (2) a build-identity
-   endpoint (version/build-info/assembly hash) where the service exposes
-   one; (3) user-confirmed deploy evidence (pipeline run + commit SHA),
-   explicitly recorded in the report as a weaker fingerprint. The fingerprint
-   is asserted at the start AND end of every matrix script; a flip
-   invalidates intervening results.
+   fingerprint must pass before any write is permitted; (3) user-confirmed
+   deploy evidence (pipeline run + commit SHA), explicitly recorded in the
+   report as a weaker fingerprint. The fingerprint is asserted at the start
+   AND end of every matrix script; a flip invalidates intervening results.
+   **Behavior-fingerprint failure vs. build defect:** repeated rung-2
+   fingerprint failure combined with confirmed deploy evidence is escalated
+   as a candidate build defect in the fingerprint behavior itself — it
+   enters the phase-5 disposition process rather than looping the
+   environment gate as "not deployed". **Rung-3 compensating control:** with
+   no wire-observable fingerprint to assert, each matrix script instead
+   re-queries the service's deploy/pipeline history at start and end (via
+   whatever access preflight established, or user re-confirmation when
+   access is zero); any deploy record newer than the confirmed one counts as
+   a flip and triggers the phase-5 abort/taint procedure, and the report's
+   fingerprint-evidence section must state that rung-3 runs carry
+   undetectable-flip risk.
 
 **Gate:** delta list, no-touch inventory, deployment model, and fingerprint
 all exist and are traceable to repo head.
@@ -189,8 +215,8 @@ all exist and are traceable to repo head.
 Verify the live environment is the build the run derived from, in both modes.
 
 *Deployed mode:* verify the live build corresponds to the deployed ref
-collected in phase 1, using the phase-2d fingerprint ladder (unique
-read-observable behavior, build-identity endpoint, or user-confirmed deploy
+collected in phase 1, using the phase-2d fingerprint ladder (build-identity
+endpoint, unique read-observable behavior, or user-confirmed deploy
 evidence). On mismatch, stop and reconcile with the user — re-derive phase 2
 from the correct ref or fix the environment; never test against expectations
 derived from a different commit.
@@ -243,11 +269,19 @@ Rules:
   data is used-not-mutated, with user permission; (3) no-touch objects are
   never written to, directly or observably. Where creation isn't possible via
   API, ask the user to create or designate.
-- **Matrix prioritization:** derived rows are tiered by risk (new writes and
-  precedence changes highest; regression sweep sampled). The full untrimmed
-  matrix is always derived and preserved — anything not executed is recorded
-  as an explicit coverage gap, never silently dropped. The user approves the
-  executed tier at the fixture-plan gate.
+- **Matrix prioritization:** every derived row carries an explicit risk
+  tier. Tier 1 (always executed): the delta's write arms, conflict paths
+  with rollback verification, and precedence changes. Tier 2 (executed
+  unless the user trims): validation rules, auth edges, boundary values,
+  attribution proofs, and negative controls. Tier 3 (sampled by default):
+  the regression sweep of adjacent untouched surface. The full untrimmed
+  matrix is always preserved — anything not executed is recorded as an
+  explicit coverage gap, never silently dropped.
+- **Executed-tier approval gate:** a standalone pre-execution gate in all
+  modes — it fires even when the matrix contains no writes, and merges with
+  the fixture-plan gate when writes exist. The approval presentation
+  includes an excluded-rows summary: per-category counts of unexecuted
+  rows, with the highest-risk excluded rows named individually.
 - **Executable scripts** in the session scratchpad: bash + curl + jq/python,
   PASS/FAIL asserts on status AND body content, full response capture to a
   results file, fingerprint gates at both ends, cleanup functions, idempotent
@@ -260,7 +294,8 @@ Rules:
   unresolved test-fixture indirection become interview questions before
   approval. Writes begin only on approval.
 
-**Gate:** user-approved fixture plan; scripts exist with fingerprint gates.
+**Gate:** user-approved executed tier (all modes) and fixture plan (when
+writes exist); scripts exist with fingerprint gates.
 
 ### 5 — Execution & triage (`steps/5-execute.md`)
 
@@ -290,21 +325,23 @@ Mandatory sections:
 - Counts: asserted checks, passes, failures by disposition.
 - Per-delta verification table (delta → verified behavior → check ids).
 - Every FAIL and its disposition, including "the build was right" cases.
-- **Coverage gaps:** what was not constructible or reachable, why, and where
-  that behavior is covered instead (unit/contract). Never silent.
+- **Coverage gaps:** every matrix row not executed, categorized by reason
+  (not constructible, not reachable, not approved / lower tier, derivation
+  skipped), why, and where that behavior is covered instead (unit/contract).
+  Never silent.
 - Residual state: everything the run left behind, exactly.
 - Cleanup verification results.
 
 **Redaction before delivery:** strip Authorization headers, tokens, and other
-credential material, plus personally identifying fixture fields, from
-captured responses and reproductions before report content is assembled —
-the user's approval pass reviews already-sanitized content and is never the
-only defense.
+credential material, plus personally identifying fixture fields, from the
+entire assembled report — every mandatory section, including residual state,
+not just captured responses and reproductions. The user's approval pass
+reviews already-sanitized content and is never the only defense.
 
-Delivery: the report goes to the durable destination agreed in phase 1
-(PR comment in PR mode — user approves content before posting; the
-user-chosen durable location in deployed mode), so coverage gaps survive the
-session.
+Delivery: the report goes to the durable destination agreed in phase 1, and
+in both modes the user approves the content before it is published (PR
+comment in PR mode; the per-service canonical destination in deployed mode),
+so coverage gaps survive the session.
 
 ### 7 — Cleanup (`steps/7-cleanup.md`)
 
@@ -348,9 +385,15 @@ Two criteria:
    fixture-plan approval gate before any write, and (d) produces a report
    containing all mandatory sections.
 2. **Transfer (the actual product claim).** A teammate who neither authored
-   the skill nor the original manual passes completes a full run (phases 0–7)
-   against a service they have not previously tested. Any stall or
-   misunderstanding is treated as a skill-text defect, not operator error.
+   the skill nor the original manual passes — but who satisfies the phase-1
+   operator prerequisites — completes a full run (phases 0–7) against a
+   service they have not previously tested. Stalls and misunderstandings
+   about the *method* (what to do next, gate confusion, derivation steps)
+   are skill-text defects; a stall on an operator prerequisite counts as a
+   defect only if the skill failed to name the missing prerequisite
+   precisely. The run satisfies the criterion only if it reaches a
+   user-approved tier that includes executed write coverage — a
+   read-only-degraded run does not count as a transfer pass.
 
 Neither criterion persists artifacts beyond the report's durable destination.
 
@@ -373,6 +416,13 @@ Neither criterion persists artifacts beyond the report's durable destination.
   recommendation)
 - ce-doc-review round 1 (2026-07-10): 6 personas, 14 actionable findings —
   13 applied via best-judgment routing, 1 deferred below. (review)
+- ce-doc-review round 2 (2026-07-10): 6 personas re-run with decision primer;
+  12 actionable findings on the round-1 fixes' composition — all 12 applied
+  (transfer criterion made evaluable, rung-3 compensating control, ladder
+  reorder, read-only write-verb boundary + checkpoint, full tier enumeration,
+  standalone tier-approval gate, whole-report redaction, both-modes delivery
+  approval, canonical per-service destination, memory PII scrub, derivation
+  skip rule, coverage-gap definition unified). (review)
 
 ## Deferred / Open Questions
 
