@@ -12,7 +12,11 @@ environment, or an already-deployed API/endpoint. The skill encodes the *method*
 that produced high-yield manual E2E passes (exhaustive diff-to-wire-expectation
 mapping, build fingerprinting, attribution proofs, rollback verification,
 disciplined failure triage) so that any teammate can run an equivalent pass
-without prior knowledge of the service.
+without prior knowledge of the *method*. The operator still brings the
+environment knowledge: phase 1 states explicit operator prerequisites (access,
+base URLs, safe tenant, token-mint recipes, data-permission authority), and
+when the operator cannot supply an answer the run degrades to read-only
+rather than guessing.
 
 Primary target: Mindbody/Arcus staging services (shared platform mechanics:
 Identity-token auth, `staging.*` bases, ADO deploy pipelines). Secondary: any
@@ -32,14 +36,20 @@ deploy, and fingerprinting are all derived or interviewed per run.
    - *Write — local per-user memory only.* Runs may save durable learnings to
      the user's local Claude memory, with provenance (date, run context).
    - *The repo and the skill text carry zero run state, ever.* No fixture
-     inventories, testbed files, environment profiles, or run reports are
-     committed anywhere. A run that discovers a durable *method* improvement
-     proposes a skill-text PR to the user; it never self-writes it.
-   - Rationale: independent fresh runs are nondeterministic in different ways;
-     across many runs by many teammates this yields wider coverage than any
-     curated matrix, and no shared cache exists for one run's wrong "fact" to
-     poison. Per-user local memory is tolerated because it is contained to one
-     user and is error-corrected by the verify-live rule.
+     inventories, testbed files, or environment profiles are committed
+     anywhere. Run reports go to a durable user-approved destination
+     (phase 6) so coverage evidence survives the session — but they are
+     outputs only: no future run reads a past report as authority. A run
+     that discovers a durable *method* improvement proposes a skill-text PR
+     to the user (executed in phase 7); it never self-writes it.
+   - Rationale — blast-radius containment first, ensemble diversity second:
+     a wrong "fact" cached in shared state would poison every teammate's
+     runs, while a wrong local memory is contained to one user and is
+     error-corrected by the verify-live rule. Independent fresh runs are also
+     nondeterministic in different ways, so across many runs by many
+     teammates the team gets wider coverage than any curated matrix. This
+     deliberately trades team-level knowledge pooling for containment:
+     per-user memories will diverge, and that is accepted.
 3. **Skill text contains method, zero environment facts.** No service names,
    IDs, URLs, tenant numbers, or quirks in the skill. All examples generic.
 4. **Never presume — interview.** Any missing capability, credential,
@@ -87,25 +97,53 @@ tool or the user-mediated fallback.
 
 ### 1 — Interview (`steps/1-interview.md`)
 
-Structured, back-and-forth, one topic at a time. Collect:
+Structured, back-and-forth, one topic at a time. The interview is where the
+operator's environment knowledge enters the run — the skill supplies the
+method, the operator supplies the environment.
+
+**Operator prerequisites (stated up front):** access to the target
+environment; base URL(s) and a safe tenant/subscriber; a token-mint recipe
+per domain the tests will call; authority to designate mutable data and to
+create fixtures in domains not exposed to the run. An operator missing one
+of these is told exactly what is missing, not silently blocked.
+
+**Memory-seeded fast path:** when local memory carries prior answers for the
+target service (base URLs, tenant, token-mint recipe, data permissions),
+present them as prefilled hypotheses for one-shot confirm-or-correct instead
+of asking each topic cold — consistent with the read-as-hypotheses doctrine.
+Confirmed values remain subject to live verification.
+
+Collect:
 
 - **Mode:** open PR (deploy + fingerprint + test) vs. already-deployed.
 - **Target:** service under test; the specific PR or endpoint(s); any
   secondary domains the tests will need to call.
+- **Deployed ref** (deployed mode): which commit/branch/tag is currently
+  deployed — the input phase 2 derives from and phase 3 verifies.
 - **Environment:** base URL(s), tenant/subscriber to use.
 - **Auth:** one token-mint curl per domain. Each is verified immediately with
   a benign read before proceeding; expiry behavior noted for mid-run re-mint.
 - **Data permissions:** which pre-existing data the run may *reference*
   (clients, staff, rooms, locations, …) and which objects, if any, the user
   designates as *mutable*. Explicitly ask about anything ambiguous.
+  **Read-only fallback:** if the user cannot confidently answer a
+  data-permission or tenant-safety question, the run proceeds in read-only
+  mode (no-write matrix; write coverage recorded as gaps) until an
+  authoritative answer arrives.
 - **Deploy preference** (PR mode): user deploys (preferred — deployment
   variables are theirs to set), user provides a run URL to monitor, or user
   authorizes the skill to trigger the pipeline after confirming its identity.
-- **Report destination:** a file in the session scratchpad always (handed to
-  the user, never committed by the skill); PR comment offered in PR mode.
+- **Report destination:** a durable, user-approved destination is mandatory
+  in both modes (PR comment in PR mode; a user-chosen durable location such
+  as a wiki page or tracker entry in deployed mode), alongside the session
+  scratchpad working copy. The skill never commits reports to a repo, and no
+  future run reads a past report as authority.
 
-**Gate:** every domain the matrix will touch has a verified token; the mode,
-target, and data permissions are explicit.
+**Gate:** every interview-known domain has a verified token; the mode,
+target, and data permissions are explicit. **Re-interview loop-back:** any
+later phase that discovers a newly required domain (e.g., a side-effect
+witness API surfaced by phase 2 derivation) returns to this phase's
+token/permission procedure for that domain before proceeding.
 
 ### 2 — Ground truth from repo head (`steps/2-ground-truth.md`)
 
@@ -120,24 +158,45 @@ a. **Wire-observable behavior map.** In PR mode, map every commit in the diff
    expected behaviors, each traceable to a code location.
 b. **No-touch inventory.** Read the repo's contract/behavioral test sources
    and extract every fixture the tests depend on (hardcoded ids, seeded
-   objects, counted collections). These objects must not be mutated, and
-   writes that would change their observable state (e.g., adding a child row
-   a test counts) are equally off-limits. Supplement by asking the user for
-   additional off-limits objects.
+   objects, counted collections). Record collection-level predicates, not
+   just object ids — a test that counts or enumerates a collection is
+   violated by *creating* an object that joins it, not only by mutating a
+   member. Fixtures the run cannot resolve from source (env-var indirection,
+   CI-time constants, external seed scripts) are surfaced as explicit
+   interview questions, never assumed absent. These objects must not be
+   mutated, and writes that would change their observable state (e.g., adding
+   a child row a test counts) are equally off-limits. Supplement by asking
+   the user for additional off-limits objects.
 c. **Deployment model.** Derive from the repo's infra/pipeline config how a
    build reaches the environment (canary vs. direct, promotion behavior,
    racing deploys). Never assume; verify empirically in phase 3.
-d. **Build fingerprint.** Choose a wire-observable behavior unique to the
-   build under test (e.g., a new validation message or endpoint the previous
-   build lacks). The fingerprint is asserted at the start AND end of every
-   matrix script; a flip invalidates intervening results.
+d. **Build fingerprint.** Establish how the run will recognize the build
+   under test, via a fallback ladder: (1) a *read-observable* behavior unique
+   to the build (e.g., a new validation message or endpoint the previous
+   build lacks) — write-dependent behaviors are ineligible, since the
+   fingerprint must pass before any write is permitted; (2) a build-identity
+   endpoint (version/build-info/assembly hash) where the service exposes
+   one; (3) user-confirmed deploy evidence (pipeline run + commit SHA),
+   explicitly recorded in the report as a weaker fingerprint. The fingerprint
+   is asserted at the start AND end of every matrix script; a flip
+   invalidates intervening results.
 
 **Gate:** delta list, no-touch inventory, deployment model, and fingerprint
 all exist and are traceable to repo head.
 
-### 3 — Deploy gate — PR mode only (`steps/3-deploy-gate.md`)
+### 3 — Environment gate — both modes (`steps/3-environment-gate.md`)
 
-Fingerprint the live environment. If it already matches, proceed. If not:
+Verify the live environment is the build the run derived from, in both modes.
+
+*Deployed mode:* verify the live build corresponds to the deployed ref
+collected in phase 1, using the phase-2d fingerprint ladder (unique
+read-observable behavior, build-identity endpoint, or user-confirmed deploy
+evidence). On mismatch, stop and reconcile with the user — re-derive phase 2
+from the correct ref or fix the environment; never test against expectations
+derived from a different commit.
+
+*PR mode:* fingerprint the live environment. If it already matches, proceed.
+If not:
 
 1. Prefer the user deploys. If they provide a pipeline run URL, monitor it via
    whatever access preflight established.
@@ -148,7 +207,9 @@ Fingerprint the live environment. If it already matches, proceed. If not:
    consecutive hits (default; guards against canary windows, promotion
    delays, and racing deploys silently replacing the build).
 
-**Gate:** 3 consecutive fingerprint passes. No matrix executes before this.
+**Gate:** 3 consecutive fingerprint passes (or, on the ladder's weakest rung,
+user-confirmed deploy evidence recorded in the report). No matrix executes
+before this.
 
 ### 4 — Matrix derivation & scripting (`steps/4-matrix.md`)
 
@@ -182,13 +243,22 @@ Rules:
   data is used-not-mutated, with user permission; (3) no-touch objects are
   never written to, directly or observably. Where creation isn't possible via
   API, ask the user to create or designate.
+- **Matrix prioritization:** derived rows are tiered by risk (new writes and
+  precedence changes highest; regression sweep sampled). The full untrimmed
+  matrix is always derived and preserved — anything not executed is recorded
+  as an explicit coverage gap, never silently dropped. The user approves the
+  executed tier at the fixture-plan gate.
 - **Executable scripts** in the session scratchpad: bash + curl + jq/python,
   PASS/FAIL asserts on status AND body content, full response capture to a
   results file, fingerprint gates at both ends, cleanup functions, idempotent
   re-run safety where possible.
 - **Fixture-plan approval gate:** before any write executes, present the user
   a plan of what will be created, which pre-existing objects will be
-  referenced, and anything irreversible. Writes begin only on approval.
+  referenced, anything irreversible, and the executed matrix tier. Every
+  planned create/delete is cross-checked against the no-touch inventory's
+  collection-level predicates (not just object ids); collisions and
+  unresolved test-fixture indirection become interview questions before
+  approval. Writes begin only on approval.
 
 **Gate:** user-approved fixture plan; scripts exist with fingerprint gates.
 
@@ -207,8 +277,8 @@ fixtures). Every FAIL must be dispositioned into exactly one of:
 
 Rule: a FAIL is not a build defect until the fixture assumption has been
 verified live. Mid-run events: token expiry → re-mint from the interview
-curl; fingerprint flip (racing deploy) → abort, mark tainted checks, re-gate
-via phase 3, rerun tainted checks.
+curl; fingerprint flip (racing deploy) → abort, mark tainted checks, re-enter
+the phase-3 environment gate (both modes), rerun tainted checks.
 
 **Gate:** zero undispositioned FAILs.
 
@@ -225,7 +295,16 @@ Mandatory sections:
 - Residual state: everything the run left behind, exactly.
 - Cleanup verification results.
 
-PR mode: offer to post as a PR comment; user approves content before posting.
+**Redaction before delivery:** strip Authorization headers, tokens, and other
+credential material, plus personally identifying fixture fields, from
+captured responses and reproductions before report content is assembled —
+the user's approval pass reviews already-sanitized content and is never the
+only defense.
+
+Delivery: the report goes to the durable destination agreed in phase 1
+(PR comment in PR mode — user approves content before posting; the
+user-chosen durable location in deployed mode), so coverage gaps survive the
+session.
 
 ### 7 — Cleanup (`steps/7-cleanup.md`)
 
@@ -236,8 +315,12 @@ PR mode: offer to post as a PR comment; user approves content before posting.
 - Re-read a sample of no-touch objects to confirm they are untouched.
 - Enumerate all unavoidable leftovers into the report's residual-state
   section.
+- If the run discovered a durable *method* improvement, draft the skill-text
+  diff and present it to the user for approval — the doctrine-2 "propose a
+  skill-text PR" behavior executes here, before the run is complete.
 
-**Gate:** cleanup verified; report delivered.
+**Gate:** cleanup verified; report delivered; any method-improvement proposal
+presented.
 
 ## Non-goals
 
@@ -247,16 +330,29 @@ PR mode: offer to post as a PR comment; user approves content before posting.
 - No CI integration in v1; the skill is interactive by design (the interview
   is the interface).
 - No automated fixture creation in domains the user has not exposed.
-- No run-state persistence of any kind outside local per-user memory.
+- No run-state persistence of any kind outside local per-user memory; run
+  reports are delivered to user-owned durable destinations but are never
+  consumed as inputs by later runs.
 
 ## Acceptance test for the skill itself
 
-One-time manual replay: point the built skill at a previously validated PR of
-a known repo in deployed mode, with a fresh session. Verify it independently
-(a) derives a matrix covering the known delta classes, (b) refuses to execute
-when the fingerprint fails, (c) enforces the fixture-plan approval gate before
-any write, and (d) produces a report containing all mandatory sections. The
-replay produces no persisted artifacts.
+Two criteria:
+
+1. **Replay (mechanism).** Point the built skill at a previously validated PR
+   of a known repo in deployed mode, with a fresh session. First derive the
+   fingerprint from a commit known NOT to be deployed and verify the run
+   refuses to execute; then re-derive from the deployed head and proceed.
+   Seed one deliberate harness bug so at least one FAIL flows through the
+   four-way disposition process. Verify the run (a) derives a matrix covering
+   the known delta classes, (b) enforced the refusal, (c) enforces the
+   fixture-plan approval gate before any write, and (d) produces a report
+   containing all mandatory sections.
+2. **Transfer (the actual product claim).** A teammate who neither authored
+   the skill nor the original manual passes completes a full run (phases 0–7)
+   against a service they have not previously tested. Any stall or
+   misunderstanding is treated as a skill-text defect, not operator error.
+
+Neither criterion persists artifacts beyond the report's durable destination.
 
 ## Decisions log (from brainstorming)
 
@@ -275,3 +371,16 @@ replay produces no persisted artifacts.
 - Architecture: orchestrator SKILL.md + steps/ files, matching pr-autopilot;
   subagent fan-out as optional intensity in matrix derivation. (user chose
   recommendation)
+- ce-doc-review round 1 (2026-07-10): 6 personas, 14 actionable findings —
+  13 applied via best-judgment routing, 1 deferred below. (review)
+
+## Deferred / Open Questions
+
+### From 2026-07-10 review
+
+- **Subagent fan-out threshold (Architecture / Phase 4):** "large diffs" has
+  no defined criterion (commit count, endpoint count, file count), so
+  implementers must guess per run whether matrix derivation fans out — and
+  the acceptance replay cannot verify the path deterministically. Decide:
+  a fixed threshold in the skill text, or a per-run user choice at the
+  interview. (scope-guardian, P2, confidence 75)
