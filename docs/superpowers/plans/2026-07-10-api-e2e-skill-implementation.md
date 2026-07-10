@@ -16,7 +16,7 @@
 
 - Doctrine 3 (spec): skill text contains **method only — zero environment facts**. No service names, URLs, tenant/subscriber numbers, IDs, or platform quirks in any file. All examples generic ("the service", "domain A").
 - Doctrine 6 (spec): token-mint curls and credentials are **session-scoped** — the skill text must direct them to the session scratchpad only, never to committed/persistent/memory files.
-- Step files are named with **two-digit prefixes** (`steps/00-preflight.md` … `steps/07-cleanup.md`), matching the pr-autopilot convention and the validator's `steps/NN-*.md` reference pattern. (Deviation from the spec's illustrative single-digit names `steps/0-preflight.md`; recorded here deliberately.)
+- Step files are named with **two-digit prefixes** (`steps/00-preflight.md` … `steps/07-cleanup.md`), matching the pr-autopilot convention and the validator's `steps/NN-*.md` reference pattern.
 - The validator rejects line-initial `[TBD]`, `TODO: `, `[fill in`, `XXX ` outside code fences — never leave them in any file.
 - Every file UTF-8, LF or CRLF both tolerated.
 - **Resolved open question** (spec's Deferred section, decided by this plan and recorded back into the spec in Task 10): subagent fan-out in phase 2/4 triggers at a **fixed default of ≥ 10 wire-observable deltas** in the phase-2 delta map; the interview may override in either direction. Deterministic for the acceptance replay.
@@ -48,6 +48,27 @@ docs/superpowers/specs/2026-07-10-api-e2e-skill-design.md (EDIT, Task 10 — rec
 ```
 
 ---
+
+## Deviations discovered during execution (2026-07-10)
+
+- **Spec references must be two-digit, not "illustrative":** the validator
+  scans `docs/` for backticked `steps/NN-*.md` references; the spec's
+  original single-digit names would never resolve. Spec updated to the real
+  filenames (committed alongside this note).
+- **Per-task validator green is unachievable; Tasks 2–9 consolidated into
+  one commit + one review.** Two causes: (a) the committed spec/plan
+  reference all eight step files, which only resolve once every file
+  exists; (b) until `SKILL.md` exists directly in `api-e2e/`,
+  `discover_skill_roots()` registers `steps/` itself as a skill root named
+  `steps`, and `check_file()`'s first-segment-exclusive resolution then
+  breaks every `steps/NN-*.md` reference repo-wide (37 false failures).
+  All references resolve only at the all-nine-files boundary, so that is
+  the commit boundary. Review coverage is unchanged: one consolidated
+  review checks all nine files against their per-task briefs.
+- **Upstream note (not fixed here):** `scripts/validate.py`'s exclusive
+  first-segment branch silently changes resolution semantics repo-wide
+  when a new skill directory temporarily lacks a direct `.md` — worth a
+  separate hardening PR.
 
 ## Phase A — Step files (each self-contained; validator passes without SKILL.md, per the pr-loop-lib precedent)
 

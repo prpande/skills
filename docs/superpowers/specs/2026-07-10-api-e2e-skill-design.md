@@ -80,7 +80,7 @@ Trigger phrases: "run e2e against PR #N", "e2e-validate this endpoint",
 
 ## Phases
 
-### 0 — Preflight: tooling & access probe (`steps/0-preflight.md`)
+### 0 — Preflight: tooling & access probe (`steps/00-preflight.md`)
 
 Detect what exists on the machine: `gh`, `az`, ADO MCP tools, `curl`,
 `jq`/`python`, a local checkout of the target repo. Every gap degrades to
@@ -97,7 +97,7 @@ Detect what exists on the machine: `gh`, `az`, ADO MCP tools, `curl`,
 **Gate:** the run knows, for each capability it will need, either a working
 tool or the user-mediated fallback.
 
-### 1 — Interview (`steps/1-interview.md`)
+### 1 — Interview (`steps/01-interview.md`)
 
 Structured, back-and-forth, one topic at a time. The interview is where the
 operator's environment knowledge enters the run — the skill supplies the
@@ -155,7 +155,7 @@ later phase that discovers a newly required domain (e.g., a side-effect
 witness API surfaced by phase 2 derivation) returns to this phase's
 token/permission procedure for that domain before proceeding.
 
-### 2 — Ground truth from repo head (`steps/2-ground-truth.md`)
+### 2 — Ground truth from repo head (`steps/02-ground-truth.md`)
 
 All derivation from the deployed commit, freshly, this run:
 
@@ -210,7 +210,7 @@ d. **Build fingerprint.** Establish how the run will recognize the build
 **Gate:** delta list, no-touch inventory, deployment model, and fingerprint
 all exist and are traceable to repo head.
 
-### 3 — Environment gate — both modes (`steps/3-environment-gate.md`)
+### 3 — Environment gate — both modes (`steps/03-environment-gate.md`)
 
 Verify the live environment is the build the run derived from, in both modes.
 
@@ -237,7 +237,7 @@ If not:
 user-confirmed deploy evidence recorded in the report). No matrix executes
 before this.
 
-### 4 — Matrix derivation & scripting (`steps/4-matrix.md`)
+### 4 — Matrix derivation & scripting (`steps/04-matrix.md`)
 
 Cross the phase-2 delta list with invariant categories — every category is
 considered for every delta, and omissions are recorded as explicit coverage
@@ -297,7 +297,7 @@ Rules:
 **Gate:** user-approved executed tier (all modes) and fixture plan (when
 writes exist); scripts exist with fingerprint gates.
 
-### 5 — Execution & triage (`steps/5-execute.md`)
+### 5 — Execution & triage (`steps/05-execute.md`)
 
 Run matrices serially (shared staging: concurrent probes corrupt each other's
 fixtures). Every FAIL must be dispositioned into exactly one of:
@@ -317,7 +317,7 @@ the phase-3 environment gate (both modes), rerun tainted checks.
 
 **Gate:** zero undispositioned FAILs.
 
-### 6 — Report (`steps/6-report.md`)
+### 6 — Report (`steps/06-report.md`)
 
 Mandatory sections:
 
@@ -343,7 +343,7 @@ in both modes the user approves the content before it is published (PR
 comment in PR mode; the per-service canonical destination in deployed mode),
 so coverage gaps survive the session.
 
-### 7 — Cleanup (`steps/7-cleanup.md`)
+### 7 — Cleanup (`steps/07-cleanup.md`)
 
 - Delete run-created fixtures; verify each deletion **by observation**
   (re-read/enumerate), never by trusting the delete's status code.
