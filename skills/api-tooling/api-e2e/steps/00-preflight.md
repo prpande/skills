@@ -21,7 +21,7 @@ Run each probe; record the outcome in the Capabilities table:
 gh --version        # GitHub CLI
 az --version        # Azure CLI (optional, heaviest dependency — never required)
 curl --version
-jq --version || python --version   # at least one JSON processor
+jq --version || python3 --version || python --version   # at least one JSON processor
 git rev-parse --show-toplevel      # inside the target repo? (run from the repo if known)
 ```
 

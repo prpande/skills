@@ -90,10 +90,10 @@ sections are real; the gates still both apply.
 
 ## Fan-out threshold
 
-When the phase-2 delta map contains 10 or more wire-observable deltas
-(default; interview may override either way), fan out per-category
-derivation subagents in phases 2a/4 and reconcile. Below the threshold,
-derive inline.
+At 10 or more wire-observable deltas (default; interview may override
+either way), fan out derivation subagents and reconcile — per effect class
+in phase 2a (once the running delta count reaches the threshold) and per
+invariant category in phase 4. Below the threshold, derive inline.
 
 ## Failure posture
 
