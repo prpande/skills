@@ -85,6 +85,21 @@ docs/superpowers/specs/2026-07-10-api-e2e-skill-design.md (EDIT, Task 10 — rec
   to target-environment facts; fixture-policy "tiers" renamed "classes"
   (spec mirrored); phase-2a fan-out recorded in the spec with an
   effect-class partition; spec phase-7 gate aligned to the built files.
+- **Pre-PR review rounds (`/simplify`, preflight, pr-review-toolkit,
+  Copilot):** further polish applied to the SHIPPED files under
+  `skills/api-tooling/api-e2e/` after this plan was written — phase-2
+  sub-derivation concurrency note; read-only-degradation surfaced at the
+  phase-2 gate and phase-4 tiering; `matrix.md` named as the phase-6 report
+  source; fan-out one-liner corrected to per-effect-class (2a) /
+  per-invariant-category (4); `python3` added to the JSON-processor probe;
+  run-artifact references fully qualified with `{scratchpad}/api-e2e/`;
+  `WebFetch` dropped from `allowed-tools` (unused); phase-6/7 table gates
+  disambiguated to state delivery runs after cleanup; this doctrine-3
+  constraint scoped to the skill text. **The embedded per-task file
+  snippets below are the as-planned drafts and are NOT re-synced to these
+  later fixes — the shipped files under `skills/api-tooling/api-e2e/` are
+  authoritative. Snippet-vs-shipped drift is expected and intentional; read
+  the shipped files, not these drafts, as current skill text.**
 
 ## Phase A — Step files (each self-contained; validator passes without SKILL.md, per the pr-loop-lib precedent)
 
