@@ -29,12 +29,13 @@ matches, record and proceed. If not:
    3 consecutive hits (default). This guards against canary analysis
    windows, promotion delays, and racing deploys silently replacing the
    build — trust the fingerprint, not the pipeline's "succeeded" status.
-   Consult deploy-model.md for how long promotion is expected to take and
-   pick a polling cadence that matches; report progress to the user while
-   waiting.
+   Consult `{scratchpad}/api-e2e/deploy-model.md` for how long promotion is
+   expected to take and pick a polling cadence that matches; report progress
+   to the user while waiting.
 
 ## Gate
 
 3 consecutive fingerprint passes (or, on rung 3, user-confirmed deploy
 evidence recorded in the report). Append the verdict, timestamp, rung, and
-evidence to run-context.md. No matrix executes before this.
+evidence to `{scratchpad}/api-e2e/run-context.md`. No matrix executes before
+this.

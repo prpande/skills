@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-- Doctrine 3 (spec): skill text contains **method only — zero environment facts**. No service names, URLs, tenant/subscriber numbers, IDs, or platform quirks in any file. All examples generic ("the service", "domain A").
+- Doctrine 3 (spec): skill text contains **method only — zero environment facts**. No service names, URLs, tenant/subscriber numbers, IDs, or platform quirks in the skill text under `skills/api-tooling/api-e2e/` (the design docs under `docs/superpowers/` may name concrete context). All examples in the skill generic ("the service", "domain A").
 - Doctrine 6 (spec): token-mint curls and credentials are **session-scoped** — the skill text must direct them to the session scratchpad only, never to committed/persistent/memory files.
 - Step files are named with **two-digit prefixes** (`steps/00-preflight.md` … `steps/07-cleanup.md`), matching the pr-autopilot convention and the validator's `steps/NN-*.md` reference pattern.
 - The validator rejects line-initial `[TBD]`, `TODO: `, `[fill in`, `XXX ` outside code fences — never leave them in any file.

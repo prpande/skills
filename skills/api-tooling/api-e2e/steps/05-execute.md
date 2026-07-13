@@ -1,7 +1,7 @@
 # Phase 5 — Execution & triage
 
 Run matrices SERIALLY — shared staging means concurrent probes corrupt
-each other's fixtures. Capture everything to results/.
+each other's fixtures. Capture everything to `{scratchpad}/api-e2e/results/`.
 
 ## The four-way FAIL disposition
 
@@ -29,7 +29,7 @@ waiting to happen, so record it in the same breath as the write.
 
 ## Mid-run events
 
-- **Token expiry** → re-mint from `secrets/mint-<domain>.sh`; resume.
+- **Token expiry** → re-mint from `{scratchpad}/api-e2e/secrets/mint-<domain>.sh`; resume.
 - **Fingerprint flip** (racing deploy; on rung 3, a newer deploy record) →
   abort the current script, mark every check since the last passing
   fingerprint assertion as TAINTED, re-enter the phase-3 environment gate,
