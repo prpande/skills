@@ -14,8 +14,8 @@ disposition ledger — a `## Disposition ledger` section appended to
 2. **Environment/fixture assumption wrong** — prove it by probing (e.g.,
    the slot was organically occupied), fix the fixture, rerun.
 3. **Harness bug** — script/capture error; fix the script, rerun.
-4. **Expectation mis-derived** — re-read the code, correct delta-map.md,
-   rerun.
+4. **Expectation mis-derived** — re-read the code, correct
+   `{scratchpad}/api-e2e/delta-map.md`, rerun.
 
 **Rule: a FAIL is not a build defect until the fixture assumption has been
 verified live.** The build being right and your fixture being wrong looks

@@ -11,7 +11,7 @@ Runs before the report's final delivery so its output sections are real.
   soft-deletes, query with include-inactive flags to see the truth.
 - Restore user-designated mutables to their interviewed state if the user
   asked for restoration.
-- Re-read a sample of no-touch objects (from no-touch.md, including
+- Re-read a sample of no-touch objects (from `{scratchpad}/api-e2e/no-touch.md`, including
   collection-level counts) and confirm they are untouched.
 - Enumerate every unavoidable leftover into the report's residual-state
   section — exactly, with ids and final positions.

@@ -8,6 +8,9 @@ Sub-derivations a, b, and c read disjoint sources and don't depend on one
 another — derive them concurrently. Only d's rung 2 consumes a's delta
 map, so defer d until a is done when rung 2 is selected.
 
+The artifacts named below (delta-map.md, no-touch.md, deploy-model.md,
+fingerprint.md) all live under `{scratchpad}/api-e2e/` — never repo-relative.
+
 ## a. Wire-observable behavior map → delta-map.md
 
 PR mode: map EVERY commit in the diff to its observable effects — status

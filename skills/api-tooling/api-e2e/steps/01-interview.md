@@ -22,7 +22,7 @@ for one-shot confirm-or-correct instead of asking each topic cold.
 Confirmed values remain hypotheses until verified live — memory never
 substitutes for probing.
 
-## Collect (in order; append each answer to run-context.md)
+## Collect (in order; append each answer to `{scratchpad}/api-e2e/run-context.md`)
 
 1. **Mode** — open PR (deploy + fingerprint + test) vs. already-deployed.
 2. **Target** — service under test; the PR or endpoint(s); any secondary

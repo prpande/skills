@@ -36,7 +36,9 @@ servers may be absent in headless runs; treat absence as a normal gap.
 head, so one of these must exist:
 1. A local checkout the run can `git -C <path>` into at the right commit.
 2. A GitHub (or equivalent) token the user pastes — verify with one benign
-   API read before recording it as working.
+   API read, then record only that this rung works. The token itself goes to
+   `{scratchpad}/api-e2e/secrets/` like any credential — never into
+   run-context.md or any other artifact.
 3. Last resort: the user pastes specific files on request. Acceptable but
    slow; tell the user derivation quality depends on what they paste.
 

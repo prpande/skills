@@ -4,6 +4,9 @@ Cross the phase-2 delta list with the invariant categories below. Every
 category is considered for every delta; every omission becomes an explicit
 coverage-gap row — never silently dropped.
 
+Artifact names here (matrix.md, no-touch.md, fingerprint.md, run-context.md)
+refer to `{scratchpad}/api-e2e/` — never repo-relative files.
+
 ## Invariant categories
 
 - **Auth edges:** no token, wrong-audience token, cross-tenant access.
