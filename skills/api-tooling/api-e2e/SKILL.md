@@ -10,7 +10,7 @@ description: >
   when the user says "run e2e against PR #N", "e2e-validate this
   endpoint", "/api-e2e", or similar.
 argument-hint: "[PR number / PR URL / endpoint description]"
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion, WebFetch, ToolSearch, TaskCreate, TaskUpdate
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion, ToolSearch, TaskCreate, TaskUpdate
 ---
 
 # api-e2e
@@ -67,8 +67,8 @@ progress tracking.
 | 3 | Environment gate | [`steps/03-environment-gate.md`](steps/03-environment-gate.md) | 3 consecutive fingerprint passes (rung-3: user-confirmed evidence, recorded) |
 | 4 | Matrix & scripting | [`steps/04-matrix.md`](steps/04-matrix.md) | Executed tier approved (all modes); fixture plan approved (when writes exist) |
 | 5 | Execution & triage | [`steps/05-execute.md`](steps/05-execute.md) | Zero undispositioned FAILs |
-| 6 | Report | [`steps/06-report.md`](steps/06-report.md) | Redacted report user-approved and delivered to the durable destination |
-| 7 | Cleanup | [`steps/07-cleanup.md`](steps/07-cleanup.md) | Cleanup verified by observation; sections handed to phase 6; method-improvement proposal presented if any |
+| 6 | Report | [`steps/06-report.md`](steps/06-report.md) | Redacted report user-approved and delivered — delivery runs *after* phase 7 (see the note below the table) |
+| 7 | Cleanup | [`steps/07-cleanup.md`](steps/07-cleanup.md) | Cleanup verified by observation; sections handed to phase 6 *before* that delivery; method-improvement proposal presented if any |
 
 Phases run in order. Two sanctioned loop-backs: any phase may re-enter
 phase 1 for a newly discovered domain (token + permissions only), and
