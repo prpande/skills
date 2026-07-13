@@ -6,6 +6,11 @@ real, then deliver.
 
 ## Mandatory sections
 
+Sources: the matrix rows and `## Disposition ledger` in
+`{scratchpad}/api-e2e/matrix.md`, fingerprint evidence from `fingerprint.md`,
+captured responses in `results/`, and the residual-state / cleanup sections
+from phase 7.
+
 - **Build identity + fingerprint evidence** — what was asserted, when, at
   both ends of every matrix; the ladder rung used. Rung-3 runs MUST state
   they carry undetectable-flip risk.
