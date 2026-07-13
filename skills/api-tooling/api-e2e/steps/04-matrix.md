@@ -41,6 +41,9 @@ coverage-gap row — never silently dropped.
   - Tier 3 (sampled by default): the regression sweep.
   The full untrimmed matrix is always preserved in matrix.md — anything
   not executed becomes a coverage-gap row.
+  - Read-only-degraded runs (phase 1/2): write-arm and conflict rows
+    cannot execute regardless of tier — they move wholesale to
+    coverage-gap rows, leaving the read-only checks as the executed set.
 - **Executed-tier approval gate (standalone, all modes):** fires even when
   the matrix contains no writes; merges with the fixture-plan gate when
   writes exist. The presentation MUST include an excluded-rows summary:

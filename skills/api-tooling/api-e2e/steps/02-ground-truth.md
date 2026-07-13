@@ -4,6 +4,10 @@ Everything is derived from the deployed commit, freshly, this run. The
 three information sources are the repo head, live probing, and the
 interview — a memory hint may point you at code, but the code decides.
 
+Sub-derivations a, b, and c read disjoint sources and don't depend on one
+another — derive them concurrently. Only d's rung 2 consumes a's delta
+map, so defer d until a is done when rung 2 is selected.
+
 ## a. Wire-observable behavior map → delta-map.md
 
 PR mode: map EVERY commit in the diff to its observable effects — status
@@ -79,4 +83,6 @@ rung-3 runs carry undetectable-flip risk.
 delta-map.md, no-touch.md, deploy-model.md, and fingerprint.md all exist
 and every entry is traceable to repo head. If a new domain surfaced (a
 witness API in an uninterviewed domain), run the phase-1 re-interview
-loop-back before declaring this gate passed.
+loop-back before declaring this gate passed. If the run is read-only
+(phase 1, item 6) and delta-map.md is predominantly write-dependent, fire
+the proceed-or-defer checkpoint before declaring this gate passed.
