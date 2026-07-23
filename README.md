@@ -11,6 +11,7 @@ User-level Claude Code skills maintained by @prpande.
 | [`deep-review`](./skills/pr-tooling/deep-review/SKILL.md) | Multi-angle adversarial code review of a PR, branch, or local changes, graded against a curated lens register; also the register's canonical home (consumed by `pr-autopilot` preflight when installed). |
 | [`design-coverage`](./skills/design-tooling/design-coverage/SKILL.md) | Compare an existing in-code UI flow against a new Figma design and produce an auditable discrepancy report. |
 | [`design-coverage-scout`](./skills/design-tooling/design-coverage-scout/SKILL.md) | Companion skill that inspects an unfamiliar repo and emits a new `platforms/<name>.md` hint file for `design-coverage`. |
+| [`api-e2e`](./skills/api-tooling/api-e2e/SKILL.md) | Interview-driven, fresh-context staging E2E validation of a backend API PR or deployed endpoint: repo-head-derived expectations, build fingerprinting, risk-tiered matrix, four-way failure triage, redacted durable report. |
 
 ## Supporting library
 
@@ -43,6 +44,7 @@ ln -s "$PWD/skills/pr-tooling/deep-review"               "$HOME/.claude/skills/d
 ln -s "$PWD/skills/pr-tooling/pr-loop-lib"               "$HOME/.claude/skills/pr-loop-lib"
 ln -s "$PWD/skills/design-tooling/design-coverage"       "$HOME/.claude/skills/design-coverage"
 ln -s "$PWD/skills/design-tooling/design-coverage-scout" "$HOME/.claude/skills/design-coverage-scout"
+ln -s "$PWD/skills/api-tooling/api-e2e"                  "$HOME/.claude/skills/api-e2e"
 ```
 
 On Windows with Git Bash, use `cmd //c mklink /D` or copy:
@@ -54,6 +56,7 @@ cp -r skills/pr-tooling/deep-review               "$HOME/.claude/skills/deep-rev
 cp -r skills/pr-tooling/pr-loop-lib               "$HOME/.claude/skills/pr-loop-lib"
 cp -r skills/design-tooling/design-coverage       "$HOME/.claude/skills/design-coverage"
 cp -r skills/design-tooling/design-coverage-scout "$HOME/.claude/skills/design-coverage-scout"
+cp -r skills/api-tooling/api-e2e                  "$HOME/.claude/skills/api-e2e"
 ```
 
 After installation, restart your Claude Code session. The skills appear in
