@@ -10,7 +10,9 @@ orchestration logic.
 Step 02's markdown instructs the orchestrator to:
 1. Read this file.
 2. Substitute placeholders (`{{BASE_SHA}}`, `{{HEAD_SHA}}`,
-   `{{WHAT_WAS_BUILT}}`, `{{DIFF}}`, `{{INTENT_DOCS}}`).
+   `{{WHAT_WAS_BUILT}}`, `{{DIFF}}`, `{{INTENT_DOCS}}`,
+   `{{LENS_GUIDANCE}}` — see step 02's "Lens guidance rendering";
+   empty string when the `deep-review` skill is not installed).
 3. Dispatch an Agent-tool subagent (`subagent_type: general-purpose`,
    model: sonnet) with the rendered prompt.
 4. Collect the JSON response into `context.preflight_passes.pass2_raw`.
@@ -89,6 +91,18 @@ Pass C — Interface and control-flow sweep.
   confirm that its rules cover every form that actually appears
   elsewhere in the diff and the existing tree.
 
+Pass D — Lens audit. Skip this pass entirely when the block below is
+  empty.
+<LENS_GUIDANCE>
+{{LENS_GUIDANCE}}
+</LENS_GUIDANCE>
+  Grade the diff against the lenses above, honoring the precedence
+  preamble they open with (repo-defined conventions govern; scoped
+  lenses are fallback; universal lenses always apply). Cite the lens id
+  in the finding description. Lens findings are Minor by default;
+  escalate per the severity rubric only when the lens hit has a concrete
+  correctness or security consequence.
+
 Severity rubric
   - Critical: exploitable, data loss, infinite loop, uncaught exception
     in the happy path, cross-artifact drift that crashes runtime,
@@ -108,7 +122,7 @@ Output format (strict JSON, no prose)
         "line": <int | null>,
         "description": "what is wrong (one sentence)",
         "recommendation": "what to change (one sentence)",
-        "category": "security|correctness|reliability|testing|cross-artifact|interface|control-flow|format-escaping|validator|style"
+        "category": "security|correctness|reliability|testing|cross-artifact|interface|control-flow|format-escaping|validator|conventions|reuse|style"
       }
     ],
     "summary": "one-sentence overall assessment"
@@ -128,4 +142,6 @@ Rules
 
 If the user wants to tune the adversarial bar (harsher or softer),
 edit the tone sentences at the top and the severity rubric. Keep
-the three-pass structure intact — it defines the output schema.
+the pass structure intact — it defines the output schema. Pass D's
+content comes from the `deep-review` skill's lens register; edit the
+register there, not here.

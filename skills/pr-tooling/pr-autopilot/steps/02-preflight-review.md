@@ -26,6 +26,7 @@ Follow this procedure:
    - `{{INTENT_DOCS}}` → concatenated contents of files in
      `context.spec_candidates` (if any; empty string if none)
    - `{{DIFF}}` → output of `git diff <base_sha>...<head_sha>`
+   - `{{LENS_GUIDANCE}}` → see "Lens guidance rendering" below
 3. Log a `subagent_dispatch` event with `role: "adversarial-reviewer"`,
    `model: "sonnet"`, the first 200 chars of the rendered prompt, and
    `timeout_s: 300`.
@@ -36,6 +37,26 @@ Follow this procedure:
 6. Log a `subagent_return` event.
 7. Store the parsed findings into
    `context.preflight_passes.pass2_raw`.
+
+## Lens guidance rendering
+
+The prompt template's Pass D grades the diff against the `deep-review`
+skill's lens register when that skill is installed alongside this one.
+
+1. Resolve `~/.claude/skills/deep-review/references/lens-register.md`.
+2. **If the file does not exist**: substitute the empty string, log a
+   `lens_register_missing` event, and move on — Pass D self-skips on an
+   empty block. This keeps pr-autopilot fully functional standalone.
+3. **If it exists**:
+   a. Locate the repo's own rule sources: `CLAUDE.md` / `AGENTS.md` /
+      `ARCHITECTURE.md` at the repo root, and any review runbook or
+      skill under `.claude/skills/`. Build a precedence preamble:
+      "Repo-defined conventions govern and are at: <paths>. The lenses
+      below are fallback where the repo is silent; universal lenses
+      always apply."
+   b. From the register, take the Universal section plus every pack
+      whose stated trigger matches the diff's content.
+   c. Substitute preamble + selected sections as `{{LENS_GUIDANCE}}`.
 
 ## What-was-built inference
 

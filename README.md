@@ -8,6 +8,7 @@ User-level Claude Code skills maintained by @prpande.
 |---|---|
 | [`pr-autopilot`](./skills/pr-tooling/pr-autopilot/SKILL.md) | Autonomously publish a PR and drive it through the reviewer-bot feedback loop until CI is green. |
 | [`pr-followup`](./skills/pr-tooling/pr-followup/SKILL.md) | Re-enter the same comment loop later when human or late bot comments arrive. |
+| [`deep-review`](./skills/pr-tooling/deep-review/SKILL.md) | Multi-angle adversarial code review of a PR, branch, or local changes, graded against a curated lens register; also the register's canonical home (consumed by `pr-autopilot` preflight when installed). |
 | [`design-coverage`](./skills/design-tooling/design-coverage/SKILL.md) | Compare an existing in-code UI flow against a new Figma design and produce an auditable discrepancy report. |
 | [`design-coverage-scout`](./skills/design-tooling/design-coverage-scout/SKILL.md) | Companion skill that inspects an unfamiliar repo and emits a new `platforms/<name>.md` hint file for `design-coverage`. |
 
@@ -38,6 +39,7 @@ Symlink (or copy) each skill folder into `~/.claude/skills/`:
 ```bash
 ln -s "$PWD/skills/pr-tooling/pr-autopilot"              "$HOME/.claude/skills/pr-autopilot"
 ln -s "$PWD/skills/pr-tooling/pr-followup"               "$HOME/.claude/skills/pr-followup"
+ln -s "$PWD/skills/pr-tooling/deep-review"               "$HOME/.claude/skills/deep-review"
 ln -s "$PWD/skills/pr-tooling/pr-loop-lib"               "$HOME/.claude/skills/pr-loop-lib"
 ln -s "$PWD/skills/design-tooling/design-coverage"       "$HOME/.claude/skills/design-coverage"
 ln -s "$PWD/skills/design-tooling/design-coverage-scout" "$HOME/.claude/skills/design-coverage-scout"
@@ -48,6 +50,7 @@ On Windows with Git Bash, use `cmd //c mklink /D` or copy:
 ```bash
 cp -r skills/pr-tooling/pr-autopilot              "$HOME/.claude/skills/pr-autopilot"
 cp -r skills/pr-tooling/pr-followup               "$HOME/.claude/skills/pr-followup"
+cp -r skills/pr-tooling/deep-review               "$HOME/.claude/skills/deep-review"
 cp -r skills/pr-tooling/pr-loop-lib               "$HOME/.claude/skills/pr-loop-lib"
 cp -r skills/design-tooling/design-coverage       "$HOME/.claude/skills/design-coverage"
 cp -r skills/design-tooling/design-coverage-scout "$HOME/.claude/skills/design-coverage-scout"
