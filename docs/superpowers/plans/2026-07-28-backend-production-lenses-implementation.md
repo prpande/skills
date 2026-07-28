@@ -96,8 +96,13 @@ Do not reword, reorder, merge, or add lenses. The spec text is the approved text
 Run: `grep -cE '^- \*\*(TX|IDM|TEN|CA|MIG|EXP)[0-9]+ —' skills/pr-tooling/deep-review/references/backend-lenses.md`
 Expected: `35`
 
-Run: `grep -cE '^\*Not a finding when:\*' skills/pr-tooling/deep-review/references/backend-lenses.md`
+Run: `grep -cE '^\s*\*Not a finding when:\*' skills/pr-tooling/deep-review/references/backend-lenses.md`
 Expected: `6` (TX1, TX2, IDM1, TEN1, MIG1, EXP2)
+
+The guards are markdown list continuations, indented to align under their
+lens bullet exactly as in the spec. Do not dedent them to column 0 — that
+breaks the guard out of its bullet and orphans its wrap line. The pattern
+above tolerates the leading whitespace deliberately.
 
 Run: `grep -oE '^- \*\*(TX|IDM|TEN|CA|MIG|EXP)[0-9]+' skills/pr-tooling/deep-review/references/backend-lenses.md | sort | uniq -d`
 Expected: empty output (no duplicate ids)
