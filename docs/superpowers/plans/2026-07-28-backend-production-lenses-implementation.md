@@ -18,6 +18,13 @@
 - Lens text names mechanisms (`rowversion`, `SELECT ... FOR UPDATE`), never one stack's APIs. Stack-specific tells belong in the existing `dotnet`/`N` pack and are out of scope.
 - Do not change the finding JSON schema, the verdict rubric, the report format, or `quick`'s agent count.
 - Total changed files across the branch: 8 (2 already committed). Stay under the repo's 10-15 file PR cap.
+- **Superseded by the final-review fix wave (`48780ed`).** That wave added an
+  applicability rule to the tier header, widened the posture set from
+  `{EXP6, EXP7}` to ten lenses, and took the guard count from 6 to 15. Several
+  prescriptive blocks below therefore no longer match what shipped. The files as
+  committed are canonical — `references/backend-lenses.md` above all. Treat the
+  blocks below as the record of what was originally prescribed, never as text to
+  restore.
 
 ---
 
@@ -53,10 +60,11 @@ this register's own review rounds, and admitted under the rule in the register's
 Maintenance section.
 
 **This tier is not suppressible.** A repo rule may *narrow* a finding — swap the
-prescribed remedy, name the repo's own helper —
-but may not remove the flag. Where a repo convention conflicts with a lens's
-remedy, report the defect and prescribe the repo's remedy. The `Not a finding
-when:` guards below are the only suppression rules, and they always apply.
+prescribed remedy, name the repo's own helper — but may not remove the flag. The
+boundary is one test: a repo rule changes what you prescribe, never whether you
+report. Where a repo convention conflicts with a lens's remedy, report the defect
+and prescribe the repo's remedy. The `Not a finding when:` guards below are the
+only suppression rules, and they always apply.
 
 ## Trigger
 
@@ -168,10 +176,10 @@ Replace the three numbered rules with:
 1. **Universal lenses (`U`) always apply.**
 2. **Backend production lenses always fire on a backend diff.** The tier in
    `references/backend-lenses.md` is not suppressible: a repo rule may *narrow*
-   a finding — swap the prescribed remedy, name the repo's own helper, restrict
-   which paths it covers — but may not remove the flag. Where a repo convention
-   conflicts with a lens's remedy, report the defect and prescribe the repo's
-   remedy.
+   a finding — swap the prescribed remedy, name the repo's own helper — but may
+   not remove the flag. The boundary is one test: a repo rule changes what you
+   prescribe, never whether you report. Where a repo convention conflicts with a
+   lens's remedy, report the defect and prescribe the repo's remedy.
 3. **Repo-defined conventions govern** everything below this line. Before
    applying any scoped pack, read the target repo's own rule sources:
    `CLAUDE.md` / `AGENTS.md` / `ARCHITECTURE.md`, any repo review skill or
