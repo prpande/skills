@@ -41,22 +41,43 @@ Follow this procedure:
 ## Lens guidance rendering
 
 The prompt template's Pass D grades the diff against the `deep-review`
-skill's lens register when that skill is installed alongside this one.
+skill's lens register and its backend production tier when that skill is
+installed alongside this one.
 
-1. Resolve `~/.claude/skills/deep-review/references/lens-register.md`.
-2. **If the file does not exist**: substitute the empty string, log a
-   `lens_register_missing` event, and move on — Pass D self-skips on an
-   empty block. This keeps pr-autopilot fully functional standalone.
-3. **If it exists**:
+1. Resolve `~/.claude/skills/deep-review/references/lens-register.md` and
+   `~/.claude/skills/deep-review/references/backend-lenses.md`. The two
+   resolve independently — either may be absent, and neither absence
+   suppresses the other.
+2. Decide whether the diff is **backend**: the diff touches SQL or ORM
+   bindings or repository-layer code, an HTTP endpoint or route, a GraphQL
+   schema/resolver/loader, a message or event handler, a schema migration
+   file, or cache access.
+3. Collect lens sections from whichever sources resolved. Each contributes
+   independently:
+   a. **Register present** — take the Universal section plus every pack
+      whose stated trigger matches the diff's content. **Register absent**
+      — log a `lens_register_missing` event and contribute nothing here.
+   b. **Backend diff, tier present** — append the whole of
+      `backend-lenses.md`. **Backend diff, tier absent** — log a
+      `backend_lenses_missing` event and contribute nothing here. On a
+      non-backend diff the tier does not apply: contribute nothing, log
+      nothing.
+4. **If neither (a) nor (b) contributed**: substitute the empty string for
+   `{{LENS_GUIDANCE}}` and move on — Pass D self-skips on an empty block.
+   This keeps pr-autopilot fully functional standalone.
+5. Otherwise build the precedence preamble, one sentence per contributing
+   source, and substitute preamble + collected sections as
+   `{{LENS_GUIDANCE}}`:
    a. Locate the repo's own rule sources: `CLAUDE.md` / `AGENTS.md` /
       `ARCHITECTURE.md` at the repo root, and any review runbook or
-      skill under `.claude/skills/`. Build a precedence preamble:
-      "Repo-defined conventions govern and are at: <paths>. The lenses
-      below are fallback where the repo is silent; universal lenses
-      always apply."
-   b. From the register, take the Universal section plus every pack
-      whose stated trigger matches the diff's content.
-   c. Substitute preamble + selected sections as `{{LENS_GUIDANCE}}`.
+      skill under `.claude/skills/`. Open with: "Repo-defined conventions
+      govern everything below this line and are at: <paths>."
+   b. When (a) contributed, add: "The lenses below are fallback where the
+      repo is silent; universal lenses always apply."
+   c. When (b) contributed, add: "Backend production lenses
+      (TX/IDM/TEN/CA/MIG/EXP) always apply on a backend diff — a repo rule
+      changes what you prescribe, never whether you report; the tier's
+      `Not a finding when:` guards are the only suppression rules."
 
 ## What-was-built inference
 

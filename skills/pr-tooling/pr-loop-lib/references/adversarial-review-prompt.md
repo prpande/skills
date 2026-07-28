@@ -96,12 +96,15 @@ Pass D — Lens audit. Skip this pass entirely when the block below is
 <LENS_GUIDANCE>
 {{LENS_GUIDANCE}}
 </LENS_GUIDANCE>
-  Grade the diff against the lenses above, honoring the precedence
-  preamble they open with (repo-defined conventions govern; scoped
-  lenses are fallback; universal lenses always apply). Cite the lens id
-  in the finding description. Lens findings are Minor by default;
-  escalate per the severity rubric only when the lens hit has a concrete
-  correctness or security consequence.
+  Grade the diff against the lenses above, honoring the precedence preamble
+  they open with — it is rendered into the block above; do not restate it
+  here. Cite the lens id in the finding description. Lens findings are Minor
+  by default; escalate per the severity rubric only when the lens hit has a
+  concrete correctness or security consequence. The backend tier's security
+  lenses — named in the tier's `Severity defaults` section — are the
+  exception: they map to Critical in this schema. This pass has no
+  verification step, so for those state the trigger conditions you observed
+  rather than asserting the finding as established.
 
 Severity rubric
   - Critical: exploitable, data loss, infinite loop, uncaught exception
