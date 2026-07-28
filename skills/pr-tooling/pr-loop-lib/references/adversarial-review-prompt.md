@@ -98,12 +98,16 @@ Pass D — Lens audit. Skip this pass entirely when the block below is
 </LENS_GUIDANCE>
   Grade the diff against the lenses above, honoring the precedence
   preamble they open with (universal lenses always apply; backend
-  production lenses always fire on a backend diff and a repo rule can
-  narrow but not suppress them; repo-defined conventions govern below
-  that; scoped lenses are fallback). Cite the lens id
-  in the finding description. Lens findings are Minor by default;
+  production lenses always fire on a backend diff, where a repo rule
+  changes what you prescribe but never whether you report; repo-defined
+  conventions govern below that; scoped lenses are fallback). Cite the
+  lens id in the finding description. Lens findings are Minor by default;
   escalate per the severity rubric only when the lens hit has a concrete
-  correctness or security consequence.
+  correctness or security consequence. The backend tier's security lenses
+  (TEN1, TEN2, TEN6, EXP8) are the exception — they map to Critical in
+  this schema. This pass has no verification step, so for those state the
+  trigger conditions you observed rather than asserting the finding as
+  established.
 
 Severity rubric
   - Critical: exploitable, data loss, infinite loop, uncaught exception

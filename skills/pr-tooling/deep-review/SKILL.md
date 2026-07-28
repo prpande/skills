@@ -61,7 +61,7 @@ Effort (second argument, default `standard`):
 |---|---|
 | `quick` | One adversarial reviewer, inline. Angles 1 + 12 merged into a single pass, graded against the universal lenses, the triggered packs, and the backend tier when the diff is backend. No verification fan-out. |
 | `standard` | 6 finder agents (angles 1, 2, 3, 5, 11, 12; angle 11 drops out when Phase 0 finds no repo rule sources), plus angle 13 when the diff is backend → dedup → one verifier per surviving candidate. |
-| `max` | All 13 angles → dedup → one verifier per candidate → gap sweep → ranked report. Recall mode: catching every real defect outranks avoiding false positives. |
+| `max` | All 13 angles — angle 13 only when the diff is backend, so 12 otherwise → dedup → one verifier per candidate → gap sweep → ranked report. Recall mode: catching every real defect outranks avoiding false positives. |
 
 ## Phase 0 — Gather
 
@@ -87,7 +87,8 @@ Effort (second argument, default `standard`):
 
 At `quick`, skip Phases 1–3: run one inline adversarial pass yourself —
 angle 1 plus angle 12 from the catalog below, graded against the located
-rule sources — and go straight to Phase 4.
+rule sources, the universal lenses, the packs the diff triggers, and the
+backend tier when the diff is backend — and go straight to Phase 4.
 
 Otherwise, dispatch independent finder agents per angle (render briefs from
 `references/agent-briefs.md`; all dispatches for a phase go out in one
@@ -147,7 +148,8 @@ Angle catalog:
     begins and ends and what non-database I/O sits inside it, what happens on
     a retried call or a redelivered message, where the tenant scope comes from
     and whether it reaches every query and every cache key, what a rolling
-    deploy does to this schema change, and what bounds the response. Unlike
+    deploy does to this schema change, what bounds the response, and what a
+    cache miss on a hot key costs when the cached shape has changed. Unlike
     angle 12 — a pattern-match pass over the register — this one reads beyond
     the diff. Cite tier ids.
 

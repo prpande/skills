@@ -70,14 +70,13 @@ installed alongside this one.
    a. Locate the repo's own rule sources: `CLAUDE.md` / `AGENTS.md` /
       `ARCHITECTURE.md` at the repo root, and any review runbook or
       skill under `.claude/skills/`. Open with: "Repo-defined conventions
-      govern and are at: <paths>."
+      govern everything below this line and are at: <paths>."
    b. When (a) contributed, add: "The lenses below are fallback where the
       repo is silent; universal lenses always apply."
    c. When (b) contributed, add: "Backend production lenses
       (TX/IDM/TEN/CA/MIG/EXP) always apply on a backend diff — a repo rule
-      may change the prescribed remedy but never suppresses the finding;
-      the tier's `Not a finding when:` guards are the only suppression
-      rules."
+      changes what you prescribe, never whether you report; the tier's
+      `Not a finding when:` guards are the only suppression rules."
 
 ## What-was-built inference
 

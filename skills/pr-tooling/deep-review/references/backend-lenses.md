@@ -7,10 +7,20 @@ this register's own review rounds, and admitted under the rule in the register's
 Maintenance section.
 
 **This tier is not suppressible.** A repo rule may *narrow* a finding — swap the
-prescribed remedy, name the repo's own helper, restrict which paths it covers —
-but may not remove the flag. Where a repo convention conflicts with a lens's
-remedy, report the defect and prescribe the repo's remedy. The `Not a finding
-when:` guards below are the only suppression rules, and they always apply.
+prescribed remedy, name the repo's own helper — but may not remove the flag. The
+boundary is one test: a repo rule changes what you prescribe, never whether you
+report. Where a repo convention conflicts with a lens's remedy, report the defect
+and prescribe the repo's remedy. The `Not a finding when:` guards below are the
+only suppression rules, and they always apply.
+
+**Applicability is a separate question.** A lens whose subject does not exist in
+the system under review — no tenancy dimension, no cache, no message broker, no
+migrations — is inapplicable, and an inapplicable lens produces no finding.
+Inapplicability is a matter of fact about the system, established from the code,
+not a convention a repo asserts; declining to report a lens whose precondition is
+absent is not suppression. Establish that a lens applies before you decide it
+fires — once it does apply, the non-suppressibility rule above governs it in
+full.
 
 ## Trigger
 
@@ -27,11 +37,14 @@ refuted.** Every other lens takes its severity from the concrete failure scenari
 
 ## Posture lenses
 
-`EXP6` and `EXP7` are posture lenses — the defect is the absence of something that
-lives nowhere near the diff. They are admissible only when the diff creates or
-widens the exposure, and they anchor to the diff line that creates it, never to
-the missing configuration. A pre-existing exposure the diff does not widen is not
-a finding (U8).
+`IDM4`, `IDM5`, `TEN5`, `CA5`, `MIG2`, `EXP3`, `EXP4`, `EXP5`, `EXP6`, and `EXP7`
+are posture lenses — the defect is the absence of a control that lives nowhere
+near the diff, so ordinary correct code matches the pattern. They are admissible
+only when the diff creates or widens the exposure, and they anchor to the diff
+line that creates it, never to the missing configuration. Look for the control at
+the layer that owns it — the shared client, the migration runner, the gateway,
+the framework — before reporting its absence. A pre-existing exposure the diff
+does not widen is not a finding (U8).
 
 ## TX — transactions and consistency
 
@@ -53,6 +66,8 @@ a finding (U8).
 - **TX3 — The service owns the transaction boundary.** A repository that opens
   its own transaction cannot compose into a larger unit of work; an endpoint
   that opens one puts a business decision in the wrong layer (U18).
+  *Not a finding when:* the repo's convention places the boundary at a different
+  layer and the boundary is still a single explicit scope.
 - **TX4 — A dual write is an outbox or a documented inconsistency.** A database
   write plus a message publish, cache write, or third-party call in one method
   has no atomicity — the second can fail after the first commits, and the event
@@ -78,6 +93,8 @@ a finding (U8).
   timeout, rebalance, or lost acknowledgement. Deduplicate on the message id or
   express the effect as an upsert. A handler that inserts, increments, or calls
   a payment API without a guard double-processes.
+  *Not a finding when:* the effect is naturally idempotent (a full-state write,
+  a delete).
 - **IDM3 — Retry policy only wraps idempotent operations.** Retries around a
   non-idempotent call convert a single transient failure into duplicated side
   effects. Check what the operation does, not just whether the exception looks
@@ -87,11 +104,13 @@ a finding (U8).
   five times turns a hundred requests into five hundred against a dependency
   that is already failing, preventing recovery. Check W6 first — the base client
   may already retry.
-- **IDM5 — Every consumer has a retry ceiling and a dead-letter destination with
-  a named owner.** A message that throws forever is requeued at the head and
-  stops the partition; a dead-letter queue nobody owns is a silent data-loss
-  queue. Replay is scoped by failure cause and code version, never "send
-  everything back".
+- **IDM5 — Every consumer has a retry ceiling and a dead-letter destination.** A
+  message that throws forever is requeued at the head and stops the partition; a
+  dead-letter queue nobody drains is a silent data-loss queue. Replay is scoped
+  by failure cause and code version, never "send everything back". Naming an
+  owner for the dead-letter destination is advice, not a reportable condition —
+  the ceiling and the destination are what the lens reports.
+  *Not a finding when:* the diff does not add a consumer.
 - **IDM6 — Background work carries its own context.** Queue workers, timers, and
   fire-and-forget tasks do not inherit request context: tenant, correlation id,
   and authorization scope are serialised into the payload and re-established by
@@ -100,15 +119,20 @@ a finding (U8).
 ## TEN — tenancy and scoping
 
 - **TEN1 — Every query is scoped by a tenant derived from the authenticated
-  principal** — not from a request body, route parameter, or header the caller
-  controls. A single missing scope predicate is the entire cross-tenant leak
+  principal, not from a request body, route parameter, or header the caller
+  controls.** A single missing scope predicate is the entire cross-tenant leak
   class, and it produces correct-looking results in every single-tenant test.
   *Not a finding when:* the repo enforces scoping globally (row-level security
   with a verified session variable, an ORM global filter) and the diff does not
   bypass it.
+  *Not a finding when:* the service has no tenancy dimension — no tenant,
+  organisation, or account discriminator on the data it reads and none on the
+  principal. The lens is inapplicable, not suppressed.
 - **TEN2 — Every cache key carries the tenant/scope component.** A key of
   `user:{id}` in a shared cache serves one tenant's row to another. This is a
   security finding, not a hygiene note. Combine with R3.
+  *Not a finding when:* the service has no tenancy dimension and the cache is
+  not shared across scopes. The lens is inapplicable, not suppressed.
 - **TEN3 — Tenant context is passed explicitly across async boundaries.**
   Ambient or async-local context does not survive into background tasks, timers,
   thread-pool work, or pooled connections. Pass it as a parameter and assert its
@@ -166,6 +190,7 @@ constants, and case normalisation.
   exclusive lock queues behind a long-running query — and every subsequent query
   queues behind the DDL, turning a schema change into a full-table stall. A
   short lock timeout plus a statement timeout makes it fail fast and retry.
+  *Not a finding when:* the migration runner sets a lock timeout globally.
 - **MIG3 — Backfills are batched and resumable.** A single `UPDATE` across a
   large table is a lock, a transaction-log event, and a replication-lag spike.
   Batch by key range, commit per batch, and make a re-run resume.
@@ -185,12 +210,18 @@ constants, and case normalisation.
   *Not a finding when:* the result set is bounded small by construction.
 - **EXP3 — The server clamps client-supplied page size.** A `limit` the caller
   sets with no server-side maximum is an unbounded query with extra steps.
+  *Not a finding when:* a framework, gateway, or route-level limit already
+  applies.
 - **EXP4 — Request bodies, arrays, and uploads are size-bounded.** An unbounded
   collection parameter is a memory and database amplifier from one request.
+  *Not a finding when:* a framework, gateway, or route-level limit already
+  applies.
 - **EXP5 — Every outbound call has an explicit timeout.** A dependency that
   hangs rather than fails holds a request thread and a pooled connection until
   something else gives up; pool exhaustion then converts one slow dependency
   into a whole-service outage.
+  *Not a finding when:* the timeout is configured on the shared client, channel,
+  or handler this call goes through.
 - **EXP6 — GraphQL depth and complexity limits exist, and the new field is
   costed.** Nesting multiplies: ten levels at ten items each is ten billion
   resolutions from one request. A new field or edge that widens the graph must

@@ -12,10 +12,12 @@ the admission rule in Maintenance.
 1. **Universal lenses (`U`) always apply.**
 2. **Backend production lenses always fire on a backend diff.** The tier in
    `references/backend-lenses.md` is not suppressible: a repo rule may *narrow*
-   a finding — swap the prescribed remedy, name the repo's own helper, restrict
-   which paths it covers — but may not remove the flag. Where a repo convention
-   conflicts with a lens's remedy, report the defect and prescribe the repo's
-   remedy.
+   a finding — swap the prescribed remedy, name the repo's own helper — but may
+   not remove the flag. The boundary is one test: a repo rule changes what you
+   prescribe, never whether you report. Where a repo convention conflicts with a
+   lens's remedy, report the defect and prescribe the repo's remedy. A lens whose
+   subject does not exist in the system under review is inapplicable rather than
+   suppressed — see the tier's header.
 3. **Repo-defined conventions govern** everything below this line. Before
    applying any scoped pack, read the target repo's own rule sources:
    `CLAUDE.md` / `AGENTS.md` / `ARCHITECTURE.md`, any repo review skill or

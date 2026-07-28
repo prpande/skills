@@ -48,10 +48,11 @@ four:
 
 1. **Universal lenses (`U`) always apply.**
 2. **Backend production lenses always fire on a backend diff.** A repo rule may
-   *narrow* a finding — swap the prescribed remedy, name the repo's own helper,
-   restrict which paths it covers — but may not suppress the flag. Where a repo
-   convention conflicts with a lens's remedy, report the defect and prescribe
-   the repo's remedy.
+   *narrow* a finding — swap the prescribed remedy, name the repo's own helper —
+   but may not suppress the flag. The boundary is one test: a repo rule changes
+   what you prescribe, never whether you report. Where a repo convention
+   conflicts with a lens's remedy, report the defect and prescribe the repo's
+   remedy.
 3. **Repo-defined conventions govern** everything below this line, and outrank
    scoped packs.
 4. **Scoped packs are fallback suggestions** — apply only when the diff touches
@@ -145,8 +146,8 @@ or widens the exposure, and they anchor to the diff line that creates it.
 ### TEN — tenancy and scoping
 
 - **TEN1 — Every query is scoped by a tenant derived from the authenticated
-  principal** — not from a request body, route parameter, or header the caller
-  controls. A single missing scope predicate is the entire cross-tenant leak
+  principal, not from a request body, route parameter, or header the caller
+  controls.** A single missing scope predicate is the entire cross-tenant leak
   class, and it produces correct-looking results in every single-tenant test.
   *Not a finding when:* the repo enforces scoping globally (row-level security
   with a verified session variable, an ORM global filter) and the diff does not
@@ -257,7 +258,7 @@ scenario, as today.
 
 ## File-by-file changes
 
-Seven files.
+Eight files.
 
 1. **`references/backend-lenses.md`** (new) — the tier: header stating the
    firing rule and pointing back at the register's precedence section, the
@@ -283,8 +284,12 @@ Seven files.
    (log `backend_lenses_missing`, substitute empty, continue); includes the tier
    when the diff is backend; the precedence preamble in 3a is updated to state
    the narrow-not-suppress rule.
-6. **This spec.**
-7. **The implementation plan.**
+6. **`pr-loop-lib/references/adversarial-review-prompt.md`** — Pass D's
+   instruction hardcodes the precedence summary, so it carries the
+   narrow-not-suppress wording and maps the tier's security lenses onto Pass D's
+   own severity schema.
+7. **This spec.**
+8. **The implementation plan.**
 
 ## Maintenance guardrail
 
