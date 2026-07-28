@@ -53,7 +53,7 @@ this register's own review rounds, and admitted under the rule in the register's
 Maintenance section.
 
 **This tier is not suppressible.** A repo rule may *narrow* a finding — swap the
-prescribed remedy, name the repo's own helper, restrict which paths it covers —
+prescribed remedy, name the repo's own helper —
 but may not remove the flag. Where a repo convention conflicts with a lens's
 remedy, report the defect and prescribe the repo's remedy. The `Not a finding
 when:` guards below are the only suppression rules, and they always apply.
@@ -338,7 +338,7 @@ and the admissibility rule for posture findings.
 
 ```
 You are the production failure-mode tracer in a multi-angle code review. You
-are the only finder licensed to read beyond the diff.
+are licensed to read beyond the diff.
 
 For each write path the diff touches, trace it end to end — entry point →
 service → repository → cache/message bus — and answer:
@@ -466,7 +466,7 @@ installed alongside this one.
    a. Locate the repo's own rule sources: `CLAUDE.md` / `AGENTS.md` /
       `ARCHITECTURE.md` at the repo root, and any review runbook or
       skill under `.claude/skills/`. Open with: "Repo-defined conventions
-      govern and are at: <paths>."
+      govern everything below this line and are at: <paths>."
    b. When (a) contributed, add: "The lenses below are fallback where the
       repo is silent; universal lenses always apply."
    c. When (b) contributed, add: "Backend production lenses
