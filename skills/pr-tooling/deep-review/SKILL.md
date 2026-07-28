@@ -19,6 +19,10 @@ Standalone review skill. Everything it needs ships in this directory:
 - `references/lens-register.md` — the rule set the review is graded
   against, and its precedence model (repo-defined conventions govern;
   scoped packs are fallback; universal lenses always apply).
+- `references/backend-lenses.md` — the governing backend tier (precedence
+  rule 2 of the register): transactions, idempotency, tenancy, caching,
+  migrations, exposure bounds. Fires on any backend diff and cannot be
+  suppressed by a repo convention.
 - `references/agent-briefs.md` — finder/verifier brief templates, the
   subagent hard-rules block, and model-selection guidance.
 
@@ -54,9 +58,9 @@ Effort (second argument, default `standard`):
 
 | Level | Shape |
 |---|---|
-| `quick` | One adversarial reviewer, inline. Angles 1 + 12 merged into a single pass. No verification fan-out. |
-| `standard` | 6 finder agents (angles 1, 2, 3, 5, 11, 12; angle 11 drops out when Phase 0 finds no repo rule sources) → dedup → one verifier per surviving candidate. |
-| `max` | All 12 angles → dedup → one verifier per candidate → gap sweep → ranked report. Recall mode: catching every real defect outranks avoiding false positives. |
+| `quick` | One adversarial reviewer, inline. Angles 1 + 12 merged into a single pass, graded against the universal lenses, the triggered packs, and the backend tier when the diff is backend. No verification fan-out. |
+| `standard` | 6 finder agents (angles 1, 2, 3, 5, 11, 12; angle 11 drops out when Phase 0 finds no repo rule sources), plus angle 13 when the diff is backend → dedup → one verifier per surviving candidate. |
+| `max` | All 13 angles → dedup → one verifier per candidate → gap sweep → ranked report. Recall mode: catching every real defect outranks avoiding false positives. |
 
 ## Phase 0 — Gather
 
@@ -70,7 +74,11 @@ Effort (second argument, default `standard`):
    per-directory convention docs. List their paths — they are handed to
    every agent and they outrank the register's scoped packs.
 3. Decide which register packs the diff triggers (each pack states its
-   trigger).
+   trigger), and record whether the diff is **backend** — it touches SQL/ORM
+   or repository code, an HTTP or GraphQL endpoint, a message handler, a
+   migration file, or cache access. A backend diff fires
+   `references/backend-lenses.md` under the register's precedence rule 2, and
+   adds angle 13 at `standard` and `max`.
 4. **Commit any in-flight work before dispatching agents** — see the
    hard-rules rationale in `references/agent-briefs.md`.
 
@@ -132,6 +140,15 @@ Angle catalog:
     spirit-of-the-doc inferences.
 12. **Lens audit.** The register's universal lenses plus the triggered
     packs, applied per the precedence model. Cite lens ids.
+13. **Production failure-mode tracer** (backend diffs only). For each write
+    path the diff touches, trace entry point → service → repository →
+    cache/bus and answer the backend tier's questions: where the transaction
+    begins and ends and what non-database I/O sits inside it, what happens on
+    a retried call or a redelivered message, where the tenant scope comes from
+    and whether it reaches every query and every cache key, what a rolling
+    deploy does to this schema change, and what bounds the response. Unlike
+    angle 12 — a pattern-match pass over the register — this one reads beyond
+    the diff. Cite tier ids.
 
 ## Phase 2 — Verify (`standard` and `max`)
 
@@ -184,6 +201,6 @@ added to `references/lens-register.md` in a deliberate update session.
 
 ## Related
 
-`pr-autopilot`'s preflight review consumes `references/lens-register.md`
-when this skill is installed alongside it, and degrades gracefully when
-it isn't. Keep the register's path stable.
+`pr-autopilot`'s preflight review consumes `references/lens-register.md` and
+`references/backend-lenses.md` when this skill is installed alongside it, and
+degrades gracefully when either is absent. Keep both paths stable.
