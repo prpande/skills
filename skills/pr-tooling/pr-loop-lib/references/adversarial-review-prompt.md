@@ -97,8 +97,10 @@ Pass D — Lens audit. Skip this pass entirely when the block below is
 {{LENS_GUIDANCE}}
 </LENS_GUIDANCE>
   Grade the diff against the lenses above, honoring the precedence
-  preamble they open with (repo-defined conventions govern; scoped
-  lenses are fallback; universal lenses always apply). Cite the lens id
+  preamble they open with (universal lenses always apply; backend
+  production lenses always fire on a backend diff and a repo rule can
+  narrow but not suppress them; repo-defined conventions govern below
+  that; scoped lenses are fallback). Cite the lens id
   in the finding description. Lens findings are Minor by default;
   escalate per the severity rubric only when the lens hit has a concrete
   correctness or security consequence.

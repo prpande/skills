@@ -41,13 +41,16 @@ Follow this procedure:
 ## Lens guidance rendering
 
 The prompt template's Pass D grades the diff against the `deep-review`
-skill's lens register when that skill is installed alongside this one.
+skill's lens register and its backend production tier when that skill is
+installed alongside this one.
 
-1. Resolve `~/.claude/skills/deep-review/references/lens-register.md`.
-2. **If the file does not exist**: substitute the empty string, log a
+1. Resolve `~/.claude/skills/deep-review/references/lens-register.md` and
+   `~/.claude/skills/deep-review/references/backend-lenses.md`. The two
+   resolve independently — either may be absent.
+2. **If the register does not exist**: substitute the empty string, log a
    `lens_register_missing` event, and move on — Pass D self-skips on an
    empty block. This keeps pr-autopilot fully functional standalone.
-3. **If it exists**:
+3. **If the register exists**:
    a. Locate the repo's own rule sources: `CLAUDE.md` / `AGENTS.md` /
       `ARCHITECTURE.md` at the repo root, and any review runbook or
       skill under `.claude/skills/`. Build a precedence preamble:
@@ -56,7 +59,16 @@ skill's lens register when that skill is installed alongside this one.
       always apply."
    b. From the register, take the Universal section plus every pack
       whose stated trigger matches the diff's content.
-   c. Substitute preamble + selected sections as `{{LENS_GUIDANCE}}`.
+   c. When the diff is **backend** — it touches SQL/ORM or repository code,
+      an HTTP or GraphQL endpoint, a message handler, a migration file, or
+      cache access — append the whole of `backend-lenses.md`, and extend the
+      preamble with: "Backend production lenses (TX/IDM/TEN/CA/MIG/EXP)
+      always apply on a backend diff — a repo rule may change the prescribed
+      remedy but never suppresses the finding; the tier's `Not a finding
+      when:` guards are the only suppression rules." If that file is absent,
+      log a `backend_lenses_missing` event and continue with (b) alone,
+      leaving the preamble unextended.
+   d. Substitute preamble + selected sections as `{{LENS_GUIDANCE}}`.
 
 ## What-was-built inference
 
