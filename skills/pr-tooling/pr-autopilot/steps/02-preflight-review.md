@@ -48,9 +48,10 @@ installed alongside this one.
    `~/.claude/skills/deep-review/references/backend-lenses.md`. The two
    resolve independently — either may be absent, and neither absence
    suppresses the other.
-2. Decide whether the diff is **backend**: it touches SQL/ORM or repository
-   code, an HTTP or GraphQL endpoint, a message handler, a migration file,
-   or cache access.
+2. Decide whether the diff is **backend**: the diff touches SQL or ORM
+   bindings or repository-layer code, an HTTP endpoint or route, a GraphQL
+   schema/resolver/loader, a message or event handler, a schema migration
+   file, or cache access.
 3. Collect lens sections from whichever sources resolved. Each contributes
    independently:
    a. **Register present** — take the Universal section plus every pack

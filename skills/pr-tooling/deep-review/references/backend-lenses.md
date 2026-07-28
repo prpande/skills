@@ -44,7 +44,10 @@ only when the diff creates or widens the exposure, and they anchor to the diff
 line that creates it, never to the missing configuration. Look for the control at
 the layer that owns it — the shared client, the migration runner, the gateway,
 the framework — before reporting its absence. A pre-existing exposure the diff
-does not widen is not a finding (U8).
+does not widen is not a finding (U8). When that layer is not present in the
+working tree — it lives in another repository or in cloud configuration — say
+so in the finding and state what would confirm it, rather than asserting the
+control is absent.
 
 ## TX — transactions and consistency
 
@@ -104,6 +107,8 @@ does not widen is not a finding (U8).
   five times turns a hundred requests into five hundred against a dependency
   that is already failing, preventing recovery. Check W6 first — the base client
   may already retry.
+  *Posture — the control lives outside the hunk; admissible only when the diff
+  creates or widens the exposure.*
 - **IDM5 — Every consumer has a retry ceiling and a dead-letter destination.** A
   message that throws forever is requeued at the head and stops the partition; a
   dead-letter queue nobody drains is a silent data-loss queue. Replay is scoped
@@ -114,7 +119,8 @@ does not widen is not a finding (U8).
 - **IDM6 — Background work carries its own context.** Queue workers, timers, and
   fire-and-forget tasks do not inherit request context: tenant, correlation id,
   and authorization scope are serialised into the payload and re-established by
-  the handler, never read from ambient state.
+  the handler, never read from ambient state. TEN3 covers the tenant-scoped
+  subset of this same mechanism.
 
 ## TEN — tenancy and scoping
 
@@ -136,7 +142,8 @@ does not widen is not a finding (U8).
 - **TEN3 — Tenant context is passed explicitly across async boundaries.**
   Ambient or async-local context does not survive into background tasks, timers,
   thread-pool work, or pooled connections. Pass it as a parameter and assert its
-  presence at the boundary.
+  presence at the boundary. IDM6 covers the same async-context-loss mechanism
+  more generally.
 - **TEN4 — Not-found and forbidden are indistinguishable for out-of-scope ids.**
   Returning 404 for a nonexistent id and 403 for another tenant's id lets a
   caller enumerate what exists elsewhere.
@@ -144,6 +151,8 @@ does not widen is not a finding (U8).
   on a pooled connection (`SET app.tenant_id`, RLS session variables, temp
   tables, session settings) leaks to the next borrower. Set it inside the scope
   that uses it and reset it deterministically.
+  *Posture — the control lives outside the hunk; admissible only when the diff
+  creates or widens the exposure.*
 - **TEN6 — Secrets and personal data never land in logs, cache values, or error
   responses.** Tokens, connection strings, and personal fields must not be
   logged at any level, cached in a payload that outlives its authorization, or
@@ -174,6 +183,8 @@ constants, and case normalisation.
 - **CA5 — In-process caches are size-bounded and hand out immutable values.** An
   unbounded dictionary is a memory leak with a slow fuse; returning a shared
   mutable instance lets one caller's mutation reach every other caller.
+  *Posture — the control lives outside the hunk; admissible only when the diff
+  creates or widens the exposure.*
 - **CA6 — A cache is never the system of record for an authorization
   decision.** Cached permissions, roles, or entitlements keep revoked access
   alive for the TTL. Bound it explicitly and invalidate on change; combine with
@@ -209,11 +220,12 @@ constants, and case normalisation.
   the stable sort key EXP1 requires.
   *Not a finding when:* the result set is bounded small by construction.
 - **EXP3 — The server clamps client-supplied page size.** A `limit` the caller
-  sets with no server-side maximum is an unbounded query with extra steps.
+  sets with no server-side maximum is an unbounded query with extra steps (D5).
   *Not a finding when:* a framework, gateway, or route-level limit already
   applies.
 - **EXP4 — Request bodies, arrays, and uploads are size-bounded.** An unbounded
-  collection parameter is a memory and database amplifier from one request.
+  collection parameter is a memory and database amplifier from one request
+  (D5).
   *Not a finding when:* a framework, gateway, or route-level limit already
   applies.
 - **EXP5 — Every outbound call has an explicit timeout.** A dependency that
@@ -225,12 +237,13 @@ constants, and case normalisation.
 - **EXP6 — GraphQL depth and complexity limits exist, and the new field is
   costed.** Nesting multiplies: ten levels at ten items each is ten billion
   resolutions from one request. A new field or edge that widens the graph must
-  fit the configured budget. *Posture — admissible only when the diff creates or
-  widens the exposure.*
+  fit the configured budget.
+  *Posture — admissible only when the diff creates or widens the exposure.*
 - **EXP7 — GraphQL errors are masked in production.** An unhandled resolver
   exception surfaced verbatim leaks internal messages, stack frames, and SQL to
-  any caller. *Posture — admissible only when the diff adds a path that can
-  surface a raw exception.*
+  any caller.
+  *Posture — admissible only when the diff adds a path that can surface a raw
+  exception.*
 - **EXP8 — Inbound binding is allowlisted.** Binding a request payload straight
   onto a domain entity or row model lets a caller set fields the API never meant
   to expose — status, role, owner, price. Map explicitly, field by field.

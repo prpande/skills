@@ -75,8 +75,9 @@ Effort (second argument, default `standard`):
    per-directory convention docs. List their paths — they are handed to
    every agent and they outrank the register's scoped packs.
 3. Decide which register packs the diff triggers (each pack states its
-   trigger), and record whether the diff is **backend** — it touches SQL/ORM
-   or repository code, an HTTP or GraphQL endpoint, a message handler, a
+   trigger), and record whether the diff is **backend** — the diff touches
+   SQL or ORM bindings or repository-layer code, an HTTP endpoint or route, a
+   GraphQL schema/resolver/loader, a message or event handler, a schema
    migration file, or cache access. A backend diff fires
    `references/backend-lenses.md` under the register's precedence rule 2, and
    adds angle 13 at `standard` and `max`.

@@ -38,7 +38,10 @@ You are ONE finder in a multi-angle code review. Your angle:
 <HARD_RULES_BLOCK>
 
 Rule sources (read before the diff, apply per their precedence notes):
-<RULE_SOURCE_PATHS — repo conventions first, then the lens register>
+<RULE_SOURCE_PATHS — repo conventions first, then the lens register>. The
+backend tier is deliberately not included here — it is angle 13's territory;
+this angle grades against the register's universal lenses plus triggered
+packs.
 
 Surface up to 8 candidate findings. Precision is the verifier's job — err
 toward surfacing, but every candidate needs a concrete mechanism, not a
@@ -95,12 +98,13 @@ migrations) is inapplicable and produces no finding; that is a fact about the
 code, not a suppression.
 
 Posture findings (the defect is the absence of a control living nowhere near
-the diff — IDM4, IDM5, TEN5, CA5, MIG2, EXP3, EXP4, EXP5, EXP6, EXP7) are
-admissible ONLY when the diff creates or widens the exposure. Anchor them to the
-diff line that creates the exposure, never to the missing configuration. Look
-for the control at the layer that owns it — the shared client, the migration
-runner, the gateway, the framework — before reporting its absence. A
-pre-existing exposure the diff does not widen is not a finding (U8).
+the diff — see the backend tier's `## Posture lenses` section for the full
+list) are admissible ONLY when the diff creates or widens the exposure. Anchor
+them to the diff line that creates the exposure, never to the missing
+configuration. Look for the control at the layer that owns it — the shared
+client, the migration runner, the gateway, the framework — before reporting
+its absence. A pre-existing exposure the diff does not widen is not a finding
+(U8).
 
 Surface up to 8 candidate findings. Precision is the verifier's job — err
 toward surfacing, but every candidate needs a concrete mechanism, not a vibe.

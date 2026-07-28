@@ -34,9 +34,10 @@ code false-positive.
 ## Backend production tier
 
 `references/backend-lenses.md` holds the governing tier described in precedence
-rule 2 — 35 lenses in six groups, firing whenever the diff touches SQL/ORM or
-repository code, an HTTP or GraphQL endpoint, a message handler, a migration
-file, or cache access.
+rule 2 — six groups, firing on a backend diff: the diff touches SQL or ORM
+bindings or repository-layer code, an HTTP endpoint or route, a GraphQL
+schema/resolver/loader, a message or event handler, a schema migration file, or
+cache access.
 
 | Prefix | Subject |
 |---|---|
