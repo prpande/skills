@@ -17,7 +17,7 @@
 - Register voice for all lens text: `- **ID — Imperative rule.** Failure mechanism in one or two sentences.` Guards are a following italic line: `*Not a finding when:* ...`.
 - Lens text names mechanisms (`rowversion`, `SELECT ... FOR UPDATE`), never one stack's APIs. Stack-specific tells belong in the existing `dotnet`/`N` pack and are out of scope.
 - Do not change the finding JSON schema, the verdict rubric, the report format, or `quick`'s agent count.
-- Total changed files across the branch: 7 (2 already committed). Stay under the repo's 10-15 file PR cap.
+- Total changed files across the branch: 8 (2 already committed). Stay under the repo's 10-15 file PR cap.
 
 ---
 
@@ -420,6 +420,7 @@ max; quick grades against the tier inline with no extra agent."
 
 **Files:**
 - Modify: `skills/pr-tooling/pr-autopilot/steps/02-preflight-review.md:41-59` (the "Lens guidance rendering" section)
+- Modify: `skills/pr-tooling/pr-loop-lib/references/adversarial-review-prompt.md:99-101` (Pass D's hardcoded precedence summary)
 
 **Interfaces:**
 - Consumes: `references/backend-lenses.md` (Task 1); the precedence wording from Task 2.
@@ -466,7 +467,35 @@ installed alongside this one.
    d. Substitute preamble + selected sections as `{{LENS_GUIDANCE}}`.
 ```
 
-- [ ] **Step 3: Assert both degrade paths are documented**
+- [ ] **Step 3: Correct the hardcoded precedence instruction in the Pass D template**
+
+`pr-loop-lib/references/adversarial-review-prompt.md` substitutes its Pass D
+*lens content* at render time, but restates the precedence model inline. Lines
+99-101 currently read:
+
+```
+Grade the diff against the lenses above, honoring the precedence
+preamble they open with (repo-defined conventions govern; scoped
+lenses are fallback; universal lenses always apply). Cite the lens id
+```
+
+That parenthetical contradicts the preamble Step 2 now injects. Replace those
+three lines with:
+
+```
+Grade the diff against the lenses above, honoring the precedence
+preamble they open with (universal lenses always apply; backend
+production lenses always fire on a backend diff and a repo rule can
+narrow but not suppress them; repo-defined conventions govern below
+that; scoped lenses are fallback). Cite the lens id
+```
+
+Change nothing else in that file — the tier's lens text is never duplicated here.
+
+Run: `grep -c 'repo-defined conventions govern; scoped' skills/pr-tooling/pr-loop-lib/references/adversarial-review-prompt.md`
+Expected: `0`
+
+- [ ] **Step 4: Assert both degrade paths are documented**
 
 Run: `grep -cE 'lens_register_missing|backend_lenses_missing' skills/pr-tooling/pr-autopilot/steps/02-preflight-review.md`
 Expected: `2`
@@ -474,22 +503,25 @@ Expected: `2`
 Run: `grep -c 'backend-lenses.md' skills/pr-tooling/pr-autopilot/steps/02-preflight-review.md`
 Expected: `2` (the resolve in step 1, the append in step 3c)
 
-- [ ] **Step 4: Verify the home-ref resolves**
+- [ ] **Step 5: Verify the home-ref resolves**
 
 The validator checks `~/.claude/skills/...` references against the repo's skill roots.
 
 Run: `python scripts/validate.py`
 Expected: `OK`, exit 0. A `missing home-ref` error here means Task 1's file landed at the wrong path.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add skills/pr-tooling/pr-autopilot/steps/02-preflight-review.md
+git add skills/pr-tooling/pr-autopilot/steps/02-preflight-review.md \
+       skills/pr-tooling/pr-loop-lib/references/adversarial-review-prompt.md
 git commit -m "feat(pr-autopilot): feed the backend lens tier into preflight Pass D
 
 Resolves backend-lenses.md independently of the register, appends it on
 a backend diff with the narrow-not-suppress preamble, and degrades via
-backend_lenses_missing when the file is absent."
+backend_lenses_missing when the file is absent. Corrects the Pass D
+template's hardcoded precedence summary, which still described the
+three-rule model."
 ```
 
 ---
@@ -530,7 +562,7 @@ Expected: empty output.
 - [ ] **Step 3: Verify the branch file count is under the PR cap**
 
 Run: `git diff --stat origin/main...HEAD | tail -1`
-Expected: 7 files changed. If higher, something outside this plan's scope was touched — investigate before raising a PR.
+Expected: 8 files changed. If higher, something outside this plan's scope was touched — investigate before raising a PR.
 
 - [ ] **Step 4: Full validator run**
 
@@ -570,6 +602,8 @@ Deliberately not in this plan, per the spec's non-goals:
 - Changes to the finding JSON schema, verdict rubric, or report format.
 - Changes to `quick`'s agent count.
 - Per-repo register staging — that mechanism exists and is untouched.
-- Any change to `pr-loop-lib/references/adversarial-review-prompt.md`. Its Pass D
-  content is substituted at render time by `02-preflight-review.md`, so Task 4
-  covers it. Editing the template directly would duplicate the tier text.
+- Duplicating the tier's lens text into
+  `pr-loop-lib/references/adversarial-review-prompt.md`. That template's Pass D
+  *content* is substituted at render time by `02-preflight-review.md`. Its
+  hardcoded precedence *instruction* at lines 99-101 is a different matter and
+  IS in scope — see Task 4 Step 3.
