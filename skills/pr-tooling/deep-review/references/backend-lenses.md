@@ -40,7 +40,7 @@ a finding (U8).
   holds row locks for the duration of a dependency's latency or outage. Move it
   outside the boundary, or record the intent in the same transaction (TX4) and
   act after commit.
-*Not a finding when:* the call targets the same database connection the
+  *Not a finding when:* the call targets the same database connection the
   transaction owns.
 - **TX2 — Read-modify-write carries a concurrency token.** Load, mutate in
   memory, save — without a rowversion, ETag, or `WHERE version = @seen` — loses
@@ -48,7 +48,7 @@ a finding (U8).
   validation, one write disappears with no error. Wrapping the pair in a
   transaction does not fix this; at the default isolation level both readers
   still see the initial state.
-*Not a finding when:* the path is append-only, single-writer by construction,
+  *Not a finding when:* the path is append-only, single-writer by construction,
   or the update is a relative statement the database serialises (`SET n = n + 1`).
 - **TX3 — The service owns the transaction boundary.** A repository that opens
   its own transaction cannot compose into a larger unit of work; an endpoint
@@ -71,7 +71,7 @@ a finding (U8).
   that retries on timeout must not produce a second effect: guard with a
   caller-supplied idempotency key whose stored result is replayed, or with a
   natural unique constraint the second attempt violates harmlessly.
-*Not a finding when:* the operation is naturally idempotent (full-state PUT,
+  *Not a finding when:* the operation is naturally idempotent (full-state PUT,
   delete), or no retry path can reach it.
 - **IDM2 — Message handlers are idempotent.** At-least-once is the default
   contract of every broker; redelivery follows any consumer crash, visibility
@@ -103,7 +103,7 @@ a finding (U8).
   principal** — not from a request body, route parameter, or header the caller
   controls. A single missing scope predicate is the entire cross-tenant leak
   class, and it produces correct-looking results in every single-tenant test.
-*Not a finding when:* the repo enforces scoping globally (row-level security
+  *Not a finding when:* the repo enforces scoping globally (row-level security
   with a verified session variable, an ORM global filter) and the diff does not
   bypass it.
 - **TEN2 — Every cache key carries the tenant/scope component.** A key of
@@ -161,7 +161,7 @@ constants, and case normalisation.
   column, renaming one, or adding `NOT NULL` in the same release that changes
   the code breaks every old instance still serving traffic during the rollout.
   Expand, migrate, then contract in a later release.
-*Not a finding when:* the table has no existing readers or writers.
+  *Not a finding when:* the table has no existing readers or writers.
 - **MIG2 — Migration connections set a lock timeout.** DDL waiting on an
   exclusive lock queues behind a long-running query — and every subsequent query
   queues behind the DDL, turning a schema change into a full-table stall. A
@@ -182,7 +182,7 @@ constants, and case normalisation.
   scans and discards every skipped row, so deep pages get progressively more
   expensive, and concurrent inserts shift the window. Cursor pagination needs
   the stable sort key EXP1 requires.
-*Not a finding when:* the result set is bounded small by construction.
+  *Not a finding when:* the result set is bounded small by construction.
 - **EXP3 — The server clamps client-supplied page size.** A `limit` the caller
   sets with no server-side maximum is an unbounded query with extra steps.
 - **EXP4 — Request bodies, arrays, and uploads are size-bounded.** An unbounded
