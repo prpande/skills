@@ -1,24 +1,49 @@
 # Review lens register
 
 The canonical rule set consumed by `deep-review` (all effort levels) and by
-`pr-autopilot`'s preflight review. Each lens is a repeatable mistake class
-distilled from real review rounds — not a style guide.
+`pr-autopilot`'s preflight review. Each lens in *this file* is a repeatable
+mistake class distilled from real review rounds — not a style guide. The
+governing backend tier in `references/backend-lenses.md` is distilled instead
+from production postmortems and published API-security guidance, and is held to
+the admission rule in Maintenance.
 
 ## Precedence
 
-1. **Repo-defined conventions govern.** Before applying any scoped pack, read
-   the target repo's own rule sources: `CLAUDE.md` / `AGENTS.md` /
-   `ARCHITECTURE.md`, any repo review skill or runbook under
-   `.claude/skills/`, and per-directory convention docs. Where a repo rule
-   and a scoped lens conflict, the repo rule wins — apply it and stay silent
-   about the suppressed lens.
-2. **Scoped packs are fallback suggestions.** Apply a pack only when the diff
+1. **Universal lenses (`U`) always apply.**
+2. **Backend production lenses always fire on a backend diff.** The tier in
+   `references/backend-lenses.md` is not suppressible: a repo rule may *narrow*
+   a finding — swap the prescribed remedy, name the repo's own helper, restrict
+   which paths it covers — but may not remove the flag. Where a repo convention
+   conflicts with a lens's remedy, report the defect and prescribe the repo's
+   remedy.
+3. **Repo-defined conventions govern** everything below this line. Before
+   applying any scoped pack, read the target repo's own rule sources:
+   `CLAUDE.md` / `AGENTS.md` / `ARCHITECTURE.md`, any repo review skill or
+   runbook under `.claude/skills/`, and per-directory convention docs. Where a
+   repo rule and a scoped lens conflict, the repo rule wins — apply it and stay
+   silent about the suppressed lens.
+4. **Scoped packs are fallback suggestions.** Apply a pack only when the diff
    touches its trigger AND the repo has no rule of its own on that subject.
-3. **Universal lenses always apply.**
 
-Findings cite lenses by id (`Lens U3`). A lens hit is a *candidate* — verify
-context before reporting; quoted strings, test doubles, and generated code
-false-positive.
+Findings cite lenses by id (`Lens U3`, `Lens TEN1`). A lens hit is a *candidate*
+— verify context before reporting; quoted strings, test doubles, and generated
+code false-positive.
+
+## Backend production tier
+
+`references/backend-lenses.md` holds the governing tier described in precedence
+rule 2 — 35 lenses in six groups, firing whenever the diff touches SQL/ORM or
+repository code, an HTTP or GraphQL endpoint, a message handler, a migration
+file, or cache access.
+
+| Prefix | Subject |
+|---|---|
+| `TX` | transaction boundaries and consistency |
+| `IDM` | idempotency and delivery semantics |
+| `TEN` | tenancy and scoping |
+| `CA` | cache correctness |
+| `MIG` | schema change under rolling deploy |
+| `EXP` | exposure and resource bounds |
 
 ## Universal — always apply
 
@@ -356,3 +381,7 @@ false-positive.
 - If the lesson generalizes, add it here — in a deliberate update session,
   scoped to the right pack, stripped of repo-private names and provenance.
 - A lens proven wrong gets deleted, not annotated.
+- A new **backend production lens** requires either a real incident or review
+  round, or a named external source *plus* a stated `Not a finding when:` guard.
+  Without that bar a tier nobody can suppress becomes a best-practices dump, and
+  reviewers learn to skip its findings.
