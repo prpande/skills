@@ -17,8 +17,9 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Agent
 Standalone review skill. Everything it needs ships in this directory:
 
 - `references/lens-register.md` — the rule set the review is graded
-  against, and its precedence model (repo-defined conventions govern;
-  scoped packs are fallback; universal lenses always apply).
+  against, and its precedence model (universal lenses always apply; the
+  backend tier always fires on a backend diff; repo-defined conventions
+  govern below that; scoped packs are fallback).
 - `references/backend-lenses.md` — the governing backend tier (precedence
   rule 2 of the register): transactions, idempotency, tenancy, caching,
   migrations, exposure bounds. Fires on any backend diff and cannot be
