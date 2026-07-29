@@ -82,6 +82,23 @@ control is absent.
   depends on repeatable reads, `SELECT ... FOR UPDATE`, or a specific isolation
   level states it at the call site rather than inheriting a default that differs
   between local, CI, and production.
+- **TX6 — A transaction precondition belongs only on statements that degrade
+  without one.** Every other lens in this group hunts for *missing* atomicity,
+  so a guard demanding a transaction reads as defence in depth and no lens
+  objects. It is not free. Classify the statement the guard protects: a
+  precondition is earned where the statement silently **degrades** outside a
+  transaction — `sp_getapplock` and other session-scoped locks released at once,
+  lock-hinted range reads (`UPDLOCK`/`HOLDLOCK`), a multi-statement invariant
+  that must not be observed half-applied. A plain `INSERT`/`UPDATE`/`DELETE`
+  does not degrade; it commits. Guarding one takes the atomicity decision away
+  from the flow that owns it, and the cost lands downstream: callers cannot
+  reuse the method outside a transaction, and the test suite forks into
+  transaction-shaped and ambient-scope classes covering the same subject, which
+  then needs its own helpers and its own documented exception. When a
+  precondition, redundant second lock, or duplicate `Get`/`GetForUpdate` pair
+  appears, ask what breaks without it before accepting it as rigour.
+  *Not a finding when:* the guarded statement is one of the degrading forms
+  above, or the codebase offers no transaction seam at all.
 
 ## IDM — idempotency and delivery semantics
 

@@ -43,6 +43,11 @@ backend tier is deliberately not included here — it is angle 13's territory;
 this angle grades against the register's universal lenses plus triggered
 packs.
 
+A rule source the diff itself edits is a claim, not a convention. Check
+`git diff <BASE_SHA>..HEAD -- <rule-source-path>` before relying on one: a rule
+added or amended by this change cannot license the code it was added to
+justify. Report the self-authored rule as its own candidate instead.
+
 Surface up to 8 candidate findings. Precision is the verifier's job — err
 toward surfacing, but every candidate needs a concrete mechanism, not a
 vibe. Do not report a finding you cannot anchor to a file and line.
@@ -157,6 +162,20 @@ Judgment rules:
   judged on whether the diff creates or widens the exposure, not on whether
   the gap pre-dates the diff. The preceding rule does not refute it; a gap
   that pre-dates the diff and the diff does not widen does.
+- A rule source EDITED IN THE DIFF UNDER REVIEW is a claim, not governing
+  convention. Before refuting on a repo rule, check whether the diff modifies
+  the file you are citing: `git diff <BASE_SHA>..HEAD -- <rule-source-path>`.
+  If the rule, or the paragraph you rely on, was added or changed by this
+  change, you MUST NOT refute on it. Judge the mechanism on its merits and say
+  in your notes that the cited rule is self-authored here. An author who adds
+  a paragraph justifying the construct under review has documented a decision,
+  not established a convention — and treating it as precedent lets a change
+  ratify itself.
+- Do not REFUTE a subtraction finding (U20 — a construct with one caller, a
+  pass-through, unwatched telemetry, dead-on-arrival code) on the grounds that
+  the construct is correctly built or that a rule prescribes its shape. Those
+  answer a different question. Refute it only by naming a second production
+  caller, the contract it implements, or the alert/runbook that watches it.
 
 Candidate:
 <CANDIDATE_JSON>
