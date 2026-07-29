@@ -28,6 +28,24 @@ and parallel build/test runs corrupt each other. The orchestrator must also
 **commit any in-flight work before the first dispatch** — a clean
 `git status` afterward is the tell that an agent violated the rules.
 
+## Self-authored-rule block (include verbatim in EVERY brief)
+
+```
+A rule source the diff itself edits is a claim, not a convention. Before
+relying on one, run `git diff <BASE_SHA>..HEAD -- <rule-source-path>`. If the
+rule — or the paragraph you rely on — was added or changed by this change, it
+cannot license the code it was added to justify. An author who adds a
+paragraph justifying the construct under review has documented a decision,
+not established a convention, and treating it as precedent lets a change
+ratify itself.
+```
+
+Every brief adds one role-specific line after the block: finders report the
+self-authored rule as its own candidate; the verifier must not refute on it.
+It lives here rather than in the hard-rules block because that block is
+operational — what an agent may not do to the working tree — and this one is
+epistemic. Both are included verbatim; neither is paraphrased per brief.
+
 ## Finder brief template
 
 ```
@@ -43,10 +61,8 @@ backend tier is deliberately not included here — it is angle 13's territory;
 this angle grades against the register's universal lenses plus triggered
 packs.
 
-A rule source the diff itself edits is a claim, not a convention. Check
-`git diff <BASE_SHA>..HEAD -- <rule-source-path>` before relying on one: a rule
-added or amended by this change cannot license the code it was added to
-justify. Report the self-authored rule as its own candidate instead.
+<SELF_AUTHORED_RULE_BLOCK>
+Report the self-authored rule as its own candidate.
 
 Surface up to 8 candidate findings. Precision is the verifier's job — err
 toward surfacing, but every candidate needs a concrete mechanism, not a
@@ -102,6 +118,11 @@ exist in this system (no tenancy dimension, no cache, no message broker, no
 migrations) is inapplicable and produces no finding; that is a fact about the
 code, not a suppression.
 
+<SELF_AUTHORED_RULE_BLOCK>
+Report the self-authored rule as its own candidate. This applies to a repo
+convention that narrows a tier lens: a carve-out the diff adds does not narrow
+the remedy for the diff that added it.
+
 Posture findings (the defect is the absence of a control living nowhere near
 the diff — see the backend tier's `## Posture lenses` section for the full
 list) are admissible ONLY when the diff creates or widens the exposure. Anchor
@@ -138,6 +159,9 @@ Rule sources (only if your candidate cites one):
 <RULE_SOURCE_PATHS — repo conventions first, then the lens register, then the
 backend tier>
 
+<SELF_AUTHORED_RULE_BLOCK>
+You MUST NOT refute on such a rule.
+
 Verdict definitions:
 - CONFIRMED — you can name the inputs/state that trigger the defect and the
   wrong output/behavior, quoting the exact line(s). For convention/reuse
@@ -162,15 +186,8 @@ Judgment rules:
   judged on whether the diff creates or widens the exposure, not on whether
   the gap pre-dates the diff. The preceding rule does not refute it; a gap
   that pre-dates the diff and the diff does not widen does.
-- A rule source EDITED IN THE DIFF UNDER REVIEW is a claim, not governing
-  convention. Before refuting on a repo rule, check whether the diff modifies
-  the file you are citing: `git diff <BASE_SHA>..HEAD -- <rule-source-path>`.
-  If the rule, or the paragraph you rely on, was added or changed by this
-  change, you MUST NOT refute on it. Judge the mechanism on its merits and say
-  in your notes that the cited rule is self-authored here. An author who adds
-  a paragraph justifying the construct under review has documented a decision,
-  not established a convention — and treating it as precedent lets a change
-  ratify itself.
+- When the self-authored-rule block above applies, judge the mechanism on its
+  merits and say in your notes that the cited rule is self-authored here.
 - Do not REFUTE a subtraction finding (U20 — a construct with one caller, a
   pass-through, unwatched telemetry, dead-on-arrival code) on the grounds that
   the construct is correctly built or that a rule prescribes its shape. Those

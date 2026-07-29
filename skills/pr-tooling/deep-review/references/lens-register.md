@@ -306,8 +306,7 @@ cache access.
   transactional** use the guarded form. Read this together with `TX6`, which
   is its counterpart: D13 governs statements that genuinely degrade outside a
   transaction, and TX6 governs everything else. Applying D13 to a plain write
-  is the over-constraint TX6 exists to catch — it takes the atomicity decision
-  away from the flow and forks the test suite by transaction shape.
+  is the over-constraint TX6 exists to catch.
 - **D14 — Read paths use the read-only connection seam** where the codebase
   offers one; pre-marking reads makes an eventual replica rollout
   transparent.

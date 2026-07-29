@@ -65,10 +65,11 @@ Effort (second argument, default `standard`):
 
 Angles 9 and 14 are in `standard` deliberately. A backtest over six human review
 rounds found the two largest classes of miss were duplication of existing code
-and constructs that never earned their place — and both angles that reach them
-were previously `max`-only, so the default review could not surface either. The
-cost is two more mid-tier finders on every run; the alternative is a default
-that structurally cannot find the most common defect in the corpus.
+and constructs that never earned their place. Angle 12 already had U1 in scope
+at `standard` and the duplicates shipped anyway: one pattern-match sweep across
+the whole register reliably skips the lenses that require *running* searches and
+reporting what they returned. A census needs an agent whose only job is the
+census. The cost is two more mid-tier finders on every run.
 
 ## Phase 0 — Gather
 
@@ -141,14 +142,11 @@ Angle catalog:
    decorator, adapter) route every method to the wrapped instance — not
    back through a registry/global — and forward everything callers use.
 9. **Reuse census.** A mechanical survey, not a judgement. For every file
-   the diff adds, run U1's full search list — basename, `class <Name>` /
-   `interface I<Name>` across all namespaces, `<Subject>Tests`, the concept
-   however else it is spelled, and who already injects the collaborator a new
-   type fronts — and **report what each search returned even when it returned
-   nothing**. An empty census stated explicitly is a result; an empty census
-   left unsaid is indistinguishable from one that never ran, which is how
-   greppable duplicates survive review. Name the existing owner where one
-   exists (register U1–U5).
+   the diff adds, run U1's full search list and **report what each search
+   returned even when it returned nothing**. An empty census stated
+   explicitly is a result; an empty census left unsaid is indistinguishable
+   from one that never ran, which is how greppable duplicates survive
+   review. Name the existing owner where one exists (register U1–U5).
 10. **Simplification and efficiency.** Redundant/derivable state,
     copy-paste variation, dead code, repeated I/O, sequential
     independent work, N+1 loops (U10).
@@ -182,7 +180,7 @@ Angle catalog:
     for one subject, new helper files, a documented exception to the repo's own
     rules — exist to work around a constraint this change introduced? Treat
     that scaffolding as evidence about the production design, not as a
-    deliverable. Report the root construct, not each symptom.
+    deliverable (T5). Report the root construct, not each symptom.
 
 ## Phase 2 — Verify (`standard` and `max`)
 
