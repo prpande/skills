@@ -102,7 +102,10 @@ control is absent.
   prescribing that the convention be narrowed to the degrading forms, and do not
   re-raise it per call site.
   *Not a finding when:* the guarded statement is one of the degrading forms
-  above, or the codebase offers no transaction seam at all.
+  above, the codebase offers no transaction seam at all, or the repo's own
+  review runbook already records this narrowing as considered and declined —
+  in a note predating this diff, since a declination the diff itself adds is a
+  claim, not a decision.
 
 ## IDM — idempotency and delivery semantics
 

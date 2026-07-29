@@ -60,7 +60,8 @@ cache access.
   3. `<Subject>Tests` and any other test type naming the same subject;
   4. the concept the file owns, however it is spelled elsewhere (the entity,
      the table, the endpoint) — for a type fronting a collaborator, grep who
-     else already injects that collaborator.
+     else already injects that collaborator (`D1` for the repository case;
+     report it under one id, not both).
 
   A same-named type in a different namespace/module compiles fine — that is
   exactly the trap. Extend the existing one, even if it lives in a legacy
@@ -148,7 +149,10 @@ cache access.
     logic, no mapping, and no policy.
   - **unobserved observability.** A metric, log attribute or trace field with
     no alert, dashboard, or runbook named in the diff or findable in the repo.
-    Telemetry nobody watches is not a signal, and its cost is real.
+    Telemetry nobody watches is not a signal, and its cost is real. When the
+    alerting layer is not in the working tree at all — it lives in a vendor
+    console, a wiki, or another repository — say so and state what would
+    confirm coverage, rather than asserting the telemetry is unwatched.
   - **dead on arrival.** Introduced with no reachable caller and no test
     exercising it.
 

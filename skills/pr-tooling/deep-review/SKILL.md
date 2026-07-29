@@ -95,7 +95,7 @@ census. The cost is two more mid-tier finders on every run.
 ## Phase 1 — Find (`standard` and `max`)
 
 At `quick`, skip Phases 1–3: run one inline adversarial pass yourself —
-angle 1 plus angle 12 from the catalog below, graded against the located
+angles 1, 12, and 14 from the catalog below, graded against the located
 rule sources, the universal lenses, the packs the diff triggers, and the
 backend tier when the diff is backend — and go straight to Phase 4.
 
@@ -173,9 +173,11 @@ Angle catalog:
     class, attribute and constant the diff adds; count each one's production
     call sites; and for each, state what breaks if it is deleted and its body
     inlined (U20). Do the same for guards: for every new precondition,
-    assertion, or required-scope check, name what degrades without it (TX6) —
-    a guard whose answer is "nothing degrades, it just commits" is a finding,
-    not defence in depth. Then step back to the whole diff: is it larger than
+    assertion, or required-scope check, name what degrades without it — a
+    guard whose answer is "nothing degrades, it just commits" is a finding,
+    not defence in depth. On a backend diff the transaction case of that
+    check is TX6, which angle 13 carries with the rest of the tier; cite it
+    only when you have the tier in front of you. Then step back to the whole diff: is it larger than
     the problem requires, and does new test scaffolding — a second test class
     for one subject, new helper files, a documented exception to the repo's own
     rules — exist to work around a constraint this change introduced? Treat

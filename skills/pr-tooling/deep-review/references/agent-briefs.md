@@ -38,6 +38,11 @@ cannot license the code it was added to justify. An author who adds a
 paragraph justifying the construct under review has documented a decision,
 not established a convention, and treating it as precedent lets a change
 ratify itself.
+
+This governs a rule cited to license code the same diff changes. When the
+diff under review IS the rule sources — someone is editing the conventions,
+the register, or these briefs — those rules are the subject of the review,
+not its licence: judge them on their merits and cite them freely.
 ```
 
 Every brief adds one role-specific line after the block: finders report the
@@ -160,7 +165,7 @@ Rule sources (only if your candidate cites one):
 backend tier>
 
 <SELF_AUTHORED_RULE_BLOCK>
-You MUST NOT refute on such a rule.
+You MUST NOT refute on a rule that is self-authored in that sense.
 
 Verdict definitions:
 - CONFIRMED — you can name the inputs/state that trigger the defect and the
