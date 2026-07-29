@@ -82,6 +82,35 @@ control is absent.
   depends on repeatable reads, `SELECT ... FOR UPDATE`, or a specific isolation
   level states it at the call site rather than inheriting a default that differs
   between local, CI, and production.
+- **TX6 — A transaction precondition belongs only on statements that degrade
+  without one.** Every other lens in this group hunts for *missing* atomicity,
+  so a guard demanding a transaction reads as defence in depth and no lens
+  objects. It is not free. Classify the statement the guard protects. Only these
+  **degrade** outside a transaction: an application lock scoped to the
+  transaction (`sp_getapplock` at its default `@LockOwner = 'Transaction'`,
+  which outside one has nothing to own it — note that its `'Session'` form is
+  precisely the variant that does *not* need a transaction); a lock-hinted
+  range read (`UPDLOCK`/`HOLDLOCK`), whose locks release when the statement
+  ends rather than when the work does, reopening the race the hint was taken to
+  close; and a multi-statement invariant that must not be observed
+  half-applied. A plain
+  `INSERT`/`UPDATE`/`DELETE`
+  does not degrade; it commits. Guarding one takes the atomicity decision away
+  from the flow that owns it, and the cost lands downstream: callers cannot
+  reuse the method outside a transaction, and the test suite forks into
+  transaction-shaped and ambient-scope classes covering the same subject, which
+  then needs its own helpers and its own documented exception. When a
+  precondition, redundant second lock, or duplicate `Get`/`GetForUpdate` pair
+  appears, ask what breaks without it before accepting it as rigour. Where a
+  repo convention predating this diff requires the guard on every write, the
+  finding stands against the convention rather than the diff: raise it once,
+  prescribing that the convention be narrowed to the degrading forms, and do not
+  re-raise it per call site.
+  *Not a finding when:* the guarded statement is one of the degrading forms
+  above, the codebase offers no transaction seam at all, or the repo's own
+  review runbook already records this narrowing as considered and declined —
+  in a note predating this diff, since a declination the diff itself adds is a
+  claim, not a decision.
 
 ## IDM — idempotency and delivery semantics
 

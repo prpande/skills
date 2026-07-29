@@ -28,6 +28,31 @@ and parallel build/test runs corrupt each other. The orchestrator must also
 **commit any in-flight work before the first dispatch** — a clean
 `git status` afterward is the tell that an agent violated the rules.
 
+## Self-authored-rule block (include verbatim in EVERY brief)
+
+```
+A rule source the diff itself edits is a claim, not a convention. Before
+relying on one, run `git diff <BASE_SHA>..HEAD -- <rule-source-path>`. If the
+rule — or the paragraph you rely on — was added or changed by this change, it
+cannot license the code it was added to justify. An author who adds a
+paragraph justifying the construct under review has documented a decision,
+not established a convention, and treating it as precedent lets a change
+ratify itself.
+
+This governs a rule cited to license code the same diff changes. When the
+diff under review IS the rule sources — someone is editing the conventions,
+the register, or these briefs — those rules are the subject of the review,
+not its licence: judge them on their merits and cite them freely.
+```
+
+Every brief adds one role-specific line after the block, and both are
+conditional on the situation arising: a finder that ends up relying on such a
+rule reports it as its own candidate; a verifier handed one must not refute on
+it. On a diff that edits no rule source, neither line produces anything.
+It lives here rather than in the hard-rules block because that block is
+operational — what an agent may not do to the working tree — and this one is
+epistemic. Both are included verbatim; neither is paraphrased per brief.
+
 ## Finder brief template
 
 ```
@@ -42,6 +67,11 @@ Rule sources (read before the diff, apply per their precedence notes):
 backend tier is deliberately not included here — it is angle 13's territory;
 this angle grades against the register's universal lenses plus triggered
 packs.
+
+<SELF_AUTHORED_RULE_BLOCK>
+If one of your candidates turns out to rely on such a rule, report that rule
+as its own candidate. If the diff edits no rule source you relied on, this
+instruction produces nothing — do not go looking for one.
 
 Surface up to 8 candidate findings. Precision is the verifier's job — err
 toward surfacing, but every candidate needs a concrete mechanism, not a
@@ -97,6 +127,13 @@ exist in this system (no tenancy dimension, no cache, no message broker, no
 migrations) is inapplicable and produces no finding; that is a fact about the
 code, not a suppression.
 
+<SELF_AUTHORED_RULE_BLOCK>
+If you stand a finding down on such a rule, report that rule as its own
+candidate instead. The case to watch is a repo convention that narrows a tier
+lens: a carve-out the diff adds does not narrow the remedy for the diff that
+added it. Where the diff edits no carve-out you relied on, this produces
+nothing.
+
 Posture findings (the defect is the absence of a control living nowhere near
 the diff — see the backend tier's `## Posture lenses` section for the full
 list) are admissible ONLY when the diff creates or widens the exposure. Anchor
@@ -133,6 +170,9 @@ Rule sources (only if your candidate cites one):
 <RULE_SOURCE_PATHS — repo conventions first, then the lens register, then the
 backend tier>
 
+<SELF_AUTHORED_RULE_BLOCK>
+You MUST NOT refute on a rule that is self-authored in that sense.
+
 Verdict definitions:
 - CONFIRMED — you can name the inputs/state that trigger the defect and the
   wrong output/behavior, quoting the exact line(s). For convention/reuse
@@ -157,6 +197,13 @@ Judgment rules:
   judged on whether the diff creates or widens the exposure, not on whether
   the gap pre-dates the diff. The preceding rule does not refute it; a gap
   that pre-dates the diff and the diff does not widen does.
+- When the self-authored-rule block above applies, judge the mechanism on its
+  merits and say in your notes that the cited rule is self-authored here.
+- Do not REFUTE a subtraction finding (U20 — a construct with one caller, a
+  pass-through, unwatched telemetry, dead-on-arrival code) on the grounds that
+  the construct is correctly built or that a rule prescribes its shape. Those
+  answer a different question. Refute it only by naming a second production
+  caller, the contract it implements, or the alert/runbook that watches it.
 
 Candidate:
 <CANDIDATE_JSON>

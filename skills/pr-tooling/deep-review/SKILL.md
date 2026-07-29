@@ -59,9 +59,17 @@ Effort (second argument, default `standard`):
 
 | Level | Shape |
 |---|---|
-| `quick` | One adversarial reviewer, inline. Angles 1 + 12 merged into a single pass, graded against the universal lenses, the triggered packs, and the backend tier when the diff is backend. No verification fan-out. |
-| `standard` | 6 finder agents (angles 1, 2, 3, 5, 11, 12; angle 11 drops out when Phase 0 finds no repo rule sources), plus angle 13 when the diff is backend → dedup → one verifier per surviving candidate. |
-| `max` | All 13 angles — angle 13 only when the diff is backend, so 12 otherwise → dedup → one verifier per candidate → gap sweep → ranked report. Recall mode: catching every real defect outranks avoiding false positives. |
+| `quick` | One adversarial reviewer, inline. Angles 1 + 12 + 14 merged into a single pass, graded against the universal lenses, the triggered packs, and the backend tier when the diff is backend. No verification fan-out. |
+| `standard` | 8 finder agents (angles 1, 2, 3, 5, 9, 11, 12, 14; angle 11 drops out when Phase 0 finds no repo rule sources), plus angle 13 when the diff is backend → dedup → one verifier per surviving candidate. |
+| `max` | All 14 angles — angle 13 only when the diff is backend, so 13 otherwise → dedup → one verifier per candidate → gap sweep → ranked report. Recall mode: catching every real defect outranks avoiding false positives. |
+
+Angles 9 and 14 are in `standard` deliberately. A backtest over six human review
+rounds found the two largest classes of miss were duplication of existing code
+and constructs that never earned their place. Angle 12 already had U1 in scope
+at `standard` and the duplicates shipped anyway: one pattern-match sweep across
+the whole register reliably skips the lenses that require *running* searches and
+reporting what they returned. A census needs an agent whose only job is the
+census. The cost is two more mid-tier finders on every run.
 
 ## Phase 0 — Gather
 
@@ -87,7 +95,7 @@ Effort (second argument, default `standard`):
 ## Phase 1 — Find (`standard` and `max`)
 
 At `quick`, skip Phases 1–3: run one inline adversarial pass yourself —
-angle 1 plus angle 12 from the catalog below, graded against the located
+angles 1, 12, and 14 from the catalog below, graded against the located
 rule sources, the universal lenses, the packs the diff triggers, and the
 backend tier when the diff is backend — and go straight to Phase 4.
 
@@ -133,8 +141,12 @@ Angle catalog:
 8. **Wrapper/proxy correctness.** New wrapping types (cache, proxy,
    decorator, adapter) route every method to the wrapped instance — not
    back through a registry/global — and forward everything callers use.
-9. **Reuse.** New code re-implementing something the codebase already
-   has; name the existing helper (register U1–U5).
+9. **Reuse census.** A mechanical survey, not a judgment. For every file
+   the diff adds, run U1's full search list and **report what each search
+   returned even when it returned nothing**. An empty census stated
+   explicitly is a result; an empty census left unsaid is indistinguishable
+   from one that never ran, which is how greppable duplicates survive
+   review. Name the existing owner where one exists (register U1–U5).
 10. **Simplification and efficiency.** Redundant/derivable state,
     copy-paste variation, dead code, repeated I/O, sequential
     independent work, N+1 loops (U10).
@@ -153,6 +165,24 @@ Angle catalog:
     cache miss on a hot key costs when the cached shape has changed. Unlike
     angle 12 — a pattern-match pass over the register — this one reads beyond
     the diff. Cite tier ids.
+14. **Subtraction and proportionality.** Every other angle asks what is
+    missing, wrong, or unguarded, so a construct that is present, correct and
+    unnecessary is invisible to all of them — and one that is present, correct
+    and over-constraining reads as rigour. This angle asks the opposite
+    question. Enumerate every type, interface, provider, wrapper, extension
+    class, attribute and constant the diff adds; count each one's production
+    call sites; and for each, state what breaks if it is deleted and its body
+    inlined (U20). Do the same for guards: for every new precondition,
+    assertion, or required-scope check, name what degrades without it — a
+    guard whose answer is "nothing degrades, it just commits" is a finding,
+    not defence in depth. On a backend diff the transaction case of that
+    check is TX6, which angle 13 carries with the rest of the tier; cite it
+    only when you have the tier in front of you. Then step back to the whole diff: is it larger than
+    the problem requires, and does new test scaffolding — a second test class
+    for one subject, new helper files, a documented exception to the repo's own
+    rules — exist to work around a constraint this change introduced? Treat
+    that scaffolding as evidence about the production design, not as a
+    deliverable (T5). Report the root construct, not each symptom.
 
 ## Phase 2 — Verify (`standard` and `max`)
 

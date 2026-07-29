@@ -50,11 +50,22 @@ cache access.
 
 ## Universal — always apply
 
-- **U1 — Same-subject grep before any new file.** Before accepting a new
-  class, helper, or test file, grep the basename and the subject
-  (`class <Name>`, `<Subject>Tests`). A same-named type in a different
-  namespace/module compiles fine — that is exactly the trap. Extend the
-  existing one, even if it lives in a legacy folder.
+- **U1 — Same-subject census before any new file.** This is a mechanical
+  enumeration with a required output, not a judgment call. For every file the
+  diff adds, run the whole search list and report what each returned — *even
+  when the answer is "nothing exists"*, because a silent census is
+  indistinguishable from one that never ran:
+  1. the basename, unqualified, across the tree;
+  2. `class <Name>` / `interface I<Name>` in every namespace or module;
+  3. `<Subject>Tests` and any other test type naming the same subject;
+  4. the concept the file owns, however it is spelled elsewhere (the entity,
+     the table, the endpoint) — for a type fronting a collaborator, grep who
+     else already injects that collaborator (`D1` for the repository case;
+     report it under one id, not both).
+
+  A same-named type in a different namespace/module compiles fine — that is
+  exactly the trap. Extend the existing one, even if it lives in a legacy
+  folder.
 - **U2 — Shared logic goes on the existing owner.** When two flows need one
   rule, host it on the type that already owns the concept. Never mint a
   one-method extension/util class as a "shared home". Check dependency
@@ -120,6 +131,34 @@ cache access.
   true and false each mean takes a paragraph, model it as an enum — and
   never name a bool after its storage quirk. Escalate once the bool would
   reach a domain or API contract.
+- **U20 — Every new construct earns its existence.** Most lenses ask whether
+  something is built correctly. This one asks whether it should be there at
+  all, because a construct that is present, correct and unnecessary is
+  invisible to every other lens. For each type, interface, provider, wrapper,
+  extension class, attribute or constant the diff adds, count its production
+  call sites (`grep` the name, excluding its own declaration and its own
+  tests) and answer one question in the finding: **what breaks if this is
+  deleted and its body inlined at those call sites?** Report when any holds:
+  - **one caller.** A type with a single production consumer is that
+    consumer's private detail. In a shared location (`Domain/`, `Common/`,
+    `Shared/`) the bar is two *distinct calling types* — an extraction with
+    one consumer is speculative. This is the deliberate counterweight to U2:
+    U2 pulls shared logic onto an existing owner, U20 pushes back when there
+    is nothing yet to share.
+  - **pass-through.** Every member forwards to one collaborator and adds no
+    logic, no mapping, and no policy.
+  - **unobserved observability.** A metric, log attribute or trace field with
+    no alert, dashboard, or runbook named in the diff or findable in the repo.
+    Telemetry nobody watches is not a signal, and its cost is real. When the
+    alerting layer is not in the working tree at all — it lives in a vendor
+    console, a wiki, or another repository — say so and state what would
+    confirm coverage, rather than asserting the telemetry is unwatched.
+  - **dead on arrival.** Introduced with no reachable caller and no test
+    exercising it.
+
+  *Not a finding when:* the construct implements a published interface or
+  framework contract, or a second consumer arrives in a named, in-flight
+  change — say which.
 
 ## Pack: tests — trigger: any test file in the diff
 
@@ -149,8 +188,14 @@ cache access.
 - **T7 — Strong negative controls.** Assert the expected value, not merely
   "not the old value"; untouched-record checks compare full snapshots, not
   one field.
-- **T8 — Parameterize near-identical tests.** Two tests differing only in one
-  input belong in one parameterized case.
+- **T8 — Parameterize near-identical tests, and count the cost of the tier.**
+  Two tests differing only in one input belong in one parameterized case. In a
+  slow tier (contract, integration, E2E, browser) the case count is itself a
+  design fact — every added case is a recurring tax on CI feedback time, and on
+  the whole team wherever that tier also runs on a local build. Count the cases the
+  diff adds to a slow tier, and report when two differ only in seed data and
+  could share one seeded row, or when a case duplicates coverage a faster tier
+  already provides.
 - **T9 — No shape-only tests.** Don't assert that a member/attribute merely
   exists when a behavioral test already fails on contract change.
 - **T10 — Never depend on machine-local time, zone, or culture.** Pin a fixed
@@ -216,10 +261,18 @@ cache access.
 
 ## Pack: data-access — trigger: SQL, ORM bindings, repository-layer code
 
-- **D1 — One repository owns one table.** Cross-table writes go through the
-  owning repository, orchestrated by a service. A second
-  repository/provider writing a table another one owns is an architecture
-  finding that needs explicit sign-off, not a local convenience.
+- **D1 — One repository owns one table, and one front door owns the
+  repository.** Cross-table writes go through the owning repository,
+  orchestrated by a service. A second repository/provider writing a table
+  another one owns is an architecture finding that needs explicit sign-off,
+  not a local convenience. The same rule applies one layer up: before adding a
+  provider, service or facade over a repository, `grep` for who already
+  injects that repository's interface — if a front door exists, the new method
+  belongs on it. Two providers over one repository is the same defect wearing
+  a different hat, and it is usually argued for on grounds that do not survive
+  ("it must run in the transaction", "it stays out of the shared surface") —
+  check whether the existing owner already takes the same connection or scope
+  before accepting either.
 - **D2 — Data-access statements live only in the data layer.** No SQL in
   providers/services/endpoints; move it down and call the method.
 - **D3 — Ownership check per statement.** Which module/domain owns that
@@ -253,8 +306,11 @@ cache access.
   storage shape upward.
 - **D13 — Guarded transaction seams over silent fallbacks.** When the
   codebase offers both a fail-fast "requires active transaction" execution
-  seam and a silently-auto-connecting one, writes that must be
-  transactional use the guarded form.
+  seam and a silently-auto-connecting one, writes **that must be
+  transactional** use the guarded form. Read this together with `TX6`, which
+  is its counterpart: D13 governs statements that genuinely degrade outside a
+  transaction, and TX6 governs everything else. Applying D13 to a plain write
+  is the over-constraint TX6 exists to catch.
 - **D14 — Read paths use the read-only connection seam** where the codebase
   offers one; pre-marking reads makes an eventual replica rollout
   transparent.
