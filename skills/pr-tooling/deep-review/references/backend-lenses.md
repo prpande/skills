@@ -86,9 +86,14 @@ control is absent.
   without one.** Every other lens in this group hunts for *missing* atomicity,
   so a guard demanding a transaction reads as defence in depth and no lens
   objects. It is not free. Classify the statement the guard protects. Only these
-  **degrade** outside a transaction: `sp_getapplock` and other session-scoped
-  locks released at once, lock-hinted range reads (`UPDLOCK`/`HOLDLOCK`), and a
-  multi-statement invariant that must not be observed half-applied. A plain
+  **degrade** outside a transaction: an application lock scoped to the
+  transaction (`sp_getapplock` at its default `@LockOwner = 'Transaction'`,
+  which outside one has nothing to own it — note that its `'Session'` form is
+  precisely the variant that does *not* need a transaction); a lock-hinted
+  range read (`UPDLOCK`/`HOLDLOCK`), whose locks release when the statement
+  ends rather than when the work does, reopening the race the hint was taken to
+  close; and a multi-statement invariant that must not be observed
+  half-applied. A plain
   `INSERT`/`UPDATE`/`DELETE`
   does not degrade; it commits. Guarding one takes the atomicity decision away
   from the flow that owns it, and the cost lands downstream: callers cannot

@@ -141,7 +141,7 @@ Angle catalog:
 8. **Wrapper/proxy correctness.** New wrapping types (cache, proxy,
    decorator, adapter) route every method to the wrapped instance — not
    back through a registry/global — and forward everything callers use.
-9. **Reuse census.** A mechanical survey, not a judgement. For every file
+9. **Reuse census.** A mechanical survey, not a judgment. For every file
    the diff adds, run U1's full search list and **report what each search
    returned even when it returned nothing**. An empty census stated
    explicitly is a result; an empty census left unsaid is indistinguishable

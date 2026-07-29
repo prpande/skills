@@ -51,7 +51,7 @@ cache access.
 ## Universal — always apply
 
 - **U1 — Same-subject census before any new file.** This is a mechanical
-  enumeration with a required output, not a judgement call. For every file the
+  enumeration with a required output, not a judgment call. For every file the
   diff adds, run the whole search list and report what each returned — *even
   when the answer is "nothing exists"*, because a silent census is
   indistinguishable from one that never ran:
@@ -191,8 +191,8 @@ cache access.
 - **T8 — Parameterize near-identical tests, and count the cost of the tier.**
   Two tests differing only in one input belong in one parameterized case. In a
   slow tier (contract, integration, E2E, browser) the case count is itself a
-  design fact — those suites run on every local build, not just in CI, so
-  every added case is a recurring tax on the whole team. Count the cases the
+  design fact — every added case is a recurring tax on CI feedback time, and on
+  the whole team wherever that tier also runs on a local build. Count the cases the
   diff adds to a slow tier, and report when two differ only in seed data and
   could share one seeded row, or when a case duplicates coverage a faster tier
   already provides.
