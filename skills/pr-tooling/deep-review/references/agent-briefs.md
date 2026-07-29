@@ -45,8 +45,10 @@ the register, or these briefs — those rules are the subject of the review,
 not its licence: judge them on their merits and cite them freely.
 ```
 
-Every brief adds one role-specific line after the block: finders report the
-self-authored rule as its own candidate; the verifier must not refute on it.
+Every brief adds one role-specific line after the block, and both are
+conditional on the situation arising: a finder that ends up relying on such a
+rule reports it as its own candidate; a verifier handed one must not refute on
+it. On a diff that edits no rule source, neither line produces anything.
 It lives here rather than in the hard-rules block because that block is
 operational — what an agent may not do to the working tree — and this one is
 epistemic. Both are included verbatim; neither is paraphrased per brief.
@@ -67,7 +69,9 @@ this angle grades against the register's universal lenses plus triggered
 packs.
 
 <SELF_AUTHORED_RULE_BLOCK>
-Report the self-authored rule as its own candidate.
+If one of your candidates turns out to rely on such a rule, report that rule
+as its own candidate. If the diff edits no rule source you relied on, this
+instruction produces nothing — do not go looking for one.
 
 Surface up to 8 candidate findings. Precision is the verifier's job — err
 toward surfacing, but every candidate needs a concrete mechanism, not a
@@ -124,9 +128,11 @@ migrations) is inapplicable and produces no finding; that is a fact about the
 code, not a suppression.
 
 <SELF_AUTHORED_RULE_BLOCK>
-Report the self-authored rule as its own candidate. This applies to a repo
-convention that narrows a tier lens: a carve-out the diff adds does not narrow
-the remedy for the diff that added it.
+If you stand a finding down on such a rule, report that rule as its own
+candidate instead. The case to watch is a repo convention that narrows a tier
+lens: a carve-out the diff adds does not narrow the remedy for the diff that
+added it. Where the diff edits no carve-out you relied on, this produces
+nothing.
 
 Posture findings (the defect is the absence of a control living nowhere near
 the diff — see the backend tier's `## Posture lenses` section for the full
