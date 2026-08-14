@@ -10,6 +10,7 @@ description: >
   self-assessment or a promotion package; or to set up or remove
   automatic contribution capture on this machine (install/uninstall).
 argument-hint: "[capture <note> | review [week|month|cycle|quarter|year|all|from..to] | promo [window] | install | uninstall]"
+allowed-tools: Bash, Read, Edit, Write, Glob, Grep, ToolSearch
 ---
 
 # contribution-log

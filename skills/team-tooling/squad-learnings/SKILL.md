@@ -10,6 +10,7 @@ description: >
   or quarter-half readout; or to set up or remove automatic capture on
   this machine (install/uninstall).
 argument-hint: "[capture <note> | review [cycle|all] | install | uninstall]"
+allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Skill
 ---
 
 # squad-learnings
