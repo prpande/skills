@@ -19,7 +19,7 @@ links: <PR/issue/work-item/doc URLs from the session, or none>
 
 One entry per delivered unit, not per commit or edit. If today's work
 extends an existing entry (same PR or work item), update that entry and
-its links instead of adding a new one. Record only work items; never
-include secrets, tokens, connection strings, customer data, or personal
-information.
+its links instead of adding a new one. Record work-related outcomes
+only; never include secrets, tokens, connection strings, customer data,
+or personal information.
 <!-- contribution-log:end -->

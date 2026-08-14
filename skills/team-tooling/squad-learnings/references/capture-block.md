@@ -18,10 +18,11 @@ format, appended at the end of the file:
 ## <yyyy-mm-dd> | <repo or area> | <one-line title>
 tags: <domain-discovery|incident|tooling|process> | ours: <yes|no>
 <2-4 lines: what was assumed vs what is actually true, plus a pointer to
-the evidence (PR, incident id, file). ours: yes means our own mistake;
-ours: no means a discovery about the system.>
+the evidence (PR, incident id, file).>
 ```
 
+`ours: yes` means our own mistake; `ours: no` means a discovery about
+the system.
 Skim the file's existing titles first and extend a matching entry instead
 of duplicating it. Never put secrets, tokens, connection strings,
 customer data, or personal information in an entry; entries end up in

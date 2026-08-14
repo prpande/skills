@@ -9,7 +9,7 @@ description: >
   (quarter-half), quarter, or year; when preparing an annual review
   self-assessment or a promotion package; or to set up or remove
   automatic contribution capture on this machine (install/uninstall).
-argument-hint: "[capture <note> | review <week|month|cycle|quarter|year|from..to> | promo [window] | install | uninstall]"
+argument-hint: "[capture <note> | review [week|month|cycle|quarter|year|all|from..to] | promo [window] | install | uninstall]"
 ---
 
 # contribution-log
@@ -60,7 +60,7 @@ Pick by argument; with no argument, treat prose describing finished work as
    `s` under a day, `m` days, `l` a week or more of effort.
 4. Confirm to the user with the file path and the entry title.
 
-### review <window>
+### review [window]
 
 1. Window: `week`, `month`, `cycle` (quarter-half: days 1-46 of the quarter
    are half 1), `quarter`, `year`, `all`, or an explicit `from..to` date

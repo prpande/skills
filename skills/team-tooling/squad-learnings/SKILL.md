@@ -60,7 +60,7 @@ Pick by argument; with no argument, treat prose describing a learning as
    understands it at review time.
 4. Confirm to the user with the file path and the entry title.
 
-### review [cycle | all | path]
+### review [cycle | all]
 
 1. Scope: the named cycle file, `all` files in the folder, or the current
    cycle by default. If the folder is empty or missing, say so and suggest
