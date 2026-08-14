@@ -12,6 +12,8 @@ User-level Claude Code skills maintained by @prpande.
 | [`design-coverage`](./skills/design-tooling/design-coverage/SKILL.md) | Compare an existing in-code UI flow against a new Figma design and produce an auditable discrepancy report. |
 | [`design-coverage-scout`](./skills/design-tooling/design-coverage-scout/SKILL.md) | Companion skill that inspects an unfamiliar repo and emits a new `platforms/<name>.md` hint file for `design-coverage`. |
 | [`api-e2e`](./skills/api-tooling/api-e2e/SKILL.md) | Interview-driven, fresh-context staging E2E validation of a backend API PR or deployed endpoint: repo-head-derived expectations, build fingerprinting, risk-tiered matrix, four-way failure triage, redacted durable report. |
+| [`squad-learnings`](./skills/team-tooling/squad-learnings/SKILL.md) | Per-machine ledger of engineering learnings, captured as they happen; `install` wires proactive capture into the user's global CLAUDE.md, `review` compiles a quarter-half readout. Works on a bare Claude Code install. |
+| [`contribution-log`](./skills/career-tooling/contribution-log/SKILL.md) | Local-first record of what the user delivered, captured at milestone moments; window-based `review` (week/month/cycle/quarter/year) with opt-in GitHub/ADO/Notion enrichment, and a `promo` mode for annual-review and promotion packages. |
 
 ## Supporting library
 
@@ -45,6 +47,8 @@ ln -s "$PWD/skills/pr-tooling/pr-loop-lib"               "$HOME/.claude/skills/p
 ln -s "$PWD/skills/design-tooling/design-coverage"       "$HOME/.claude/skills/design-coverage"
 ln -s "$PWD/skills/design-tooling/design-coverage-scout" "$HOME/.claude/skills/design-coverage-scout"
 ln -s "$PWD/skills/api-tooling/api-e2e"                  "$HOME/.claude/skills/api-e2e"
+ln -s "$PWD/skills/team-tooling/squad-learnings"         "$HOME/.claude/skills/squad-learnings"
+ln -s "$PWD/skills/career-tooling/contribution-log"      "$HOME/.claude/skills/contribution-log"
 ```
 
 On Windows with Git Bash, use `cmd //c mklink /D` or copy:
@@ -57,6 +61,8 @@ cp -r skills/pr-tooling/pr-loop-lib               "$HOME/.claude/skills/pr-loop-
 cp -r skills/design-tooling/design-coverage       "$HOME/.claude/skills/design-coverage"
 cp -r skills/design-tooling/design-coverage-scout "$HOME/.claude/skills/design-coverage-scout"
 cp -r skills/api-tooling/api-e2e                  "$HOME/.claude/skills/api-e2e"
+cp -r skills/team-tooling/squad-learnings         "$HOME/.claude/skills/squad-learnings"
+cp -r skills/career-tooling/contribution-log      "$HOME/.claude/skills/contribution-log"
 ```
 
 After installation, restart your Claude Code session. The skills appear in
