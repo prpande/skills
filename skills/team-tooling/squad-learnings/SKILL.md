@@ -65,10 +65,17 @@ Pick by argument; with no argument, treat prose describing a learning as
 
 1. Scope: the named cycle file, `all` files in the folder, or the current
    cycle by default. If the folder is empty or missing, say so and suggest
-   `install`; do not invent content.
-2. Supplementary sources, only when they exist on this machine (skip silently
-   otherwise): fact files under `~/.claude/projects/*/memory/` modified inside
-   the cycle window. Treat them as candidates and dedupe against the ledger.
+   `install`; do not invent content. Also skim adjacent cycle files for
+   entries whose dates fall inside the requested cycle (a boundary
+   miscount at capture time misfiles entries) and include them.
+2. Supplementary sources, only when the user asks to include them: fact
+   files under `~/.claude/projects/*/memory/` (resolve `~` to the user's
+   home directory; `%USERPROFILE%` on Windows) modified inside the cycle
+   window; say so when the folder cannot be found. Treat matches as
+   candidates, dedupe against the ledger, and screen every import: work
+   learnings only — drop anything personal, private, or unrelated to the
+   team's systems, applying the same no-secrets rule as ledger entries.
+   Count these reads and drops in the accounting line.
 3. Distill: merge duplicates, group by repo or area, rank by impact to the
    wider team.
 4. Output two sections — discoveries (`ours: no`) first, own-process lessons
@@ -87,16 +94,20 @@ Pick by argument; with no argument, treat prose describing a learning as
 2. If the file already contains `squad-learnings:begin`, report that capture
    is already installed and stop.
 3. Otherwise append the entire contents of `references/capture-block.md`
-   verbatim (markers included) to the end of the file.
-4. Tell the user exactly what was modified, that every future session will now
-   capture proactively, and that `uninstall` (or deleting the marker block)
-   reverses it.
+   verbatim (markers included) to the end of the file, with a blank line
+   separating it from existing content.
+4. Tell the user exactly what was modified, that future sessions will now
+   capture proactively on a best-effort basis (a busy session can miss a
+   learning, so spot-check the ledger occasionally), and that `uninstall`
+   (or deleting the marker block) reverses it.
 
 ### uninstall
 
-Remove everything between and including the `squad-learnings:begin` and
-`squad-learnings:end` markers from `~/.claude/CLAUDE.md`. Leave the ledger
-folder untouched; say where it lives so the user can archive or delete it.
+If `~/.claude/CLAUDE.md` or the markers are absent, report that capture
+is not installed and change nothing. Otherwise remove everything between
+and including the `squad-learnings:begin` and `squad-learnings:end`
+markers from `~/.claude/CLAUDE.md`. Leave the ledger folder untouched;
+say where it lives so the user can archive or delete it.
 
 ## Common mistakes
 

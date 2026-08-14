@@ -44,8 +44,9 @@ links: <PR/issue/work-item/doc URLs from the session, or none>
 ```
 
 One entry per delivered unit, not per commit. Extending an existing entry
-(same PR or work item) beats adding a duplicate. Never store secrets, tokens,
-connection strings, customer data, or personal information.
+(same PR or work item) beats adding a duplicate. Record work-related
+outcomes only; never include secrets, tokens, connection strings, customer
+data, or personal information.
 
 ## Modes
 
@@ -55,7 +56,10 @@ Pick by argument; with no argument, treat prose describing finished work as
 ### capture
 
 1. Resolve the current quarter file; create the folder and file if missing.
-2. Read existing titles; extend a matching entry instead of duplicating.
+2. Read existing titles and links; extend the entry for the same PR or
+   work item (match on the links line, not title wording alone) instead
+   of duplicating. Near a quarter boundary, also check the previous
+   quarter's file before appending.
 3. Append one entry in the format above. Include every relevant link visible
    in the session (PR URL, work-item id, document page). Size honestly:
    `s` under a day, `m` days, `l` a week or more of effort.
@@ -66,14 +70,17 @@ Pick by argument; with no argument, treat prose describing finished work as
 1. Window: `week`, `month`, `cycle` (quarter-half: days 1-46 of the quarter
    are half 1), `quarter`, `year`, `all`, or an explicit `from..to` date
    range. Default is the current cycle. Select entries by their dates across
-   however many quarter files the window spans.
+   however many quarter files the window spans. If the ledger folder is
+   empty or missing, say so and suggest `install`; do not invent content.
 2. External enrichment is opt-in: only query sources the user names. GitHub
-   via the `gh` CLI (PRs and issues authored in the window), Azure DevOps via
+   via the `gh` CLI (PRs merged and issues closed in the window, whenever
+   they were authored), Azure DevOps via
    its REST API when a PAT is configured, Notion or Slack via their connected
    tools when present. Skip anything unavailable without failing the review.
    Dedupe external items against the ledger; list items found externally but
    missing locally and offer to backfill them as entries.
-3. Output, grouped by theme or area: numbered contributions with their
+3. Output, grouped by theme or area after merging entries that share a PR
+   or work-item link: numbered contributions with their
    impact lines and links, then a quantified summary (counts by kind and
    size, plus any concrete numbers the entries themselves carry). Use only
    numbers that appear in entries or came back from the named sources; never
@@ -95,7 +102,8 @@ one year.
    states it.
 3. Produce a draft the user edits, not a finished claim sheet: flag every
    theme whose evidence is thin so the user can substantiate or drop it, and
-   keep a links appendix so reviewers can verify.
+   keep a links appendix so reviewers can verify. Close with review's
+   accounting line (entries read, shown, merged, or out of window).
 4. Deliver text only; never post or submit anywhere yourself.
 
 ### install
@@ -105,16 +113,20 @@ one year.
 2. If the file already contains `contribution-log:begin`, report that capture
    is already installed and stop.
 3. Otherwise append the entire contents of `references/capture-block.md`
-   verbatim (markers included) to the end of the file.
+   verbatim (markers included) to the end of the file, with a blank line
+   separating it from existing content.
 4. Tell the user exactly what was modified, that future sessions will now
-   record contributions proactively, and that `uninstall` (or deleting the
-   marker block) reverses it.
+   record contributions proactively on a best-effort basis (a busy session
+   can miss one, so spot-check the ledger occasionally), and that
+   `uninstall` (or deleting the marker block) reverses it.
 
 ### uninstall
 
-Remove everything between and including the `contribution-log:begin` and
-`contribution-log:end` markers from `~/.claude/CLAUDE.md`. Leave the ledger
-folder untouched; say where it lives.
+If `~/.claude/CLAUDE.md` or the markers are absent, report that capture
+is not installed and change nothing. Otherwise remove everything between
+and including the `contribution-log:begin` and `contribution-log:end`
+markers from `~/.claude/CLAUDE.md`. Leave the ledger folder untouched;
+say where it lives so the user can archive or delete it.
 
 ## Common mistakes
 

@@ -13,7 +13,7 @@ User-level Claude Code skills maintained by @prpande.
 | [`design-coverage-scout`](./skills/design-tooling/design-coverage-scout/SKILL.md) | Companion skill that inspects an unfamiliar repo and emits a new `platforms/<name>.md` hint file for `design-coverage`. |
 | [`api-e2e`](./skills/api-tooling/api-e2e/SKILL.md) | Interview-driven, fresh-context staging E2E validation of a backend API PR or deployed endpoint: repo-head-derived expectations, build fingerprinting, risk-tiered matrix, four-way failure triage, redacted durable report. |
 | [`squad-learnings`](./skills/team-tooling/squad-learnings/SKILL.md) | Per-machine ledger of engineering learnings, captured as they happen; `install` wires proactive capture into the user's global CLAUDE.md, `review` compiles a quarter-half readout. Works on a bare Claude Code install. |
-| [`contribution-log`](./skills/career-tooling/contribution-log/SKILL.md) | Local-first record of what the user delivered, captured at milestone moments; window-based `review` (week/month/cycle/quarter/year) with opt-in GitHub/ADO/Notion enrichment, and a `promo` mode for annual-review and promotion packages. |
+| [`contribution-log`](./skills/career-tooling/contribution-log/SKILL.md) | Local-first record of what the user delivered, captured at milestone moments; window-based `review` (week/month/cycle/quarter/year) with opt-in GitHub/ADO/Notion/Slack enrichment, and a `promo` mode for annual-review and promotion packages. |
 
 ## Supporting library
 

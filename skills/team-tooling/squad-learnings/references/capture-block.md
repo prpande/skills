@@ -22,7 +22,8 @@ the evidence (PR, incident id, file).>
 ```
 
 `ours: yes` means our own mistake; `ours: no` means a discovery about
-the system.
+the system. A routine fix with no broken assumption behind it is not a
+squad-review learning; skip it.
 Skim the file's existing titles first and extend a matching entry instead
 of duplicating it. Never put secrets, tokens, connection strings,
 customer data, or personal information in an entry; entries end up in
