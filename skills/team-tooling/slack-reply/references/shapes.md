@@ -27,14 +27,23 @@ Yes this is a bug in the flow. Its filtering the staff based on the staff ID sen
 ## Answering several questions in one reply
 
 Quote each question with `>` and answer under it. This is the user's
-standard shape for review comments and multi-question threads.
+standard shape for review comments and multi-question threads. Leave a
+blank line after every quoted line; a `>` line without one swallows the
+answer into the quote when the message is sent as markdown. Keep the
+original's code spans.
 
 ```
 > We have decided to call accomplishment API through the BFF? If so, is a permission check required?
+
 Yes to both. There should always be an authorization check in backend APIs.
 
 > We are aligned with adding static logic in the accomplishment API?
+
 Yes for now, I think.
+
+> Discussion needed - FirstVisitAnniversary
+
+From the top of my head, we can get the first class date from `tblReservation` using the constraints we already use to separate class visits, top 1 sorted by time. This might need another endpoint.
 ```
 
 ## Cross-team ask or cold outreach in another squad's channel

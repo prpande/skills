@@ -91,6 +91,25 @@ second message in the thread. Slack carries the pointer and the ask.
 13. Disagreement goes in the first sentence, the reason in the second. No
     softening paragraph, no pros-and-cons list. "That said," is the one
     pivot when part of the other view is right.
+14. Keep code formatting. Table names, endpoints, class and method names,
+    flag names, error strings, and header names go in backticks. A snippet
+    of more than one line goes in a fenced block. A rewrite that drops the
+    original's backticks has lost information, not words.
+
+## Slack markup that survives sending
+
+Drafts are delivered as markdown, and the Slack tool converts it. Two
+conversions bite:
+
+- A `>` line swallows every following line until a blank line. Put a blank
+  line after each quoted line, before the answer, and another blank line
+  before the next quote. Without them the whole reply renders as one
+  blockquote.
+- Inline code needs backticks; plain identifiers come out as prose.
+
+When the draft is handed over through the Slack tool (for example a DM to
+the user's own account), read the sent message back once and check the
+quote boundaries and code spans rendered. Fix and resend if not.
 
 ## Phrasebook
 
@@ -155,8 +174,8 @@ so the draft does not repeat it.
 ### rewrite <text>
 
 Same workflow applied to an existing draft. State the tier, cut to the
-budget, keep every fact and link the original had, and show the word count
-before and after. Prefer the user's phrasing over yours whenever the
+budget, keep every fact, link, and code span the original had, and show
+the word count before and after. Prefer the user's phrasing over yours whenever the
 original contains a usable sentence.
 
 ### audit <text>
@@ -177,7 +196,9 @@ the word count against the tier budget. End with pass or fail.
 8. Sign-off is one line, at most one smiley, cc line last.
 9. No em dashes, curly quotes, ":pray:", "Would appreciate", "Key
    highlights", "I hope this helps".
-10. Read once as the recipient: they can act with at most one linked doc
+10. Identifiers are in backticks, snippets in fenced blocks, and every
+    `>` line is followed by a blank line.
+11. Read once as the recipient: they can act with at most one linked doc
     open.
 
 ## Common mistakes
@@ -191,6 +212,9 @@ the word count against the tier budget. End with pass or fail.
 - Sending a proposal as a message. Three bullets at most; the doc carries
   the rest.
 - Letting the humanizer pass grow the draft. Re-check the budget after it.
+- Stripping backticks while shortening. `tblResourceVisitType` in prose
+  reads as a typo; in code it reads as a table.
+- Answer lines glued to the `>` line. They render inside the quote.
 
 Related skill: `humanizer` strips AI wording; this skill sets length and
 shape. Run this one first.
