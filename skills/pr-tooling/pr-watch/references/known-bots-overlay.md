@@ -21,7 +21,6 @@ fall through to the unknown-bot fallback and read as actionable.
 | `mergewatch-playlist` | Inline review comment | no `<!-- mergewatch-inline -->` marker | Skip — mergewatch answering in a thread; settles the tail |
 | `mergewatch-playlist` | Top-level PR comment | starts with `<!-- mergewatch-review -->` | Parse — the summary, see below |
 | `mergewatch-playlist` | Review body | starts with `<!-- mergewatch-review -->` | Parse — re-read the current summary, see below |
-| `mergewatch-playlist` | Review body | empty | Skip |
 
 Signatures verified against live comments on the last 40 PRs of
 `mindbody/Mindbody.Scheduling` on 2026-09-11.
@@ -64,9 +63,15 @@ gh api "repos/$REPO/issues/$PR/comments" --paginate \
   sections.
 - Drop a finding when a `mergewatch-playlist` inline thread on the same
   path carries the same title; the thread is where it gets answered.
+  Compare titles after stripping `**`, a leading emoji, and surrounding
+  whitespace, case-insensitively: the inline comment's second line is
+  `**🔴 <title>**`, the summary bullet's title is plain.
 - Drop a finding already dispositioned. The key is
-  `<summary id>|<path>|<title>`. Line numbers move between pushes and
-  titles do not, so the line is left out of the key. Record the
+  `<summary id>|<path>|<title>`, replacing the `<parent-comment-id>:finding-<N>`
+  record id that `pr-loop-lib/steps/03-triage.md` gives parsed findings:
+  finding order changes when the summary is rewritten, so a positional
+  key would re-raise answered findings. Line numbers move between pushes
+  and titles do not, so the line is left out of the key. Record the
   disposition in `handled_top_level_ids` under that key, and the summary's
   own id and the pointer review's id under `parsed`.
 
