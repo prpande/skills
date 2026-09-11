@@ -171,25 +171,32 @@ on GitHub.
 On a `tick` event, take the first PR `N` in `push_queue`:
 
 1. Section 6 step 1's check for every other authored PR. Any pending
-   check: stop; the next `tick` retries. This is the only exit that
-   leaves `N` in `push_queue`; every other exit below, whatever section
-   it happens in, ends at step 5.
+   check: stop; the next `tick` retries. This and a lock held by another
+   session (step 3.1) are the only exits that leave `N` in
+   `push_queue`; every other exit below, whatever section it happens
+   in, ends at step 5.
 2. Read the live head:
    `gh pr view <N> --repo <SLUG> --json headRefOid --jq .headRefOid` →
    `<head>`.
 3. `git -C <worktree> fetch origin`, then
    `git -C <worktree> rev-list --count origin/<branch>..HEAD`. Above 0
    means a queued commit:
-   1. `git -C <worktree> merge-base --is-ancestor <head> HEAD`. On
+   1. Section 2 steps 1 and 2. If another session holds the lock,
+      return as section 2.2 says without its "Skipped" line; `N` stays
+      queued and the next `tick` retries.
+   2. `git -C <worktree> merge-base --is-ancestor <head> HEAD`. On
       success (the remote is simply behind the queued commit): section
       1's gate, accepting that `HEAD` is ahead of the PR head by the
       queued commit. On failure (the remote moved to a commit the
       queued fix does not contain): section 6.3's merge-and-reverify
-      with `origin/<branch>`; a conflict escalates as that section
-      says.
-   2. Section 2 steps 1 and 2, then section 6 steps 2 to 5.
-   3. Section 7 for the returns stored in `pr-<N>.json` `agent_returns`.
-   4. Section 9.
+      with `origin/<branch>`.
+   3. Section 6 steps 2 to 5.
+   4. Section 7 for the returns stored in `pr-<N>.json` `agent_returns`.
+
+   Inside the drain, any exit that section 1, 6.3 or 6 would send to
+   section 9 comes back here: skip the rest of step 3, run steps 4 and
+   5, then section 9. After step 3.4, likewise steps 4 and 5, then
+   section 9.
 4. For each entry in the PR's `ci_rerun_queued` whose `head` is `<head>`,
    run `POLL --ci-rerun "<link>" --repo <SLUG>` and post the "rerun"
    line (`pr-watch/steps/06-notify.md`); drop the others, their head has

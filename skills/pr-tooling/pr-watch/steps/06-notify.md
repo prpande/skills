@@ -36,7 +36,7 @@ check the link rendered. Never post a second root for a PR.
 | CI rerun | `Reran <check name>: <the output line of POLL --ci-rerun>.` |
 | CI rerun queued | `Rerun of <check name> queued behind #<M> while its checks run.` |
 | CI pre-existing | `<check name> is red on <base> too; leaving it.` |
-| CI needs you | `Needs you: [<check name>](<link>) is red at <head7> (<reason>).` then, when a log was read, its last 20 redacted lines in a code block |
+| CI needs you | `Needs you: [<check name>](<link>) is red at <head7> (<reason>).` then, when `<scratchpad>/ci-log-<N>.txt` exists, up to 20 lines from `grep -m 20 -E -e '##\[error\]' -e 'error [A-Z]+[0-9]+' -e 'Failed ' -e 'Test Run Failed'` over that redacted file, in a code block; the session never reads the whole file |
 | monitor restarted | `Watch monitor restarted.` |
 | reconciled | `The daily check picked up work the event stream missed.` |
 | closed | `PR <merged or closed>; no longer watching.` |
