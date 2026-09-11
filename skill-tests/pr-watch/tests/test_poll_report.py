@@ -107,6 +107,16 @@ class ReportTests(unittest.TestCase):
         self.assertIn("ERROR", text)
         self.assertFalse((self.state / "watch-seen.json").exists())
 
+    def test_a_failed_pr_does_not_hold_back_the_others(self):
+        self.watch = watch({1411: "authored", 1413: "authored"})
+        self.save_watch()
+        self.gh.prs[1411] = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
+        self.gh.prs[1413] = pull(1413, threads=[thread("T1", [comment("c9", "reviewer-a", T0)])])
+        self.gh.fail = {1413}
+        code, text = self.run_report()
+        self.assertEqual(code, 1)
+        self.assertEqual(self.seen(), {"1411": ["c1"]})
+
 
 if __name__ == "__main__":
     unittest.main()

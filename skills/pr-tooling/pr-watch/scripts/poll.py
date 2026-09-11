@@ -456,7 +456,7 @@ def report(gh, state_dir, reseed=False):
         new += new_lines(pr, set(seen.get(key, [])), me, allow)
         standing.append(standing_line(pr, watch_pr, me, allow))
         fresh[key] = all_ids(pr)
-    if not errors:
+    if fresh != seen:
         write_json_atomic(seen_path, fresh)
     for line in errors:
         print(f"ERROR  {line}")
