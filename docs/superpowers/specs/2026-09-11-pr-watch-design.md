@@ -181,7 +181,14 @@ allowlist. Deterministic: no LLM in it.
   `dev.azure.com/<org>/<project>/_build/results?buildId=<id>`; `other`
   for anything else), and `on_base`: the same check's conclusion on the
   base branch tip, from `repos/<o>/<r>/commits/<base>/check-runs`, or
-  `null` when the tip has no check of that name. Writes nothing.
+  `null` when the tip has no check of that name. Check names are not
+  unique: on `Mindbody.BizApp.Bff` the same job name runs in two
+  workflows, so a check is identified by workflow and name together.
+  Writes nothing.
+- `--ci-log <link> --repo <o>/<r>`: print the last 5,000 lines of the
+  failed steps behind a check link (4.6). Reads no state file.
+- `--ci-rerun <link> --repo <o>/<r>`: rerun the failed jobs behind a
+  check link (4.6). Reads no state file.
 - `--assert-author <pr>`: the push guard (section 9). Reads the PR author
   and the acting login live from GitHub; exits 0 on a match and 3 on a
   mismatch. Reads no state file.
@@ -282,15 +289,15 @@ One JSON line per PR with actionable change:
 
 ```
 {"pr": 1411, "role": "authored", "kind": "ci-red", "head": "...",
- "checks": [{"name": "Gated / Unit Tests", "completed_at": "..."}]}
+ "checks": [{"name": "Gated / Unit Tests", "workflow": "App Gated", "completed_at": "..."}]}
 ```
 
 Plus `reply` (a non-`me` comment landed on one of the user's threads on a
 `reviewed` PR with no head move), `tick` (push queue non-empty), `reconciled`
 (daily sweep found something), and `closed` (PR merged or closed).
 
-A `ci-red` signature is the head plus each red check's name and
-`completedAt`, stored apart from the comment signature. A rerun that fails
+A `ci-red` signature is the head plus each red check's workflow, name,
+and `completedAt`, stored apart from the comment signature. A rerun that fails
 again finishes at a new time, so it emits again; the same failure seen on
 two ticks does not.
 
@@ -505,25 +512,29 @@ there only as commits.
    - `other` platform, or none of the above: Slack escalation with the
      check name and link. SonarQube's quality gate reaches the fix path
      through its PR comment (3.2), not here.
-3. Logs. GitHub Actions: `gh run view --job <job_id> --log-failed`.
-   Azure Pipelines: the build timeline
-   (`_apis/build/builds/<id>/timeline`) names the failed task and its log
-   id, then `_apis/build/builds/<id>/logs/<log id>`. The last 5,000
-   lines, through `secret-scan-rules.md` and the untrusted wrapper
+3. Logs, through `poll.py --ci-log <link>`. GitHub Actions:
+   `gh run view --job <job_id> --log-failed`. Azure Pipelines: the build
+   timeline (`_apis/build/builds/<id>/timeline?api-version=7.1`) names
+   the failed tasks and their log ids, then
+   `_apis/build/builds/<id>/logs/<log id>?api-version=7.1`. The last
+   5,000 lines, through `secret-scan-rules.md` and the untrusted wrapper
    (3.4), before any agent reads them.
-4. Reruns. GitHub Actions: `gh run rerun <run_id> --failed`. Azure
-   Pipelines: `PATCH _apis/build/builds/<id>/stages/<stage
-   identifier>?api-version=7.1` with `{"state": "retry",
-   "forceRetryAllJobs": false}`, the stage identifier taken from the
-   timeline's failed `Stage` record. A rerun is a gated run, so with push
+4. Reruns, through `poll.py --ci-rerun <link>`. GitHub Actions:
+   `gh run rerun <run_id> --failed`. Azure Pipelines:
+   `PATCH _apis/build/builds/<id>/stages/<stage identifier>?api-version=7.1-preview.1`
+   with `{"state": "retry", "forceRetryAllJobs": false}` for each failed
+   `Stage` record in the timeline; the stage update is a preview API and
+   rejects plain `7.1`. A rerun is a gated run, so with push
    serialisation on it waits the same way a push does: the check goes
    into the PR's `ci_rerun_queued`, the PR joins `push_queue`, and the
    drain in 4.3 performs whatever the PR has waiting, a push, its reruns,
-   or both.
-5. Azure credentials: the PAT in `AZURE_DEVOPS_EXT_PAT`, used only to
-   build the Authorization header inside the calling process. It is never
-   echoed, logged, written to a file, passed to a subagent, or sent to
-   Slack. Without it, an Azure check is escalated with its link.
+   or both. A queued rerun whose head is no longer the PR head is
+   dropped.
+5. Azure credentials: the PAT in `AZURE_DEVOPS_EXT_PAT`, read only by
+   `poll.py` to build the Authorization header inside its own process.
+   It is never echoed, logged, written to a file, passed to a subagent,
+   or sent to Slack. Without it, an Azure check is escalated with its
+   link.
 6. Caps. At most three CI fix pushes per PR; the counter resets when a
    `ci-red` arrives on a head the watch did not push. At the cap, every
    further red is escalated. Flake reruns do not count.
@@ -659,8 +670,8 @@ primitive, and each has exactly one writer.
       "handled_top_level_ids": {"<id>": "<disposition>"},
       "last_pushed_head": "...",
       "ci_fix_pushes": 0,
-      "ci_reruns": ["<head sha>|<check name>"],
-      "ci_rerun_queued": [{"platform": "github-actions", "run_id": "..."}]
+      "ci_reruns": ["<head sha>|<workflow>|<check name>"],
+      "ci_rerun_queued": [{"link": "<check link>", "head": "<head sha>"}]
     }
   },
   "push_queue": [1413]
@@ -823,7 +834,8 @@ directory on the import path and stands in for `gh`.
     none on a later tick that sees the same failure.
 18. `--checks` against a real PR on a GitHub Actions repo and one on an
     Azure Pipelines repo reports each required check with its platform,
-    run or build ids, and `on_base`.
+    run or build ids, and `on_base`; `--ci-log` on a failed check on each
+    prints the failed step's log and nothing of the PAT.
 19. `--dry-run` on a `ci-red` event for a build or test failure fetches
     the log, runs the fixer and verifier, and writes the would-be commit
     and Slack line to the scratchpad; for a flake it writes the rerun
