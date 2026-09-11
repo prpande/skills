@@ -714,9 +714,9 @@ directory on the import path and stands in for `gh`.
 14. A user reply under an escalated thread makes that thread pending
     again and the fix path runs one more round on it.
 15. The `Monitor` armed in step 02 is still delivering events after the
-    session has relocated with `EnterWorktree` and returned. This is an
-    untested assumption; if it fails, step 02 re-arms after every return
-    and the spec is amended before the build continues.
+    session has relocated with `EnterWorktree` and returned. Measured
+    2026-09-11: a persistent monitor keeps delivering across
+    `EnterWorktree` and back.
 16. A bot comment from an allowlisted login (a quality-gate status line)
     receives no reply, and after the first event that carries it is
     recorded as skipped so no later event carries it again.
