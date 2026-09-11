@@ -2,6 +2,7 @@
 import json
 import pathlib
 import sys
+import urllib.parse
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / "skills" / "pr-tooling" / "pr-watch" / "scripts"
@@ -71,9 +72,17 @@ class FakeGh:
         self.fail = set()
         self.fail_heads = False
         self.calls = []
+        self.rollup = {}
+        self.checks = {}
+        self.no_checks = set()
+        self.base_runs = {}
+        self.base_statuses = {}
 
     def thread_fetches(self):
         return sum(1 for a in self.calls if a[:2] == ["api", "graphql"] and "$n" in a[3])
+
+    def checks_calls(self):
+        return sum(1 for a in self.calls if a[:2] == ["pr", "checks"])
 
     def __call__(self, args):
         self.calls.append(list(args))
@@ -95,15 +104,31 @@ class FakeGh:
             nodes = {}
             for n, p in self.prs.items():
                 if f"p{n}:" in query:
-                    nodes[f"p{n}"] = None if p is None else {
+                    node = None if p is None else {
                         "number": n, "updatedAt": p["updatedAt"],
                         "headRefOid": p["headRefOid"], "state": p["state"]}
+                    if node is not None and n in self.rollup:
+                        node["commits"] = {"nodes": [{"commit": {
+                            "statusCheckRollup": {"state": self.rollup[n]}}}]}
+                    nodes[f"p{n}"] = node
             return json.dumps({"data": {"repository": nodes}})
+        if args[:2] == ["pr", "checks"]:
+            n = int(args[2])
+            if n in self.no_checks:
+                raise poll.GhError("no required checks reported on the 'main' branch")
+            return json.dumps(self.checks.get(n, []))
         path = args[1]
         if "/compare/" in path:
             return "".join(f"{f}\n" for f in self.compare.get(path.split("/compare/")[1], []))
         if path == "user":
             return self.user + "\n"
+        if "/commits/" in path:
+            ref = urllib.parse.unquote(path.split("/commits/")[1].rsplit("/", 1)[0])
+            rows = self.base_runs if path.endswith("/check-runs") else self.base_statuses
+            return "".join(f"{name}\t{value}\n" for name, value in rows.get(ref, []))
         if "/pulls/" in path:
-            return self.prs[int(path.rsplit("/", 1)[1])]["author"]["login"] + "\n"
+            p = self.prs[int(path.rsplit("/", 1)[1])]
+            if any(".base.ref" in a for a in args):
+                return f"{p['baseRefName']} {p['headRefOid']}\n"
+            return p["author"]["login"] + "\n"
         raise AssertionError(f"unexpected gh call: {args}")

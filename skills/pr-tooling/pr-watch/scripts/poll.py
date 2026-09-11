@@ -14,12 +14,19 @@ import re
 import subprocess
 import sys
 import time
+import urllib.parse
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 TICK_SECONDS = 60
 RECONCILE_SECONDS = 24 * 60 * 60
 TICK_EVENT_RETRY_SECONDS = 600
 NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
+CHECK_FIELDS = "name,state,bucket,link,workflow,completedAt"
+FAILED_ROLLUP = ("FAILURE", "ERROR")
+FAILED_BASE = ("failure", "error", "timed_out")
+ACTIONS_LINK = re.compile(r"^https://github\.com/[^/]+/[^/]+/actions/runs/(\d+)/job/(\d+)")
+AZURE_LINK = re.compile(
+    r"^https://dev\.azure\.com/([^/]+)/([^/]+)/_build/results\?buildId=(\d+)")
 
 
 class GhError(RuntimeError):
@@ -192,7 +199,8 @@ def tick_query(owner, repo, numbers):
     if not (NAME.match(owner) and NAME.match(repo)):
         raise ValueError(f"unsafe owner/repo: {owner}/{repo}")
     fields = " ".join(
-        f"p{int(n)}: pullRequest(number: {int(n)}) {{ number updatedAt headRefOid state }}"
+        f"p{int(n)}: pullRequest(number: {int(n)}) {{ number updatedAt headRefOid state "
+        f"commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }} }}"
         for n in numbers)
     return f'query {{ repository(owner: "{owner}", name: "{repo}") {{ {fields} }} }}'
 
@@ -224,6 +232,58 @@ def changed_files(gh, owner, repo, old, new):
     out = gh(["api", f"repos/{owner}/{repo}/compare/{old}...{new}", "--paginate",
               "--jq", ".files[].filename"])
     return sorted({line.strip() for line in out.splitlines() if line.strip()})
+
+
+def rollup_state(node):
+    commits = (node.get("commits") or {}).get("nodes") or []
+    if not commits:
+        return None
+    return ((commits[0].get("commit") or {}).get("statusCheckRollup") or {}).get("state")
+
+
+def required_checks(gh, repo_slug, number):
+    try:
+        out = gh(["pr", "checks", str(number), "--repo", repo_slug, "--required",
+                  "--json", CHECK_FIELDS])
+    except GhError as exc:
+        if "no required checks reported" in str(exc) or "no checks reported" in str(exc):
+            return []
+        raise
+    return json.loads(out or "[]")
+
+
+def check_platform(link):
+    link = link or ""
+    match = ACTIONS_LINK.match(link)
+    if match:
+        return {"platform": "github-actions", "run_id": match[1], "job_id": match[2]}
+    match = AZURE_LINK.match(link)
+    if match:
+        return {"platform": "azure-pipelines", "org": match[1], "project": match[2],
+                "build_id": match[3]}
+    return {"platform": "other"}
+
+
+def check_key(check):
+    return f"{check.get('workflow') or ''}|{check['name']}"
+
+
+def evaluate_ci(gh, watch, number, node, prev):
+    if rollup_state(node) not in FAILED_ROLLUP:
+        return None, ""
+    slug = f"{watch['owner']}/{watch['repo']}"
+    red = sorted((c for c in required_checks(gh, slug, number) if c.get("bucket") == "fail"),
+                 key=check_key)
+    if not red:
+        return None, ""
+    head = node["headRefOid"]
+    signature = f"ci:{head}:" + ",".join(
+        f"{check_key(c)}|{c.get('completedAt') or ''}" for c in red)
+    if signature == prev.get("last_ci_signature"):
+        return None, signature
+    return {"pr": number, "role": "authored", "kind": "ci-red", "head": head,
+            "checks": [{"name": c["name"], "workflow": c.get("workflow") or "",
+                        "completed_at": c.get("completedAt")} for c in red]}, signature
 
 
 def evaluate_authored(watch, pr, watch_pr, prev):
@@ -288,25 +348,36 @@ def tick_once(gh, watch, poller, now, force=False):
             prs.pop(str(n), None)
             continue
         prev = prs.get(str(n), {})
+        rollup = rollup_state(node)
         moved = (node["updatedAt"] != prev.get("updated_at")
                  or node["headRefOid"] != prev.get("last_head"))
-        if not (moved or force):
+        ci_moved = (node["headRefOid"] != prev.get("last_head")
+                    or rollup != prev.get("last_rollup"))
+        if not (moved or ci_moved or force):
             continue
         watch_pr = watch["prs"][str(n)]
         seen = {} if force else prev
+        found = []
+        signature = prev.get("last_signature", "")
+        ci_signature = prev.get("last_ci_signature", "")
         try:
-            pr = fetch_pr(gh, watch["owner"], watch["repo"], n)
-            if watch_pr["role"] == "authored":
-                event, signature = evaluate_authored(watch, pr, watch_pr, seen)
-            else:
-                event, signature = evaluate_reviewed(gh, watch, pr, seen)
+            if moved or force:
+                pr = fetch_pr(gh, watch["owner"], watch["repo"], n)
+                if watch_pr["role"] == "authored":
+                    event, signature = evaluate_authored(watch, pr, watch_pr, seen)
+                else:
+                    event, signature = evaluate_reviewed(gh, watch, pr, seen)
+                found.append(event)
+            if watch_pr["role"] == "authored" and (ci_moved or force):
+                event, ci_signature = evaluate_ci(gh, watch, n, node, seen)
+                found.append(event)
         except GhError as exc:
             print(f"pr-watch poller: PR #{n}: {exc}", file=sys.stderr, flush=True)
             continue
         prs[str(n)] = {"updated_at": node["updatedAt"], "last_head": node["headRefOid"],
-                       "last_signature": signature}
-        if event:
-            events.append(event)
+                       "last_signature": signature, "last_rollup": rollup,
+                       "last_ci_signature": ci_signature}
+        events += [e for e in found if e]
     queue = list(watch.get("push_queue", []))
     if not queue:
         poller["last_tick_queue"] = []
@@ -502,6 +573,33 @@ def findings_payload(gh, watch, pr):
     }
 
 
+def base_conclusions(gh, repo_slug, ref):
+    commit = f"repos/{repo_slug}/commits/{urllib.parse.quote(ref, safe='')}"
+    rows = gh(["api", f"{commit}/check-runs", "--paginate",
+               "--jq", ".check_runs[] | [.name, (.conclusion // .status)] | @tsv"]).splitlines()
+    rows += gh(["api", f"{commit}/status",
+                "--jq", ".statuses[] | [.context, .state] | @tsv"]).splitlines()
+    out = {}
+    for row in rows:
+        name, _, value = row.partition("\t")
+        if name and (name not in out or value in FAILED_BASE):
+            out[name] = value
+    return out
+
+
+def checks_payload(gh, watch, number):
+    slug = f"{watch['owner']}/{watch['repo']}"
+    base, head = gh(["api", f"repos/{slug}/pulls/{number}",
+                     "--jq", '.base.ref + " " + .head.sha']).split()
+    on_base = base_conclusions(gh, slug, base)
+    checks = [{"name": c["name"], "state": c.get("state"), "bucket": c.get("bucket"),
+               "link": c.get("link"), "workflow": c.get("workflow") or "",
+               "completed_at": c.get("completedAt"), "on_base": on_base.get(c["name"]),
+               **check_platform(c.get("link"))}
+              for c in required_checks(gh, slug, number)]
+    return {"pr": number, "head": head, "base": base, "checks": checks}
+
+
 def assert_author(gh, repo_slug, number):
     author = gh(["api", f"repos/{repo_slug}/pulls/{number}", "--jq", ".user.login"]).strip()
     acting = gh(["api", "user", "--jq", ".login"]).strip()
@@ -524,6 +622,8 @@ def main(argv=None, gh=run_gh):
                       help="print pending tails as CommentRecords")
     mode.add_argument("--findings", type=int, metavar="PR",
                       help="print the user's threads on a reviewed PR")
+    mode.add_argument("--checks", type=int, metavar="PR",
+                      help="print the required checks on the PR head")
     mode.add_argument("--assert-author", type=int, metavar="PR",
                       help="exit 0 only if the acting login authored the PR")
     parser.add_argument("--state-dir", type=pathlib.Path, help="<main checkout>/.pr-autopilot")
@@ -543,6 +643,9 @@ def main(argv=None, gh=run_gh):
     if args.report or args.reseed:
         return report(gh, args.state_dir, reseed=args.reseed)
     watch = read_json(args.state_dir / "watch.json")
+    if args.checks:
+        print(json.dumps(checks_payload(gh, watch, args.checks), indent=2))
+        return 0
     number = args.baseline or args.tails or args.findings
     pr = fetch_pr(gh, watch["owner"], watch["repo"], number)
     me, allow = watch["self_login"], watch["bot_allowlist"]
