@@ -5,27 +5,36 @@ creates a worktree. Under `dry_run`, verdicts, replies, and resolutions go to
 `<scratchpad>/pr-watch-dry-run/<N>.md` instead of GitHub and Slack.
 
 1. `POLL --findings <N> --state-dir <STATE_DIR>`. The findings are the
-   threads whose `kinds[0]` is `me` (the user opened them). Threads the
-   user only replied on are context, never findings, and are never
-   replied to or resolved.
+   threads whose `kinds[0]` is `me` (the user opened them) and
+   `is_resolved` is `false`; a thread already resolved stays resolved
+   and drops out here. Threads the user only replied on are context,
+   never findings, and are never replied to or resolved.
 2. Make both heads readable without touching any worktree:
    `git -C <MAIN> fetch origin pull/<N>/head` and
    `git -C <MAIN> fetch origin <old_head>`. Read code only with
    `git -C <MAIN> show <sha>:<path>` and
    `git -C <MAIN> diff <old_head> <new_head> -- <path>`.
-3. For each finding, dispatch one subagent with `model: "sonnet"`. Its
-   prompt is the text of `pr-loop-lib/references/prompt-injection-defenses.md`
+3. Judge a finding only when its `path` is in `changed_files` (the diff
+   since the user's last comment touches it) or its `kinds` holds a
+   `human` entry after index 0 (the author replied on it); leave every
+   other finding for the next `head-moved` event. For each finding that
+   qualifies, dispatch one subagent with `model: "sonnet"`. Its prompt is
+   the text of `pr-loop-lib/references/prompt-injection-defenses.md`
    followed by the judge prompt below, with a fresh nonce. The finding's
    comments, the author's replies, and the diff go in as untrusted
    blocks.
 4. Collect `{verdict, evidence, facts}` per finding. A malformed return
    counts as `not addressed` with evidence "judge returned no verdict" and
    is escalated rather than posted.
-5. For each finding, one reply on its thread written with
-   `pr-watch/references/reply-voice.md` (shape: re-review verdict), posted
-   with the thread-reply mutation in `pr-watch/steps/04-fix-path.md`
-   section 7. Record ids in this PR's `posted_reply_ids`.
-6. Resolve only threads judged `addressed`.
+5. For each judged finding whose verdict differs from
+   `finding_verdicts[<thread_id>]` (absent counts as no prior verdict):
+   one reply on its thread written with `pr-watch/references/reply-voice.md`
+   (shape: re-review verdict), posted with the thread-reply mutation in
+   `pr-watch/steps/04-fix-path.md` section 7. Record the reply id in this
+   PR's `posted_reply_ids`, set `finding_verdicts[<thread_id>]` to the new
+   verdict, and write `watch.json`. A finding whose verdict matches the
+   recorded one gets neither a reply nor a resolve.
+6. Resolve only threads judged `addressed` this round.
 7. Post the summary in the PR's Slack thread
    (`pr-watch/steps/06-notify.md`, "re-review").
 8. Never approve, never request changes, never touch a thread another

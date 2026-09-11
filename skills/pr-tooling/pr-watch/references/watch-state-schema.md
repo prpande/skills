@@ -25,7 +25,7 @@ written by the session.
 | `origin_worktree` | string (absolute path) | Where the session returns after every fix |
 | `serialize_pushes` | boolean | `false` only with `--parallel-pushes` |
 | `bot_allowlist` | array of logins | Logins always classified as bots, whatever type GitHub reports |
-| `dry_run` | boolean | `true` for a `--dry-run` watch |
+| `dry_run` | boolean | `true` for a `--dry-run` watch; a saved watch with `dry_run: true` is never resumed by a non-dry-run invocation (`pr-watch/steps/01-discover.md` section 2 deletes it and the poller and seen files, starting fresh) |
 | `prs` | object keyed by PR number | See below |
 | `push_queue` | array of PR numbers | Authored PRs with a local fix commit waiting to push |
 
@@ -46,6 +46,8 @@ Per PR:
 | `ci_fix_pushes` | integer | CI fix commits since the last head the watch did not push, queued ones included; reset to 0 when a `ci-red` arrives on such a head; cap 3 |
 | `ci_reruns` | array of strings | `<head>\|<workflow>\|<check name>` for every check rerun once; a check is rerun at most once per head |
 | `ci_rerun_queued` | array of `{link, head}` | Reruns waiting for the push-queue drain; entries whose `head` is no longer the PR head are dropped there |
+| `ci_handled` | array of strings | `<head>\|<workflow>\|<check name>\|<completed_at>` for every check occurrence step 07 has already escalated, reported pre-existing, or dispatched a fixer for; a re-emit of the same occurrence is skipped |
+| `finding_verdicts` | object thread id to verdict | `reviewed` only; the last re-review verdict posted on that thread (`pr-watch/steps/05-rereview.md`); a judge return that matches it is not replied or resolved again |
 
 ## `watch-poller.json` — written only by `POLL --monitor`
 
@@ -67,7 +69,8 @@ nothing else.
 `pr-loop-lib/references/context-schema.md`; unknown keys are forbidden
 there. Step 01 creates it with exactly `session_id`, `host_platform`,
 `platform`, `repo_root`, `base`, `branch`, `head_sha`, `base_sha`,
-`pr_number`, `pr_url`, `self_login`. Step 04 adds `all_comments`,
+`pr_number`, `pr_url`, `self_login`. Step 04 resyncs `session_id` to
+`watch.json`'s current value on every fix, and adds `all_comments`,
 `actionable`, `agent_returns`, `verifier_judgements`,
 `files_changed_this_iteration`, `needs_human_items`, `last_push_sha`, and
 `last_push_timestamp` as the library steps write them. The lock and log

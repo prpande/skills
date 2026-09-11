@@ -22,10 +22,17 @@ Never edit `.gitignore`.
 
 ## 2. Resume or start
 
-If `<STATE_DIR>/watch.json` exists, read it. Its PRs are the starting set,
-their id lists are kept, and discovery below only adds to it. Set
-`session_id` to a fresh UUID (`python -c "import uuid; print(uuid.uuid4())"`);
-the library lock protocol reclaims stale locks from the old session.
+If `<STATE_DIR>/watch.json` exists and its `dry_run` is `true` and this
+invocation is not `--dry-run`: a dry run is never resumed by a real one.
+Delete `watch.json`, `watch-poller.json`, and `watch-seen.json`, and
+start from an empty set exactly as a first run (its baseline applies to
+every PR added below).
+
+Otherwise, if `<STATE_DIR>/watch.json` exists, read it. Its PRs are the
+starting set, their id lists are kept, and discovery below only adds to
+it. Set `session_id` to a fresh UUID
+(`python -c "import uuid; print(uuid.uuid4())"`); the library lock
+protocol reclaims stale locks from the old session.
 
 Otherwise start from an empty set with a fresh `session_id`.
 
@@ -71,8 +78,9 @@ Write it per `pr-watch/references/watch-state-schema.md` "Writing", with
 `false` only under `--parallel-pushes`, `dry_run` from `--dry-run`,
 `origin_worktree` = `ORIGIN`, `bot_allowlist`
 `["sonarqube-mbodevme", "mindbody-ado-pipelines", "mergewatch-playlist"]`
-(kept as is on resume), and each new PR with empty id lists and
-`slack_ts: null`.
+(kept as is on resume), and each new PR with empty id lists and objects
+(including `ci_reruns`, `ci_rerun_queued`, `ci_handled`, and
+`finding_verdicts`) and `slack_ts: null`.
 
 ## 5. Baseline new authored PRs
 

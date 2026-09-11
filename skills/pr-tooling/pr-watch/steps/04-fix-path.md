@@ -17,6 +17,9 @@ git -C <worktree> branch --show-current
 ```
 
 - The branch is `main` or `master`: stop and escalate. Hard rule.
+- The branch is not this PR's recorded `branch` in `watch.json`: stop
+  and escalate ("needs you, no comment", reason "worktree checked out
+  a different branch than the PR").
 - `status --porcelain` prints anything: the user is working there. Post
   "Skipped: uncommitted changes in the worktree." in the PR thread and
   stop. The next event retries.
@@ -37,11 +40,13 @@ git -C <worktree> branch --show-current
    `origin_worktree` with `EnterWorktree` only (the lock is another
    session's; do not run section 9's release), post "Skipped: another
    session holds the PR lock.", stop.
-3. Update `pr-<N>.json`: `head_sha` = the payload `head`; `all_comments`
-   and `actionable` = the dispatch set's records; `agent_returns`,
-   `verifier_judgements`, `files_changed_this_iteration`,
-   `needs_human_items` = `[]`. Write it per "Writing state" in the
-   state protocol.
+3. Update `pr-<N>.json`: `session_id` = `watch.json`'s `session_id`;
+   `head_sha` = the payload `head`; `all_comments` and `actionable` =
+   the dispatch set's records; `agent_returns`, `verifier_judgements`,
+   `files_changed_this_iteration`, `needs_human_items` = `[]`. Write it
+   per "Writing state" in the state protocol, in this same write so a
+   resumed watch's first fix never trips G1 on a session id the lock
+   protocol had no other reason to refresh.
 4. Append a `subagent_dispatch` log event per
    `pr-loop-lib/references/log-format.md`.
 
@@ -81,6 +86,15 @@ No returns in section 5: go to section 7, then section 9.
    (`git restore --staged -- <files>`), roll the files back, escalate
    ("needs you, no comment", reason "secret scan hit"), go to
    section 9.
+
+   Under `dry_run`, once the diff is staged and clear of the secret
+   scan: write `git diff --cached` to
+   `<scratchpad>/pr-watch-dry-run/<N>.md`, then
+   `git restore --staged -- <files>` and `git checkout -- <files>` to
+   leave the worktree as it was, and delete any file the fixer created.
+   Go to section 7 (which writes to the same dry-run file instead of
+   posting) and then section 9. Steps 3 to 6 below never run under
+   `dry_run`.
 3. Work item: the first `AB#<digits>` in the PR title, else the PR body,
    else `git log -1 --format=%s`.
 4. Write the message to `<scratchpad>/commit-<N>.txt`: one line,
@@ -92,7 +106,10 @@ No returns in section 5: go to section 7, then section 9.
    `git merge --no-edit origin/<base>`. On a conflict, `git merge --abort`
    and escalate with the conflicting paths and "Fix commit <sha7> is local
    and unpushed.", then go to section 9. After a clean merge that moved
-   the branch, run `pr-loop-lib/steps/04.5-local-verify.md` again.
+   the branch, run `pr-loop-lib/steps/04.5-local-verify.md` again. If
+   that changes any file or fails, do not push: escalate ("needs you,
+   no comment", reason "merge with origin/<base> breaks the build; fix
+   <sha7> is local and unpushed"), then section 9.
 
 ## 6. Push or queue
 
@@ -105,11 +122,14 @@ No returns in section 5: go to section 7, then section 9.
 2. `POLL --assert-author <N> --repo <SLUG>`. Non-zero: do not push;
    escalate ("needs you, no comment", reason "push guard refused"),
    go to section 9.
-3. `git push origin HEAD`. On a non-fast-forward rejection:
-   `git fetch origin`, `git merge --no-edit origin/<branch>`; a conflict
-   aborts the merge and escalates; otherwise rerun
-   `pr-loop-lib/steps/04.5-local-verify.md`, run the guard again, push
-   once more. Never force.
+3. `git push origin HEAD:refs/heads/<branch>`. On a non-fast-forward
+   rejection: `git fetch origin`, `git merge --no-edit origin/<branch>`,
+   then rerun `pr-loop-lib/steps/04.5-local-verify.md`, run the guard
+   again, and push once more the same way. Never force. A conflict, a
+   04.5 failure, a guard refusal, or a second rejection: escalate
+   ("needs you, no comment", with the conflicting paths for a conflict,
+   or otherwise the specific reason), then section 9; sections 6.4 to 7
+   do not run.
 4. Record `last_pushed_head` (`git rev-parse HEAD`) in `watch.json`, and
    `last_push_sha` and `last_push_timestamp` in `pr-<N>.json`.
 5. Post "Pushed <sha7>: <what changed>." in the PR thread.
@@ -151,23 +171,35 @@ on GitHub.
 On a `tick` event, take the first PR `N` in `push_queue`:
 
 1. Section 6 step 1's check for every other authored PR. Any pending
-   check: stop; the next `tick` retries.
-2. `git -C <worktree> fetch origin`, then
+   check: stop; the next `tick` retries. This is the only exit that
+   leaves `N` in `push_queue`; every other exit below, whatever section
+   it happens in, ends at step 5.
+2. Read the live head:
+   `gh pr view <N> --repo <SLUG> --json headRefOid --jq .headRefOid` →
+   `<head>`.
+3. `git -C <worktree> fetch origin`, then
    `git -C <worktree> rev-list --count origin/<branch>..HEAD`. Above 0
    means a queued commit:
-   1. Section 1's gate, accepting that `HEAD` is ahead of the PR head by
-      the queued commit (`git merge-base --is-ancestor <head> HEAD`
-      succeeds).
+   1. `git -C <worktree> merge-base --is-ancestor <head> HEAD`. On
+      success (the remote is simply behind the queued commit): section
+      1's gate, accepting that `HEAD` is ahead of the PR head by the
+      queued commit. On failure (the remote moved to a commit the
+      queued fix does not contain): section 6.3's merge-and-reverify
+      with `origin/<branch>`; a conflict escalates as that section
+      says.
    2. Section 2 steps 1 and 2, then section 6 steps 2 to 5.
    3. Section 7 for the returns stored in `pr-<N>.json` `agent_returns`.
    4. Section 9.
-3. Read the live head:
-   `gh pr view <N> --repo <SLUG> --json headRefOid --jq .headRefOid`.
-   For each entry in the PR's `ci_rerun_queued` whose `head` is that
-   sha, run `POLL --ci-rerun "<link>" --repo <SLUG>` and post the
-   "rerun" line (`pr-watch/steps/06-notify.md`); drop the others, their
-   head has been replaced. Set `ci_rerun_queued` to `[]`.
-4. Remove `N` from `push_queue` and write `watch.json`.
+4. For each entry in the PR's `ci_rerun_queued` whose `head` is `<head>`,
+   run `POLL --ci-rerun "<link>" --repo <SLUG>` and post the "rerun"
+   line (`pr-watch/steps/06-notify.md`); drop the others, their head has
+   been replaced. Set `ci_rerun_queued` to `[]`.
+5. Remove `N` from `push_queue` and write `watch.json`. When step 3 did
+   not reach a completed push (the gate skipped, a merge conflicted, the
+   push guard refused, or a second push rejection was not resolved),
+   escalate here instead of repeating that step's own "Skipped" line
+   ("needs you, no comment", reason "queued fix <sha7> could not be
+   pushed", `<sha7>` the local `HEAD` before this drain).
 
 One drained PR per `tick`.
 
@@ -176,4 +208,3 @@ One drained PR per `tick`.
 1. Release the lock: `rm -rf <worktree>/.pr-autopilot/pr-<N>.lock`, and
    log `lock_released`.
 2. `EnterWorktree` with `path` = `origin_worktree` from `watch.json`.
-3. If step 02 recorded that the monitor dies on relocation, re-arm it now.
