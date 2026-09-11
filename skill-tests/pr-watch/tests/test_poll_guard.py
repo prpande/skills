@@ -8,6 +8,7 @@ import unittest
 from fakes import SELF, FakeGh, comment, poll, pull, review, thread, watch
 
 T0 = "2026-09-10T09:00:00Z"
+T1 = "2026-09-10T10:00:00Z"
 
 
 class GuardTests(unittest.TestCase):
@@ -71,6 +72,17 @@ class CliTests(unittest.TestCase):
         self.assertEqual([t["thread_id"] for t in payload["threads"]], ["T9"])
         self.assertEqual(payload["changed_files"], ["src/B.cs"])
         self.assertEqual((payload["old_head"], payload["new_head"]), ("h1", "h2"))
+
+    def test_findings_excludes_a_thread_i_only_replied_on(self):
+        self.gh.prs[1420] = pull(1420, author_login="author-b", head="h2",
+                                 threads=[thread("T9", [comment("m1", SELF, T0)], path="src/B.cs"),
+                                          thread("T7", [comment("x1", "reviewer-c", T0),
+                                                        comment("m2", SELF, T1)])],
+                                 reviews=[review("r1", SELF, T0, oid="h1")])
+        self.gh.compare["h1...h2"] = ["src/B.cs"]
+        _, text = self.run_main("--findings", "1420")
+        payload = json.loads(text)
+        self.assertEqual([t["thread_id"] for t in payload["threads"]], ["T9"])
 
     def test_state_dir_is_required_outside_the_guard(self):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):

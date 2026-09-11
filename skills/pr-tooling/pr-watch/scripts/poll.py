@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import http.client
 import json
 import os
 import pathlib
@@ -31,7 +32,10 @@ ACTIONS_LINK = re.compile(r"^https://github\.com/[^/]+/[^/]+/actions/runs/(\d+)/
 AZURE_LINK = re.compile(
     r"^https://dev\.azure\.com/([^/]+)/([^/]+)/_build/results\?buildId=(\d+)")
 ADO_BUILD = "https://dev.azure.com/{org}/{project}/_apis/build/builds/{build_id}"
-LOG_LINES = 5000
+LOG_LINES = 2000
+FAILURE_MARK = re.compile(
+    r"##\[error\]|\berror [A-Z]{2,5}\d{3,5}\b|\bFailed [\w.]+ \[|\bTest Run Failed\b|npm ERR!")
+CONTEXT_BEFORE = 500
 
 
 class GhError(RuntimeError):
@@ -212,8 +216,8 @@ def tick_query(owner, repo, numbers):
 
 def my_threads(pr, self_login, allowlist):
     return [t for t in pr["reviewThreads"]["nodes"]
-            if any(classify(c["author"], self_login, allowlist)[1] == "me"
-                   for c in t["comments"]["nodes"])]
+            if t["comments"]["nodes"]
+            and classify(t["comments"]["nodes"][0]["author"], self_login, allowlist)[1] == "me"]
 
 
 def my_review_head(pr, self_login, allowlist):
@@ -275,12 +279,12 @@ def check_key(check):
 
 def evaluate_ci(gh, watch, number, node, prev):
     if rollup_state(node) not in FAILED_ROLLUP:
-        return None, ""
+        return None, prev.get("last_ci_signature", "")
     slug = f"{watch['owner']}/{watch['repo']}"
     red = sorted((c for c in required_checks(gh, slug, number) if c.get("bucket") == "fail"),
                  key=check_key)
     if not red:
-        return None, ""
+        return None, prev.get("last_ci_signature", "")
     head = node["headRefOid"]
     signature = f"ci:{head}:" + ",".join(
         f"{check_key(c)}|{c.get('completedAt') or ''}" for c in red)
@@ -346,9 +350,12 @@ def tick_once(gh, watch, poller, now, force=False):
                         allow_partial=True)["repository"]
     for n in numbers:
         node = heads.get(f"p{n}")
-        if node is None or node["state"] != "OPEN":
-            events.append({"pr": n, "kind": "closed",
-                           "state": node["state"] if node else "MISSING"})
+        if node is None:
+            print(f"pr-watch poller: PR #{n}: null alias in the heads query; "
+                  "skipping this tick", file=sys.stderr, flush=True)
+            continue
+        if node["state"] != "OPEN":
+            events.append({"pr": n, "kind": "closed", "state": node["state"]})
             closed.append(n)
             prs.pop(str(n), None)
             continue
@@ -410,6 +417,14 @@ def write_json_atomic(path, data):
     os.replace(tmp, path)
 
 
+def missed_prs(before, after, events):
+    """PRs among `events` whose signature actually changed since `before`."""
+    return sorted(
+        n for n in {e["pr"] for e in events if "pr" in e}
+        if (after.get(str(n), {}).get("last_signature"),
+            after.get(str(n), {}).get("last_ci_signature")) != before.get(str(n)))
+
+
 def monitor(gh, state_dir, sleep=time.sleep, clock=time.time, max_ticks=None):
     ticks = 0
     while max_ticks is None or ticks < max_ticks:
@@ -419,13 +434,19 @@ def monitor(gh, state_dir, sleep=time.sleep, clock=time.time, max_ticks=None):
             poller = read_json(state_dir / "watch-poller.json", default={})
             now = int(clock())
             last = poller.get("last_reconciliation", 0)
-            force = now - last >= RECONCILE_SECONDS
-            events = tick_once(gh, watch, poller, now, force=force)
-            if force:
+            due = now - last >= RECONCILE_SECONDS
+            # every process's first tick re-checks state a resumed session's
+            # last life may have emitted but never handled; "reconciled" is
+            # reserved for the time-based pass so it names real misses only.
+            before = {n: (p.get("last_signature"), p.get("last_ci_signature"))
+                      for n, p in poller.get("prs", {}).items()}
+            events = tick_once(gh, watch, poller, now, force=ticks == 1 or due)
+            if ticks == 1 or due:
                 poller["last_reconciliation"] = now
-                found = sorted({e["pr"] for e in events if "pr" in e})
-                if last and found:
-                    events.append({"kind": "reconciled", "prs": found})
+            if due and last:
+                missed = missed_prs(before, poller.get("prs", {}), events)
+                if missed:
+                    events.append({"kind": "reconciled", "prs": missed})
             for event in events:
                 print(json.dumps(event), flush=True)
             write_json_atomic(state_dir / "watch-poller.json", poller)
@@ -605,6 +626,16 @@ def checks_payload(gh, watch, number):
     return {"pr": number, "head": head, "base": base, "checks": checks}
 
 
+class _RefuseRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+# urllib's default redirect handler carries Authorization onto the new
+# host; refuse the redirect instead of following it with the PAT attached.
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_RefuseRedirect).open
+
+
 def ado_request(url, method="GET", body=None, opener=None):
     pat = os.environ.get("AZURE_DEVOPS_EXT_PAT")
     if not pat:
@@ -614,7 +645,7 @@ def ado_request(url, method="GET", body=None, opener=None):
     request = urllib.request.Request(url, data=data, method=method, headers={
         "Authorization": f"Basic {token}", "Content-Type": "application/json"})
     try:
-        with (opener or urllib.request.urlopen)(request, timeout=60) as response:
+        with (opener or _NO_REDIRECT_OPENER)(request, timeout=60) as response:
             return response.read().decode("utf-8", errors="replace")
     except urllib.error.URLError as exc:
         raise GhError(f"{method} {url.split('?')[0]}: {exc}") from None
@@ -625,15 +656,21 @@ def failed_records(timeline, kind):
             if r.get("type") == kind and r.get("result") == "failed"]
 
 
-def last_lines(text, count=LOG_LINES):
-    return "\n".join(text.splitlines()[-count:])
+def failure_window(text, count=LOG_LINES):
+    lines = text.splitlines()
+    if len(lines) <= count:
+        return text
+    first = next((i for i, line in enumerate(lines) if FAILURE_MARK.search(line)), None)
+    start = (len(lines) - count if first is None
+              else min(max(0, first - CONTEXT_BEFORE), len(lines) - count))
+    return "\n".join(lines[start:start + count])
 
 
 def ci_log(gh, repo_slug, link, ado=ado_request):
     target = check_platform(link)
     if target["platform"] == "github-actions":
-        return last_lines(gh(["run", "view", "--job", target["job_id"], "--repo", repo_slug,
-                              "--log-failed"]))
+        return failure_window(gh(["run", "view", "--job", target["job_id"], "--repo", repo_slug,
+                                  "--log-failed"]))
     if target["platform"] == "azure-pipelines":
         build = ADO_BUILD.format(**target)
         timeline = json.loads(ado(f"{build}/timeline?api-version=7.1"))
@@ -641,7 +678,7 @@ def ci_log(gh, repo_slug, link, ado=ado_request):
                  for r in failed_records(timeline, "Task") if (r.get("log") or {}).get("id")]
         if not parts:
             raise GhError(f"no failed task log in build {target['build_id']}")
-        return last_lines("\n".join(parts))
+        return failure_window("\n".join(parts))
     raise GhError(f"no CI source for {link}")
 
 
@@ -690,7 +727,8 @@ def main(argv=None, gh=run_gh):
     mode.add_argument("--assert-author", type=int, metavar="PR",
                       help="exit 0 only if the acting login authored the PR")
     mode.add_argument("--ci-log", metavar="LINK",
-                      help="print the last 5000 lines of the failed steps behind a check link")
+                      help="print the failed steps behind a check link, anchored on the "
+                           "first failure marker")
     mode.add_argument("--ci-rerun", metavar="LINK",
                       help="rerun the failed jobs behind a check link")
     parser.add_argument("--state-dir", type=pathlib.Path, help="<main checkout>/.pr-autopilot")
@@ -711,7 +749,7 @@ def main(argv=None, gh=run_gh):
             else:
                 for line in ci_rerun(gh, args.repo, args.ci_rerun):
                     print(f"rerun started: {line}")
-        except GhError as exc:
+        except (GhError, OSError, ValueError, http.client.HTTPException) as exc:
             print(f"pr-watch: {exc}", file=sys.stderr)
             return 1
         return 0

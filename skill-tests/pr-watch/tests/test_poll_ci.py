@@ -106,6 +106,14 @@ class CiTickTests(unittest.TestCase):
         self.red(done="2026-09-10T06:02:11Z")
         self.assertEqual(self.tick()[0]["checks"][0]["completed_at"], "2026-09-10T06:02:11Z")
 
+    def test_a_rerun_that_fails_the_same_way_does_not_re_emit(self):
+        self.red()
+        self.tick()
+        self.gh.rollup[1411] = "PENDING"
+        self.assertEqual(self.tick(), [])
+        self.red()
+        self.assertEqual(self.tick(), [])
+
     def test_one_name_in_two_workflows_is_two_checks(self):
         self.gh.rollup[1411] = "FAILURE"
         self.gh.checks[1411] = [check("Gated / Unit Tests", workflow="Sonarqube"),

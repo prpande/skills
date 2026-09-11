@@ -1,8 +1,10 @@
 import base64
 import contextlib
+import http.server
 import io
 import json
 import os
+import threading
 import unittest
 import urllib.error
 from unittest import mock
@@ -74,15 +76,54 @@ class AdoRequestTests(unittest.TestCase):
         self.assertIn("401", str(caught.exception))
         self.assertNotIn(PAT, str(caught.exception))
 
+    def test_the_default_opener_refuses_a_redirect_without_following_it(self):
+        hits = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                hits.append(self.path)
+                self.send_response(302)
+                self.send_header("Location", "/elsewhere")
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_port}/from"
+            with mock.patch.dict(os.environ, {"AZURE_DEVOPS_EXT_PAT": PAT}):
+                with self.assertRaises(poll.GhError) as caught:
+                    poll.ado_request(url)
+            self.assertIn("302", str(caught.exception))
+            self.assertNotIn(PAT, str(caught.exception))
+            self.assertNotIn("/elsewhere", hits)
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+            server.server_close()
+
 
 class CiLogTests(unittest.TestCase):
-    def test_actions_log_keeps_the_last_5000_lines(self):
+    def test_actions_log_keeps_the_last_lines_when_no_marker_is_found(self):
         gh = FakeGh()
         gh.job_logs["102752575845"] = "\n".join(f"line {i}" for i in range(6000))
         lines = poll.ci_log(gh, "o/r", ACTIONS).splitlines()
-        self.assertEqual((len(lines), lines[0], lines[-1]), (5000, "line 1000", "line 5999"))
+        self.assertEqual((len(lines), lines[0], lines[-1]), (2000, "line 4000", "line 5999"))
         self.assertIn(["run", "view", "--job", "102752575845", "--repo", "o/r", "--log-failed"],
                       gh.calls)
+
+    def test_actions_log_anchors_on_the_first_failure_marker(self):
+        gh = FakeGh()
+        raw = [f"line {i}" for i in range(6000)]
+        raw[800] = "##[error] the real failure is here"
+        raw[5000] = "##[error] Process completed with exit code 1"
+        gh.job_logs["102752575845"] = "\n".join(raw)
+        lines = poll.ci_log(gh, "o/r", ACTIONS).splitlines()
+        self.assertEqual(len(lines), 2000)
+        self.assertIn("##[error] the real failure is here", lines)
 
     def test_azure_log_joins_the_failed_task_logs(self):
         ado = FakeAdo([record("Stage", "failed", "Gated", identifier="gated"),
@@ -143,6 +184,49 @@ class CliTests(unittest.TestCase):
             code = poll.main(["--ci-rerun", SONAR, "--repo", "o/r"], gh=FakeGh())
         self.assertEqual(code, 1)
         self.assertIn("no CI source", err.getvalue())
+
+    def run_against_local_ado(self, handler_cls):
+        server = http.server.HTTPServer(("127.0.0.1", 0), handler_cls)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (server.shutdown(), thread.join(timeout=5), server.server_close()))
+        with mock.patch.object(poll, "ADO_BUILD", f"http://127.0.0.1:{server.server_port}/build"), \
+             mock.patch.dict(os.environ, {"AZURE_DEVOPS_EXT_PAT": PAT}):
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                code = poll.main(["--ci-log", AZURE, "--repo", "o/r"], gh=FakeGh())
+        return code, err.getvalue()
+
+    def test_a_redirect_from_ado_exits_one_stderr_line(self):
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", "/elsewhere")
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        code, err = self.run_against_local_ado(Handler)
+        self.assertEqual(code, 1)
+        self.assertEqual(len(err.strip().splitlines()), 1)
+        self.assertNotIn(PAT, err)
+
+    def test_a_non_json_ado_body_exits_one_stderr_line(self):
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = b"<html>sign in</html>"
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        code, err = self.run_against_local_ado(Handler)
+        self.assertEqual(code, 1)
+        self.assertEqual(len(err.strip().splitlines()), 1)
 
 
 if __name__ == "__main__":

@@ -90,6 +90,13 @@ class AuthoredTickTests(unittest.TestCase):
         self.assertEqual([e["pr"] for e in events], [1413])
         self.assertNotIn("1411", self.poller["prs"])
 
+    def test_null_alias_is_skipped_not_closed(self):
+        self.gh.prs[1411] = None
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(self.tick(), [])
+        self.assertIn("1411", err.getvalue())
+        self.assertEqual(self.poller.get("closed", []), [])
+
 
 class PushQueueTickTests(unittest.TestCase):
     def test_tick_event_on_change_then_only_after_the_retry_window(self):
@@ -176,11 +183,14 @@ class MonitorLoopTests(unittest.TestCase):
         self.assertEqual(poller["last_reconciliation"], NOW)
 
     def test_quiet_ticks_emit_nothing_and_fetch_no_threads(self):
+        events, _ = self.run_monitor(4)
+        self.assertEqual([e["kind"] for e in events], ["pending"])
+        self.assertEqual(self.gh.thread_fetches(), 1)
+
+    def test_resumed_watch_with_a_recent_reconciliation_still_forces_the_first_tick(self):
         self.run_monitor(1)
-        fetched = self.gh.thread_fetches()
-        events, _ = self.run_monitor(3)
-        self.assertEqual(events, [])
-        self.assertEqual(self.gh.thread_fetches(), fetched)
+        events, _ = self.run_monitor(1, clock=NOW + 60)
+        self.assertEqual([e["kind"] for e in events], ["pending"])
 
     def test_a_failed_heads_query_is_logged_and_the_loop_continues(self):
         self.gh.fail_heads = True
@@ -190,9 +200,15 @@ class MonitorLoopTests(unittest.TestCase):
 
     def test_daily_reconciliation_reports_what_the_ticks_missed(self):
         self.run_monitor(1)
+        self.gh.prs[1411] = authored_pr(extra=[comment("c2", "reviewer-a", T1)])
         events, _ = self.run_monitor(1, clock=NOW + poll.RECONCILE_SECONDS)
         self.assertEqual([e["kind"] for e in events], ["pending", "reconciled"])
         self.assertEqual(events[1]["prs"], [1411])
+
+    def test_daily_reconciliation_stays_silent_when_nothing_actually_changed(self):
+        self.run_monitor(1)
+        events, _ = self.run_monitor(1, clock=NOW + poll.RECONCILE_SECONDS)
+        self.assertEqual([e["kind"] for e in events], ["pending"])
 
 
 if __name__ == "__main__":
