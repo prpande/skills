@@ -481,3 +481,80 @@ def report(gh, state_dir, reseed=False):
     for line in notes:
         print(f"  note: {line}")
     return 1 if errors else 0
+
+
+def findings_payload(gh, watch, pr):
+    me, allow = watch["self_login"], watch["bot_allowlist"]
+    old, new = my_review_head(pr, me, allow), pr["headRefOid"]
+    files = changed_files(gh, watch["owner"], watch["repo"], old, new) if old and old != new else []
+    return {
+        "pr": pr["number"], "title": pr["title"], "url": pr["url"],
+        "author": (pr.get("author") or {}).get("login"),
+        "old_head": old, "new_head": new, "changed_files": files,
+        "threads": [{
+            "thread_id": t["id"], "path": t["path"], "line": t["line"],
+            "is_resolved": t["isResolved"], "is_outdated": t["isOutdated"],
+            "kinds": [classify(c["author"], me, allow)[1] for c in t["comments"]["nodes"]],
+            "comments": [comment_record(c, "inline", me, allow, thread=t)
+                         for c in t["comments"]["nodes"]],
+        } for t in my_threads(pr, me, allow)],
+        "truncated": pr.get("truncated", []),
+    }
+
+
+def assert_author(gh, repo_slug, number):
+    author = gh(["api", f"repos/{repo_slug}/pulls/{number}", "--jq", ".user.login"]).strip()
+    acting = gh(["api", "user", "--jq", ".login"]).strip()
+    if author and author == acting:
+        return 0
+    print(f"push refused: PR #{number} is authored by {author or 'unknown'}; "
+          f"acting login is {acting or 'unknown'}", file=sys.stderr)
+    return 3
+
+
+def main(argv=None, gh=run_gh):
+    parser = argparse.ArgumentParser(prog="poll.py", description="pr-watch poller")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--monitor", action="store_true",
+                      help="print one JSON line per actionable change, forever")
+    mode.add_argument("--report", action="store_true", help="print ATTENTION, NEW, STANDING")
+    mode.add_argument("--reseed", action="store_true", help="accept every current id as seen")
+    mode.add_argument("--baseline", type=int, metavar="PR", help="print the first-arm baseline")
+    mode.add_argument("--tails", type=int, metavar="PR",
+                      help="print pending tails as CommentRecords")
+    mode.add_argument("--findings", type=int, metavar="PR",
+                      help="print the user's threads on a reviewed PR")
+    mode.add_argument("--assert-author", type=int, metavar="PR",
+                      help="exit 0 only if the acting login authored the PR")
+    parser.add_argument("--state-dir", type=pathlib.Path, help="<main checkout>/.pr-autopilot")
+    parser.add_argument("--repo", help="owner/name; required with --assert-author")
+    args = parser.parse_args(argv)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if args.assert_author is not None:
+        if not args.repo:
+            parser.error("--assert-author needs --repo owner/name")
+        return assert_author(gh, args.repo, args.assert_author)
+    if args.state_dir is None:
+        parser.error("--state-dir is required for this mode")
+    if args.monitor:
+        monitor(gh, args.state_dir)
+        return 0
+    if args.report or args.reseed:
+        return report(gh, args.state_dir, reseed=args.reseed)
+    watch = read_json(args.state_dir / "watch.json")
+    number = args.baseline or args.tails or args.findings
+    pr = fetch_pr(gh, watch["owner"], watch["repo"], number)
+    me, allow = watch["self_login"], watch["bot_allowlist"]
+    if args.baseline:
+        payload = baseline(pr, me, allow)
+    elif args.tails:
+        payload = tails_payload(pr, watch["prs"].get(str(number), {}), me, allow)
+    else:
+        payload = findings_payload(gh, watch, pr)
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
