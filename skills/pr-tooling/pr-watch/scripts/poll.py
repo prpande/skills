@@ -90,7 +90,7 @@ def baseline(pr, self_login, allowlist):
     handled = {}
     for _, item, when in top_level_items(pr):
         k = kind(item["author"])
-        if k in ("bot", "me") or (newest_me and when and when <= newest_me):
+        if k in ("bot", "me") or (newest_me and when and when < newest_me):
             handled[item["id"]] = "baseline"
     return {"settled_ids": settled, "handled_top_level_ids": handled}
 

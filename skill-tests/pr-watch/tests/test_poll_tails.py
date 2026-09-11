@@ -96,6 +96,11 @@ class BaselineTests(unittest.TestCase):
         self.assertEqual(poll.baseline(pr, SELF, ALLOW)["handled_top_level_ids"],
                          {"b1": "baseline"})
 
+    def test_item_at_the_same_second_as_my_activity_stays_pending(self):
+        pr = pull(comments=[comment("i1", "reviewer-a", T1)],
+                  reviews=[review("r1", SELF, T1, body="")])
+        self.assertEqual(poll.baseline(pr, SELF, ALLOW)["handled_top_level_ids"], {})
+
 
 class PayloadTests(unittest.TestCase):
     def test_records_carry_exactly_the_comment_record_fields(self):
