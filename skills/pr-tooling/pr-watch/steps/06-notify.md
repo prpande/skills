@@ -24,9 +24,10 @@ check the link rendered. Never post a second root for a PR.
 
 | Occasion | Text |
 |---|---|
-| pushed | `Pushed <sha7>: <what changed>. Replied on <k> threads, resolved <r>.` |
+| pushed | `Pushed <sha7>: <what changed>.` |
 | queued | `Fix committed as <sha7>, queued behind #<M> while its checks run.` |
 | needs you | `Needs you: <author> on <path>:<line> (<reason>).` then the quoted comment in a code block, then `Code says: <one line>.` then a link to the comment |
+| needs you, no comment | `Needs you on #<N>: <reason>.` then the short sha if a local commit exists |
 | skipped | `Skipped: <reason>.` |
 | merge conflict | `Merge with origin/<base> conflicts in <paths>. Fix commit <sha7> is local and unpushed.` |
 | re-review | `Re-reviewed <old7>..<new7>: <a> addressed, <p> partial, <n> not addressed, <s> superseded.` then one line per finding |

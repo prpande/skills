@@ -1,7 +1,7 @@
 # Step 05 — Re-review (reviewed PRs)
 
 Entered from a `head-moved` event. Never commits, pushes, checks out, or
-creates a worktree. Under `dry_run`, verdicts and replies go to
+creates a worktree. Under `dry_run`, verdicts, replies, and resolutions go to
 `<scratchpad>/pr-watch-dry-run/<N>.md` instead of GitHub and Slack.
 
 1. `POLL --findings <N> --state-dir <STATE_DIR>`. The findings are the

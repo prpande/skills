@@ -34,8 +34,9 @@ git -C <worktree> branch --show-current
    lock" in `pr-loop-lib/references/state-protocol.md`, using
    `watch.json`'s `session_id`. A fresh lock held by another session
    means `pr-followup` or another watch is active on this PR: return to
-   `origin_worktree` (section 9), post "Skipped: another session holds
-   the PR lock.", stop.
+   `origin_worktree` with `EnterWorktree` only (the lock is another
+   session's; do not run section 9's release), post "Skipped: another
+   session holds the PR lock.", stop.
 3. Update `pr-<N>.json`: `head_sha` = the payload `head`; `all_comments`
    and `actionable` = the dispatch set's records; `agent_returns`,
    `verifier_judgements`, `files_changed_this_iteration`,
@@ -77,8 +78,9 @@ No returns in section 5: go to section 7, then section 9.
 1. `git add -- <files_changed of the surviving returns>`.
 2. Secret scan the staged diff (`git diff --cached`) with the rules in
    `pr-loop-lib/references/secret-scan-rules.md`. A hit: unstage
-   (`git restore --staged -- <files>`), roll the files back, escalate,
-   go to section 9.
+   (`git restore --staged -- <files>`), roll the files back, escalate
+   ("needs you, no comment", reason "secret scan hit"), go to
+   section 9.
 3. Work item: the first `AB#<digits>` in the PR title, else the PR body,
    else `git log -1 --format=%s`.
 4. Write the message to `<scratchpad>/commit-<N>.txt`: one line,
@@ -101,7 +103,8 @@ No returns in section 5: go to section 7, then section 9.
    <sha7>, queued behind #<M> while its checks run.", and go to section 9.
    The replies wait for the drain.
 2. `POLL --assert-author <N> --repo <SLUG>`. Non-zero: do not push;
-   escalate "push guard refused", go to section 9.
+   escalate ("needs you, no comment", reason "push guard refused"),
+   go to section 9.
 3. `git push origin HEAD`. On a non-fast-forward rejection:
    `git fetch origin`, `git merge --no-edit origin/<branch>`; a conflict
    aborts the merge and escalates; otherwise rerun
