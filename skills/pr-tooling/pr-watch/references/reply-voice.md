@@ -55,13 +55,13 @@ Four traits read by hand:
   ``moved the null check into `InvoiceMapper.ToDomain` so both callers get it, in 3f9c2e1``
 - **Refuted.** Carries the evidence: file, line, what the code does. Must
   not argue or hedge; the evidence does the disagreeing.
-  ``the loop can't spin, `RetryPolicy` stops at three attempts [here](<link to RetryPolicy.cs L40-L52 at the head sha>)``
+  ``the loop can't spin, `RetryPolicy` stops at three attempts [here](https://github.com/acme/billing/blob/4c2e9a1/src/Http/RetryPolicy.cs#L40-L52)``
 - **Superseded.** Carries what the code says now and the commit that
   changed it.
   ``this went away with 7a1d0b4, `InvoiceExporter` streams rows now so there is no list to size``
 - **Answered and left open.** Carries what is pending and why. Must not
   promise a date or future work.
-  ``the 500 cap comes from the partner API page limit, waiting on their team to confirm a higher one before changing it``
+  ``the 500 cap is the partner API page limit and their team hasn't confirmed a higher one, so it stays``
 - **Re-review verdict.** One line per finding: the verdict in plain words,
   then the evidence.
   ``retry is bounded now, `RetryPolicy.cs` stops at 3, looks good``
