@@ -77,6 +77,7 @@ class FakeGh:
         self.no_checks = set()
         self.base_runs = {}
         self.base_statuses = {}
+        self.job_logs = {}
 
     def thread_fetches(self):
         return sum(1 for a in self.calls if a[:2] == ["api", "graphql"] and "$n" in a[3])
@@ -117,6 +118,10 @@ class FakeGh:
             if n in self.no_checks:
                 raise poll.GhError("no required checks reported on the 'main' branch")
             return json.dumps(self.checks.get(n, []))
+        if args[:2] == ["run", "view"]:
+            return self.job_logs[args[args.index("--job") + 1]]
+        if args[:2] == ["run", "rerun"]:
+            return ""
         path = args[1]
         if "/compare/" in path:
             return "".join(f"{f}\n" for f in self.compare.get(path.split("/compare/")[1], []))

@@ -7,6 +7,7 @@ never writes it. The monitor writes watch-poller.json; --report and
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import pathlib
@@ -14,7 +15,9 @@ import re
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 TICK_SECONDS = 60
@@ -27,6 +30,8 @@ FAILED_BASE = ("failure", "error", "timed_out")
 ACTIONS_LINK = re.compile(r"^https://github\.com/[^/]+/[^/]+/actions/runs/(\d+)/job/(\d+)")
 AZURE_LINK = re.compile(
     r"^https://dev\.azure\.com/([^/]+)/([^/]+)/_build/results\?buildId=(\d+)")
+ADO_BUILD = "https://dev.azure.com/{org}/{project}/_apis/build/builds/{build_id}"
+LOG_LINES = 5000
 
 
 class GhError(RuntimeError):
@@ -600,6 +605,60 @@ def checks_payload(gh, watch, number):
     return {"pr": number, "head": head, "base": base, "checks": checks}
 
 
+def ado_request(url, method="GET", body=None, opener=None):
+    pat = os.environ.get("AZURE_DEVOPS_EXT_PAT")
+    if not pat:
+        raise GhError("AZURE_DEVOPS_EXT_PAT is not set")
+    token = base64.b64encode(f":{pat}".encode("ascii")).decode("ascii")
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    request = urllib.request.Request(url, data=data, method=method, headers={
+        "Authorization": f"Basic {token}", "Content-Type": "application/json"})
+    try:
+        with (opener or urllib.request.urlopen)(request, timeout=60) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except urllib.error.URLError as exc:
+        raise GhError(f"{method} {url.split('?')[0]}: {exc}") from None
+
+
+def failed_records(timeline, kind):
+    return [r for r in timeline.get("records") or []
+            if r.get("type") == kind and r.get("result") == "failed"]
+
+
+def last_lines(text, count=LOG_LINES):
+    return "\n".join(text.splitlines()[-count:])
+
+
+def ci_log(gh, repo_slug, link, ado=ado_request):
+    target = check_platform(link)
+    if target["platform"] == "github-actions":
+        return last_lines(gh(["run", "view", "--job", target["job_id"], "--repo", repo_slug,
+                              "--log-failed"]))
+    if target["platform"] == "azure-pipelines":
+        build = ADO_BUILD.format(**target)
+        timeline = json.loads(ado(f"{build}/timeline?api-version=7.1"))
+        parts = [f"== {r.get('name')} ==\n" + ado(f"{build}/logs/{r['log']['id']}?api-version=7.1")
+                 for r in failed_records(timeline, "Task") if (r.get("log") or {}).get("id")]
+        return last_lines("\n".join(parts))
+    raise GhError(f"no CI source for {link}")
+
+
+def ci_rerun(gh, repo_slug, link, ado=ado_request):
+    target = check_platform(link)
+    if target["platform"] == "github-actions":
+        gh(["run", "rerun", target["run_id"], "--failed", "--repo", repo_slug])
+        return [f"run {target['run_id']}"]
+    if target["platform"] == "azure-pipelines":
+        build = ADO_BUILD.format(**target)
+        timeline = json.loads(ado(f"{build}/timeline?api-version=7.1"))
+        stages = [r["identifier"] for r in failed_records(timeline, "Stage") if r.get("identifier")]
+        for stage in stages:
+            ado(f"{build}/stages/{urllib.parse.quote(stage, safe='')}?api-version=7.1-preview.1",
+                method="PATCH", body={"state": "retry", "forceRetryAllJobs": False})
+        return [f"stage {stage}" for stage in stages]
+    raise GhError(f"no CI source for {link}")
+
+
 def assert_author(gh, repo_slug, number):
     author = gh(["api", f"repos/{repo_slug}/pulls/{number}", "--jq", ".user.login"]).strip()
     acting = gh(["api", "user", "--jq", ".login"]).strip()
@@ -626,8 +685,12 @@ def main(argv=None, gh=run_gh):
                       help="print the required checks on the PR head")
     mode.add_argument("--assert-author", type=int, metavar="PR",
                       help="exit 0 only if the acting login authored the PR")
+    mode.add_argument("--ci-log", metavar="LINK",
+                      help="print the last 5000 lines of the failed steps behind a check link")
+    mode.add_argument("--ci-rerun", metavar="LINK",
+                      help="rerun the failed jobs behind a check link")
     parser.add_argument("--state-dir", type=pathlib.Path, help="<main checkout>/.pr-autopilot")
-    parser.add_argument("--repo", help="owner/name; required with --assert-author")
+    parser.add_argument("--repo", help="owner/name; required with --assert-author, --ci-log, --ci-rerun")
     args = parser.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -635,6 +698,19 @@ def main(argv=None, gh=run_gh):
         if not args.repo:
             parser.error("--assert-author needs --repo owner/name")
         return assert_author(gh, args.repo, args.assert_author)
+    if args.ci_log or args.ci_rerun:
+        if not args.repo:
+            parser.error("--ci-log and --ci-rerun need --repo owner/name")
+        try:
+            if args.ci_log:
+                print(ci_log(gh, args.repo, args.ci_log))
+            else:
+                for line in ci_rerun(gh, args.repo, args.ci_rerun):
+                    print(f"rerun started: {line}")
+        except GhError as exc:
+            print(f"pr-watch: {exc}", file=sys.stderr)
+            return 1
+        return 0
     if args.state_dir is None:
         parser.error("--state-dir is required for this mode")
     if args.monitor:
