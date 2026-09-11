@@ -145,8 +145,25 @@ allowlist. Deterministic: no LLM in it.
      next tick. The loop never exits on its own. A PR that reaches
      `MERGED` or `CLOSED` emits one `closed` event and leaves the set.
 - `--report`: the three-section report on demand (`/pr-watch status`). The
-  sections are ATTENTION, NEW, and STANDING.
-- `--reseed`: accept current state as baseline.
+  sections are ATTENTION, NEW, and STANDING. ATTENTION is every pending
+  tail and top-level item on an `authored` PR, every `reviewed` PR whose
+  head moved past the user's review, and every standing human
+  `CHANGES_REQUESTED` review, recomputed from GitHub on every run. NEW is
+  every id not in `watch-seen.json`, which `--report` then advances. When
+  nothing is new and nothing needs attention the report is one line.
+- `--reseed`: accept every current id into `watch-seen.json` without
+  reporting it.
+- `--baseline <pr>`: print the first-arm baseline (3.3) as JSON. Writes
+  nothing.
+- `--tails <pr>`: fetch now and print the PR's pending thread tails and
+  top-level items as the library's `CommentRecord` objects, plus the PR's
+  title, body, head, and base. Writes nothing.
+- `--findings <pr>`: for a `reviewed` PR, print the user's threads with
+  every comment, the old and new head, and the files changed between
+  them. Writes nothing.
+- `--assert-author <pr>`: the push guard (section 9). Reads the PR author
+  and the acting login live from GitHub; exits 0 on a match and 3 on a
+  mismatch. Reads no state file.
 
 ### 3.2 Classification
 
@@ -159,16 +176,49 @@ all typed `User` on GitHub.
 The library's Filter B decides a bot comment's disposition from
 `known-bots.md` by exact login, and treats an unknown bot as actionable.
 The allowlisted logins have no row there, so `pr-watch` ships
-`pr-watch/references/known-bots-overlay.md` with one Skip row per allowlisted
-login (their comments are status lines, never findings) and concatenates
-it after the library table when Filter B runs. The library file is not
-edited.
+`pr-watch/references/known-bots-overlay.md` with rows for them and
+concatenates it after the library table when Filter B runs. The library
+file is not edited. The rows are per surface, not a blanket Skip, because
+`mergewatch-playlist` posts real findings:
+
+| Login | Surface | Signature | Classification |
+|---|---|---|---|
+| `sonarqube-mbodevme` | top-level | `Quality Gate passed` | Skip |
+| `sonarqube-mbodevme` | top-level | `Quality Gate failed` | Actionable |
+| `mindbody-ado-pipelines` | any | any | Skip (CI is a non-goal) |
+| `mergewatch-playlist` | inline, `path` set | any | Actionable |
+| `mergewatch-playlist` | review body | pointer to the anchor comment | Skip |
+| `mergewatch-playlist` | top-level | anchor comment | Parse, as the library's anchor example |
+
+The build verifies each row's signature against live comments by those
+logins before the overlay ships.
 
 ### 3.3 Pending tails
 
 The unit of work is a thread. A thread's tail is every comment after the
-last one whose id is in the state file's `posted_reply_ids`. A thread is
-pending when its tail is non-empty. Every comment in the tail is in scope
+last one whose id is in the state file's `posted_reply_ids` or
+`settled_ids`. A thread is pending when its tail is non-empty.
+`posted_reply_ids` holds the node ids of replies `pr-watch` posted.
+`settled_ids` holds ids that close a tail without a reply: the first-arm
+baseline below, and the last comment of a tail that Filter B skipped.
+
+First-arm baseline. Without one, the first event on a PR with history
+would treat every old thread as pending and reply on threads settled weeks
+ago. When an `authored` PR enters the watch for the first time, step 01
+runs `poll.py --baseline <pr>` and records its output:
+
+- A thread is settled when its last comment is by `me`, or it is resolved
+  and its last comment is by a bot. Its last comment id goes into
+  `settled_ids`. A resolved thread whose last comment is a human's stays
+  pending: that is the pushback case.
+- A top-level issue comment or review body is baselined into
+  `handled_top_level_ids` with disposition `baseline` when its author is a
+  bot or `me`, or it is older than the user's newest comment or review of
+  any kind on the PR.
+
+The confirmation in step 01 shows, per PR, how many threads and
+top-level items remain pending after the baseline, so the user sees what
+the first event will act on. Every comment in the tail is in scope
 whoever wrote it: a bot opening the thread, a teammate replying, the user
 typing a reply by hand. A `me` comment whose id is not in
 `posted_reply_ids` is one the user typed and is pending work.
@@ -183,7 +233,10 @@ Consequences accepted by design:
 - Resolved threads are read like open ones. Resolving does not stop
   replies and a reply does not reopen; judge by who spoke last.
 - Issue comments and review bodies have no thread. Each is handled once,
-  keyed by id, and its disposition is recorded in the state file.
+  keyed by id, and its disposition is recorded in the state file. A
+  top-level item by `me` is never pending; top-level comments on one's own
+  PR are addressed to reviewers, not to the fix path. A review with an
+  empty body is a container for inline comments and is not an item.
 
 ### 3.4 Event lines
 
@@ -196,12 +249,29 @@ One JSON line per PR with actionable change:
  "old_head": "...", "new_head": "...", "touches_my_findings": true, "author_replied": false}
 ```
 
-Plus `tick` (push queue non-empty), `reconciled` (daily sweep found
-something), and `closed` (PR merged or closed). A `head-moved` event on an
-`authored` PR is compared with `last_pushed_head`: equal means it is the
-watch's own push and is dropped; different means the user or another
-session pushed, and the event only updates `last_head` and re-runs the
-gate in 4.1 on the next pending event.
+Plus `reply` (a non-`me` comment landed on one of the user's threads on a
+`reviewed` PR with no head move), `tick` (push queue non-empty), `reconciled`
+(daily sweep found something), and `closed` (PR merged or closed).
+
+A head move on an `authored` PR emits nothing. The gate in 4.1 compares
+the worktree against the live `headRefOid` at fix time, which covers both
+the watch's own pushes and anyone else's.
+
+For a `reviewed` PR the old head is the commit of the user's newest
+review on the PR (`reviews.nodes.commit.oid`), not whatever the poller saw
+last. That makes the trigger in 5.2 exact at first arm too, and it
+settles itself: a reply posted by re-review creates a review on the
+current head.
+
+An event line is a wake-up, not the truth. Step 03 re-reads `watch.json`
+and runs `poll.py --tails <pr>` (or `--findings <pr>` for `reviewed`)
+before acting, so a line that raced a state write is recomputed rather
+than trusted. The poller suppresses repeats by storing each PR's last
+emitted signature (the sorted ids in the event); the daily reconciliation
+ignores stored signatures, so an event the session dropped comes back
+within a day. A `tick` line is emitted when the push queue differs from
+the last one emitted, or ten minutes after the last `tick`, so a blocked
+push does not wake the session every minute.
 
 Bodies are not in the event line. The session reads them from the poller's
 per-PR JSON dump, wrapping each in a nonce-delimited `<UNTRUSTED_COMMENT>`
@@ -280,11 +350,16 @@ way the defenses are concatenated. The addendum adds:
    exchange; never a second automatic reply).
 4. Record the disposition either way. A finding resolved from the repo
    cites what resolved it, never a bare "no change".
-5. The verdict set is `fixed`, `refuted`, `superseded`, `needs-human`. The
-   library's `ui-deferred` verdict is removed: nothing consumes it here,
-   and the library's "Deferred for user review" template must never reach
-   a thread. Anything the library would have deferred returns
-   `needs-human` with the reason.
+5. The verdict set is the library's `AgentReturn` enum without
+   `ui-deferred`: `fixed`, `fixed-differently`, `replied`,
+   `not-addressing`, `needs-human`. Nothing consumes `ui-deferred` here,
+   so the addendum tells the fixer to return `needs-human` with the
+   reason wherever the library would defer. A refutation is
+   `not-addressing` with evidence; a superseded finding is `replied`.
+6. A fixer's `reply_text`, and the templated text the library's verifier
+   ladder writes on `feedback-wrong`, are facts for the reply, never the
+   reply. Step 04 recomposes every reply through the voice guide before
+   posting.
 
 The library's verifier subagent runs on every `fixed` return unchanged.
 
@@ -470,6 +545,9 @@ primitive, and each has exactly one writer.
 
 ```
 {
+  "session_id": "<uuid of the session that armed the watch>",
+  "owner": "mindbody",
+  "repo": "Mindbody.Scheduling",
   "self_login": "prpande",
   "channel_id": "C0C15VC8Y0Z",
   "origin_worktree": "D:\\src\\Mindbody.Scheduling",
@@ -483,6 +561,7 @@ primitive, and each has exactly one writer.
       "branch": "apptdetails-s2-hydration",
       "slack_ts": "1789105505.206109",
       "posted_reply_ids": [...],
+      "settled_ids": [...],
       "escalated_ids": [...],
       "handled_top_level_ids": {"<id>": "<disposition>"},
       "last_pushed_head": "..."
@@ -496,29 +575,41 @@ primitive, and each has exactly one writer.
 
 ```
 {
-  "last_reconciliation": "<ISO-8601>",
+  "last_reconciliation": <epoch seconds>,
+  "last_tick_event": <epoch seconds>,
+  "last_tick_queue": [1413],
+  "closed": [1407],
   "prs": {
-    "1411": {"updated_at": "...", "last_head": "...", "seen_ids": [...]}
+    "1411": {"updated_at": "...", "last_head": "...", "last_signature": "..."}
   }
 }
 ```
 
+`watch-seen.json`, written only by `poll.py --report` and `--reseed`:
+`{"<pr>": [<every id seen>]}`. It is the NEW watermark and nothing else.
+
 The poller reads `watch.json` for the set, roles, allowlist, push queue,
-and `posted_reply_ids`, and never writes it. The session reads
-`watch-poller.json` for `last_head` and never writes it. Resume merges
+`posted_reply_ids`, `settled_ids`, and `handled_top_level_ids`, and never
+writes it. The session never writes either poller file. Resume merges
 discovery into the existing `watch.json`; a PR no longer open is dropped
-from both files on the `closed` event.
+from `watch.json` by the session on the `closed` event, and the poller
+stops polling it as soon as it is in `closed`.
 
 Bridge to the library. Steps 04, 04.5, and the fixer and verifier prompts
 read the library's `context` object and its `pr-<N>.json`, `pr-<N>.lock`,
 and `pr-<N>.log`. Step 01 therefore initialises a real `pr-<N>.json` for
-every `authored` PR, exactly as `pr-autopilot` step 01 would (`pr_number`,
-`branch`, `head_sha`, `base_sha`, `self_login`, `repo`, empty
-`handled_comment_ids`, `last_push_timestamp` unset), and step 03 fills
-`context.actionable_items` from the poller's per-PR dump by mapping each
-tail comment onto the library's `CommentRecord` shape (`id`, `author`,
-`author_kind`, `body`, `path`, `line`, `thread_id`, `is_resolved`,
-`created_at`). The fix path then iterates the library steps per PR with
+every `authored` PR with exactly the fields `context-schema.md` requires
+and no others, since the schema forbids unknown keys: `session_id` (the
+watch's), `host_platform`, `platform` (`github`), `repo_root` (the PR's
+worktree), `base`, `branch`, `head_sha`, `base_sha`, `pr_number`,
+`pr_url`, `self_login`. Step 03 fills `context.all_comments` and then
+`context.actionable` from `poll.py --tails`, whose records already carry
+the library's `CommentRecord` fields (`id`, `surface`, `author`,
+`author_type`, `created_at`, `updated_at`, `path`, `line`, `body`,
+`thread_id`, `is_resolved`). `author_type` is `Bot` for every author the
+poller classifies as a bot, allowlisted `User` accounts included, so the
+library sees the classification this skill uses. The fix path then
+iterates the library steps per PR with
 that context, holding `pr-<N>.lock` for the duration and appending to
 `pr-<N>.log` so the audit trail stays in one place. Invariant G1 holds
 because the state file the lock protects now exists.
@@ -577,8 +668,13 @@ skills/pr-tooling/pr-watch/
   references/watch-state-schema.md
   scripts/poll.py
   scripts/threads.graphql
-  scripts/test_poll.py
+skill-tests/pr-watch/
+  conftest.py
+  tests/test_poll_*.py
 ```
+
+Tests live under `skill-tests/`, the repo's convention for skill tests,
+not beside the script.
 
 `git diff` on the PR must show no change under `pr-autopilot/`,
 `pr-followup/`, or `pr-loop-lib/`.
@@ -589,7 +685,7 @@ skills/pr-tooling/pr-watch/
 2. `poll.py --report` against a set of real open PRs produces the
    three-section report (ATTENTION, NEW, STANDING) and performs no
    mutation.
-3. Deleting a known comment id from `seen_ids` makes exactly that item
+3. Deleting a known comment id from `watch-seen.json` makes exactly that item
    reappear as NEW on the next run, correctly classified.
 4. A human comment on a resolved thread appears under ATTENTION.
 5. A login in the allowlist typed `User` is classified as a bot.
