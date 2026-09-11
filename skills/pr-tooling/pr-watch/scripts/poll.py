@@ -136,3 +136,62 @@ def tails_payload(pr, watch_pr, self_login, allowlist):
         "top_level": [comment_record(i, s, self_login, allowlist) for s, i in top],
         "truncated": pr.get("truncated", []),
     }
+
+
+def run_gh(args):
+    out = subprocess.run(["gh", *args], capture_output=True, text=True, encoding="utf-8")
+    if out.returncode != 0:
+        raise GhError(out.stderr.strip()[:400] or f"gh exited {out.returncode}")
+    return out.stdout
+
+
+def graphql(gh, query, variables, allow_partial=False):
+    args = ["api", "graphql", "-f", f"query={query}"]
+    for key, value in variables.items():
+        if value is None:
+            continue
+        args += ["-F" if isinstance(value, int) else "-f", f"{key}={value}"]
+    data = json.loads(gh(args))
+    if data.get("errors") and not (allow_partial and data.get("data")):
+        raise GhError(json.dumps(data["errors"])[:400])
+    return data["data"]
+
+
+def fetch_pr(gh, owner, repo, number):
+    query = (SCRIPT_DIR / "threads.graphql").read_text(encoding="utf-8")
+    pr, threads, after = None, [], None
+    while True:
+        page = graphql(gh, query, {"owner": owner, "repo": repo, "n": number,
+                                   "after": after})["repository"]["pullRequest"]
+        if page is None:
+            raise GhError(f"PR #{number} not found in {owner}/{repo}")
+        pr = pr or page
+        threads += page["reviewThreads"]["nodes"]
+        info = page["reviewThreads"]["pageInfo"]
+        if not info["hasNextPage"]:
+            break
+        after = info["endCursor"]
+    pr = dict(pr, reviewThreads={"pageInfo": {"hasNextPage": False, "endCursor": None},
+                                 "nodes": threads})
+    pr["truncated"] = truncation(pr)
+    return pr
+
+
+def truncation(pr):
+    notes = [f"thread {t['id']} has more than 100 comments"
+             for t in pr["reviewThreads"]["nodes"]
+             if t["comments"]["pageInfo"]["hasNextPage"]]
+    if pr["comments"]["pageInfo"]["hasPreviousPage"]:
+        notes.append("more than 100 issue comments; the oldest are not read")
+    if pr["reviews"]["pageInfo"]["hasPreviousPage"]:
+        notes.append("more than 100 reviews; the oldest are not read")
+    return notes
+
+
+def tick_query(owner, repo, numbers):
+    if not (NAME.match(owner) and NAME.match(repo)):
+        raise ValueError(f"unsafe owner/repo: {owner}/{repo}")
+    fields = " ".join(
+        f"p{int(n)}: pullRequest(number: {int(n)}) {{ number updatedAt headRefOid state }}"
+        for n in numbers)
+    return f'query {{ repository(owner: "{owner}", name: "{repo}") {{ {fields} }} }}'
