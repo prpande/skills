@@ -357,3 +357,127 @@ def monitor(gh, state_dir, sleep=time.sleep, clock=time.time, max_ticks=None):
             print(f"pr-watch poller: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
         if max_ticks is None or ticks < max_ticks:
             sleep(TICK_SECONDS)
+
+
+def all_ids(pr):
+    ids = [c["id"] for t in pr["reviewThreads"]["nodes"] for c in t["comments"]["nodes"]]
+    ids += [c["id"] for c in pr["comments"]["nodes"]]
+    ids += [r["id"] for r in pr["reviews"]["nodes"]]
+    return ids
+
+
+def snip(body, width=300):
+    return " ".join((body or "").split())[:width]
+
+
+def attention_lines(watch, pr, watch_pr):
+    me, allow = watch["self_login"], watch["bot_allowlist"]
+    n = pr["number"]
+    lines = []
+    if watch_pr["role"] == "authored":
+        threads, top = pending(pr, watch_pr, me, allow)
+        for t, tail in threads:
+            state = "resolved" if t["isResolved"] else "open"
+            login, kind = classify(tail[-1]["author"], me, allow)
+            lines.append(f"PR {n}  thread {t['path']}:{t['line']} [{state}]  "
+                         f"{len(tail)} pending, last by {login} ({kind}): "
+                         f"{snip(tail[-1]['body'])}")
+        for surface, item in top:
+            login, kind = classify(item["author"], me, allow)
+            lines.append(f"PR {n}  {surface} by {login} ({kind}): {snip(item['body'])}")
+    else:
+        old = my_review_head(pr, me, allow)
+        if my_threads(pr, me, allow) and old and old != pr["headRefOid"]:
+            lines.append(f"PR {n}  head moved past your review: "
+                         f"{old[:9]}..{pr['headRefOid'][:9]}")
+    latest = {}
+    for r in pr["reviews"]["nodes"]:
+        login, kind = classify(r["author"], me, allow)
+        if kind == "human" and r["state"] in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED"):
+            latest[login] = r
+    for login, r in sorted(latest.items()):
+        if r["state"] == "CHANGES_REQUESTED":
+            lines.append(f"PR {n}  changes requested by {login}: "
+                         f"{snip(r['body']) or '(no body)'}")
+    return lines
+
+
+def new_lines(pr, known, self_login, allowlist):
+    n = pr["number"]
+    lines = []
+    for t in pr["reviewThreads"]["nodes"]:
+        for c in t["comments"]["nodes"]:
+            if c["id"] not in known:
+                login, kind = classify(c["author"], self_login, allowlist)
+                lines.append(f"PR {n}  [{kind}] thread {t['path']}:{t['line']}  "
+                             f"{login}: {snip(c['body'])}")
+    for c in pr["comments"]["nodes"]:
+        if c["id"] not in known:
+            login, kind = classify(c["author"], self_login, allowlist)
+            lines.append(f"PR {n}  [{kind}] issue comment  {login}: {snip(c['body'])}")
+    for r in pr["reviews"]["nodes"]:
+        if r["id"] not in known:
+            login, kind = classify(r["author"], self_login, allowlist)
+            lines.append(f"PR {n}  [{kind}] review {r['state']}  {login}: "
+                         f"{snip(r['body']) or '(no body)'}")
+    return lines
+
+
+def standing_line(pr, watch_pr, self_login, allowlist):
+    threads = pr["reviewThreads"]["nodes"]
+    authors = [c["author"] for t in threads for c in t["comments"]["nodes"]]
+    authors += [c["author"] for c in pr["comments"]["nodes"]]
+    authors += [r["author"] for r in pr["reviews"]["nodes"]]
+    humans = sorted({login for login, kind in
+                     (classify(a, self_login, allowlist) for a in authors) if kind == "human"})
+    unresolved = sum(1 for t in threads if not t["isResolved"])
+    return (f"PR {pr['number']}  {watch_pr['role']}  head={pr['headRefOid'][:9]}  "
+            f"threads={len(threads)} unresolved={unresolved}  "
+            f"humans: {', '.join(humans) or 'none'}")
+
+
+def report(gh, state_dir, reseed=False):
+    watch = read_json(state_dir / "watch.json")
+    seen_path = state_dir / "watch-seen.json"
+    seen = read_json(seen_path, default={})
+    me, allow = watch["self_login"], watch["bot_allowlist"]
+    first_run = not seen
+    attention, new, standing, errors, notes = [], [], [], [], []
+    fresh = dict(seen)
+    for key in sorted(watch["prs"], key=int):
+        watch_pr = watch["prs"][key]
+        try:
+            pr = fetch_pr(gh, watch["owner"], watch["repo"], int(key))
+        except GhError as exc:
+            errors.append(f"PR {key}: {exc}")
+            continue
+        notes += [f"PR {key}: {note}" for note in pr["truncated"]]
+        attention += attention_lines(watch, pr, watch_pr)
+        new += new_lines(pr, set(seen.get(key, [])), me, allow)
+        standing.append(standing_line(pr, watch_pr, me, allow))
+        fresh[key] = all_ids(pr)
+    if not errors:
+        write_json_atomic(seen_path, fresh)
+    for line in errors:
+        print(f"ERROR  {line}")
+    if reseed:
+        print(f"pr-watch: reseeded; {sum(len(v) for v in fresh.values())} ids accepted as seen")
+        return 1 if errors else 0
+    if not (errors or attention or notes or new) and not first_run:
+        print(f"pr-watch: nothing new across {len(standing)} PRs; nothing needs attention")
+        return 0
+    print("ATTENTION")
+    for line in attention or ["none"]:
+        print(f"  {line}")
+    if first_run:
+        print(f"NEW  first run; {len(new)} items seeded as the baseline")
+    else:
+        print(f"NEW ({len(new)} items)")
+        for line in new:
+            print(f"  {line}")
+    print("STANDING")
+    for line in standing:
+        print(f"  {line}")
+    for line in notes:
+        print(f"  note: {line}")
+    return 1 if errors else 0
