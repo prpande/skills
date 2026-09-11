@@ -99,6 +99,11 @@ class CiLogTests(unittest.TestCase):
         with self.assertRaises(poll.GhError):
             poll.ci_log(FakeGh(), "o/r", SONAR)
 
+    def test_azure_build_with_no_failed_task_raises(self):
+        ado = FakeAdo([record("Task", "succeeded", "Restore", log_id=3)], logs={3: "restored"})
+        with self.assertRaises(poll.GhError):
+            poll.ci_log(FakeGh(), "o/r", AZURE, ado=ado)
+
 
 class CiRerunTests(unittest.TestCase):
     def test_actions_reruns_the_failed_jobs_of_the_run(self):
@@ -113,6 +118,12 @@ class CiRerunTests(unittest.TestCase):
         self.assertEqual(ado.calls[-1], (
             "PATCH", f"{BUILD}/stages/gated?api-version=7.1-preview.1",
             {"state": "retry", "forceRetryAllJobs": False}))
+
+    def test_azure_build_with_no_failed_stage_raises_without_patching(self):
+        ado = FakeAdo([record("Stage", "succeeded", "Build", identifier="build")])
+        with self.assertRaises(poll.GhError):
+            poll.ci_rerun(FakeGh(), "o/r", AZURE, ado=ado)
+        self.assertFalse(any(call[0] == "PATCH" for call in ado.calls))
 
 
 class CliTests(unittest.TestCase):

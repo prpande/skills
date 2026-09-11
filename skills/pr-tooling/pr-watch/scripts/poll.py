@@ -639,6 +639,8 @@ def ci_log(gh, repo_slug, link, ado=ado_request):
         timeline = json.loads(ado(f"{build}/timeline?api-version=7.1"))
         parts = [f"== {r.get('name')} ==\n" + ado(f"{build}/logs/{r['log']['id']}?api-version=7.1")
                  for r in failed_records(timeline, "Task") if (r.get("log") or {}).get("id")]
+        if not parts:
+            raise GhError(f"no failed task log in build {target['build_id']}")
         return last_lines("\n".join(parts))
     raise GhError(f"no CI source for {link}")
 
@@ -652,6 +654,8 @@ def ci_rerun(gh, repo_slug, link, ado=ado_request):
         build = ADO_BUILD.format(**target)
         timeline = json.loads(ado(f"{build}/timeline?api-version=7.1"))
         stages = [r["identifier"] for r in failed_records(timeline, "Stage") if r.get("identifier")]
+        if not stages:
+            raise GhError(f"no failed stage to retry in build {target['build_id']}")
         for stage in stages:
             ado(f"{build}/stages/{urllib.parse.quote(stage, safe='')}?api-version=7.1-preview.1",
                 method="PATCH", body={"state": "retry", "forceRetryAllJobs": False})
