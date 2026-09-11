@@ -410,11 +410,20 @@ def read_json(path, default=None):
         return json.loads(json.dumps(default))
 
 
-def write_json_atomic(path, data):
+def write_json_atomic(path, data, attempts=5, sleep=time.sleep):
     tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
     with tmp.open("w", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(data, indent=2) + "\n")
-    os.replace(tmp, path)
+    for attempt in range(attempts):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            # Windows refuses a replace while any reader or scanner holds the target open.
+            if attempt == attempts - 1:
+                tmp.unlink(missing_ok=True)
+                raise
+            sleep(0.1)
 
 
 def missed_prs(before, after, events):
@@ -435,9 +444,7 @@ def monitor(gh, state_dir, sleep=time.sleep, clock=time.time, max_ticks=None):
             now = int(clock())
             last = poller.get("last_reconciliation", 0)
             due = now - last >= RECONCILE_SECONDS
-            # every process's first tick re-checks state a resumed session's
-            # last life may have emitted but never handled; "reconciled" is
-            # reserved for the time-based pass so it names real misses only.
+            # forced first tick covers a resume; only the timed pass may claim a "reconciled" miss
             before = {n: (p.get("last_signature"), p.get("last_ci_signature"))
                       for n, p in poller.get("prs", {}).items()}
             events = tick_once(gh, watch, poller, now, force=ticks == 1 or due)

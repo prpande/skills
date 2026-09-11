@@ -4,6 +4,7 @@ import json
 import pathlib
 import tempfile
 import unittest
+import unittest.mock
 
 from fakes import SELF, FakeGh, comment, poll, pull, review, thread, watch
 
@@ -209,6 +210,37 @@ class MonitorLoopTests(unittest.TestCase):
         self.run_monitor(1)
         events, _ = self.run_monitor(1, clock=NOW + poll.RECONCILE_SECONDS)
         self.assertEqual([e["kind"] for e in events], ["pending"])
+
+
+class AtomicWriteTests(unittest.TestCase):
+    def replace_failing(self, failures):
+        real = poll.os.replace
+        calls = []
+
+        def flaky(src, dst):
+            calls.append(src)
+            if len(calls) <= failures:
+                raise PermissionError("target is open")
+            real(src, dst)
+        return flaky, calls
+
+    def test_a_briefly_locked_target_is_retried(self):
+        flaky, calls = self.replace_failing(2)
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.object(poll.os, "replace", flaky):
+            target = pathlib.Path(tmp) / "watch-poller.json"
+            poll.write_json_atomic(target, {"a": 1}, sleep=lambda _: None)
+            self.assertEqual(json.loads(target.read_text(encoding="utf-8")), {"a": 1})
+            self.assertEqual(len(calls), 3)
+
+    def test_a_persistently_locked_target_raises_and_leaves_no_temp_file(self):
+        flaky, _ = self.replace_failing(99)
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.object(poll.os, "replace", flaky):
+            target = pathlib.Path(tmp) / "watch-poller.json"
+            with self.assertRaises(PermissionError):
+                poll.write_json_atomic(target, {"a": 1}, sleep=lambda _: None)
+            self.assertEqual(list(pathlib.Path(tmp).iterdir()), [])
 
 
 if __name__ == "__main__":
