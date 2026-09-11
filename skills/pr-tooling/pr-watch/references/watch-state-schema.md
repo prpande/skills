@@ -43,13 +43,18 @@ Per PR:
 | `escalated_ids` | array of node ids | Comments sent to Slack as needing the user |
 | `handled_top_level_ids` | object id to disposition | `baseline`, `skipped`, `escalated`, `parsed`, or the fixer verdict. Findings parsed out of an anchor comment are keyed `<anchor id>\|<path>\|<title>` (`pr-watch/references/known-bots-overlay.md`) |
 | `last_pushed_head` | string or null | Sha of the last push this watch made |
+| `ci_fix_pushes` | integer | CI fix commits since the last head the watch did not push, queued ones included; reset to 0 when a `ci-red` arrives on such a head; cap 3 |
+| `ci_reruns` | array of strings | `<head>\|<workflow>\|<check name>` for every check rerun once; a check is rerun at most once per head |
+| `ci_rerun_queued` | array of `{link, head}` | Reruns waiting for the push-queue drain; entries whose `head` is no longer the PR head are dropped there |
 
 ## `watch-poller.json` — written only by `POLL --monitor`
 
 `last_reconciliation` (epoch seconds), `last_tick_event` (epoch seconds),
 `last_tick_queue` (array), `closed` (array of PR numbers), and `prs` keyed
-by PR number with `updated_at`, `last_head`, `last_signature`. Deleting
-the file makes the next tick a full reconciliation.
+by PR number with `updated_at`, `last_head`, `last_signature`,
+`last_rollup` (the head commit's check rollup state), and
+`last_ci_signature`. Deleting the file makes the next tick a full
+reconciliation.
 
 ## `watch-seen.json` — written only by `POLL --report` and `--reseed`
 

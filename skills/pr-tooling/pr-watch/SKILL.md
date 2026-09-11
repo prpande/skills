@@ -4,11 +4,13 @@ description: >
   Standing supervisor over a set of pull requests for the rest of the
   session. On PRs the user authored it verifies and fixes review feedback
   from bots and humans, commits, pushes, replies, and resolves threads
-  that are clearly settled. On PRs the user reviewed it re-checks the
-  user's findings when the author pushes and replies on the user's own
-  threads. Reports to a private Slack channel, one thread per PR. Never
-  exits on its own. Use when the user says "/pr-watch", "watch my PRs",
-  "keep an eye on these PRs", "pr-watch status", or "stop watching".
+  that are clearly settled, and keeps their required CI checks green by
+  rerunning flakes and fixing real failures. On PRs the user reviewed it
+  re-checks the user's findings when the author pushes and replies on
+  the user's own threads. Reports to a private Slack channel, one thread
+  per PR. Never exits on its own. Use when the user says "/pr-watch",
+  "watch my PRs", "keep an eye on these PRs", "pr-watch status", or
+  "stop watching".
 argument-hint: "[pr-number ...] [--channel <id>] [--parallel-pushes] [--dry-run] | status | stop"
 allowed-tools: Bash, PowerShell, Read, Edit, Write, Glob, Grep, Agent, Monitor, TaskStop, EnterWorktree, AskUserQuestion, Skill, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_read_thread
 ---
@@ -106,6 +108,9 @@ Owned by `pr-watch`:
   every `git push`, and any non-zero exit aborts the push. It reads no
   state file.
 - A `reviewed` PR never gets a worktree, a commit, or a push.
+- CI is acted on only for required checks on `authored` PRs
+  (`pr-watch/steps/07-ci.md`). The Azure DevOps PAT is read only inside
+  `POLL`; never print it or pass it anywhere.
 - Never approve, request changes, merge, close, or retarget a PR.
 - Never rebase and never force-push. A wrong pushed fix is undone with
   `git revert` on top of the branch and a further reply.
