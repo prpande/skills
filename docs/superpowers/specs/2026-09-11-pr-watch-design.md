@@ -388,10 +388,13 @@ push guard order:
 6. Only after the push succeeds: the replies for the threads that fix
    covers (4.4), since each names the commit.
 
-Push serialisation is on by default: at most one PR's push per event; the
-others stay committed locally and queue in the session's state file. The
-queue drains one push per `tick` event (3.1), so a quiet PR's fix ships
-within a minute of the previous push, and its replies wait until it has.
+Push serialisation is on by default. Events already arrive one PR at a
+time, so the rule is about CI, not events: before pushing, step 04 checks
+every other `authored` PR in the watch with `gh pr checks`, and if any has
+a check still pending, this PR's fix stays committed locally and its
+number joins `push_queue`. The queue drains on `tick` events (3.1): the
+head of the queue is pushed as soon as no other watched PR has a pending
+check, and its replies wait until it has.
 Exists because concurrent gated runs deadlock a shared contract database.
 `--parallel-pushes` turns it off; the choice is persisted in the state
 file, so it is passed once per watch.
@@ -669,12 +672,14 @@ skills/pr-tooling/pr-watch/
   scripts/poll.py
   scripts/threads.graphql
 skill-tests/pr-watch/
-  conftest.py
+  tests/fakes.py
   tests/test_poll_*.py
 ```
 
 Tests live under `skill-tests/`, the repo's convention for skill tests,
-not beside the script.
+not beside the script. They use the standard library's `unittest` so
+they run without installing anything; `fakes.py` puts the script
+directory on the import path and stands in for `gh`.
 
 `git diff` on the PR must show no change under `pr-autopilot/`,
 `pr-followup/`, or `pr-loop-lib/`.
@@ -713,7 +718,8 @@ not beside the script.
     untested assumption; if it fails, step 02 re-arms after every return
     and the spec is amended before the build continues.
 16. A bot comment from an allowlisted login (a quality-gate status line)
-    receives no reply and appears in no event.
+    receives no reply, and after the first event that carries it is
+    recorded as skipped so no later event carries it again.
 
 ## 12. Delivery
 
