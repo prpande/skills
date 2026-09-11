@@ -16,6 +16,8 @@ Goals:
 - Address review activity on the user's PRs quickly and with as little
   intervention from the user as possible, including human reviewers'
   findings.
+- Keep the required checks on the user's PRs green: rerun a flake, fix a
+  lint, build, or test failure, and report what it cannot move.
 - Re-review PRs the user has reviewed when their authors push, and post the
   verdicts on the user's own threads.
 - Never let anything reach a colleague that reads as automation.
@@ -27,8 +29,9 @@ Goals:
 
 Non-goals:
 
-- Reacting to red CI (library steps 09 and 10 are not wired; a later
-  revision can add them).
+- Acting on a check the base branch's rules do not require. Legacy
+  pipelines keep posting checks beside the GitHub Actions that replaced
+  them; only required checks drive the CI path (4.6).
 - Running while no session is attached. The watch is a property of the
   working session because that session holds the effort's context: the
   plan, the decisions, and the reasons behind them. A detached fixer
@@ -124,7 +127,9 @@ allowlist. Deterministic: no LLM in it.
 
 - `--monitor`: the interrupt source. Loops forever on a 60-second tick:
   1. One GraphQL request with one alias per watched PR, fetching only
-     `updatedAt`, `headRefOid`, and `state`. Cost is about one point
+     `updatedAt`, `headRefOid`, `state`, and the head commit's
+     `statusCheckRollup.state`. The rollup is here because a check
+     finishing does not move `updatedAt`. Cost is about one point
      against the 5,000-per-hour GraphQL budget, so the tick can run all
      day. `updatedAt` moves on every comment, review, reply, and push,
      including the user's own, and does not depend on read state; this
@@ -134,14 +139,21 @@ allowlist. Deterministic: no LLM in it.
      tick: the full thread fetch for that PR only, then the pending-tail
      computation (3.3), then zero or one event line. A full fetch of ten
      PRs costs roughly 500 points, which is why it runs only on change.
-  3. Same tick: if `push_queue` in the session's state file is non-empty,
+  3. For each `authored` PR whose rollup or head changed and whose rollup
+     is `FAILURE` or `ERROR`: `gh pr checks <n> --required --json
+     name,state,bucket,link,workflow,completedAt`, keeping the checks in
+     bucket `fail`. When any remain, one `ci-red` event (3.4). The rollup
+     alone is not trusted: it counts checks the branch rules do not
+     require, and on repos mid-migration a legacy pipeline can fail while
+     every required check is green.
+  4. Same tick: if `push_queue` in the session's state file is non-empty,
      emit one `tick` event so the session can drain one queued push
      without waiting for GitHub activity.
-  4. Once a day: a full fetch of every watched PR, recomputing pending
+  5. Once a day: a full fetch of every watched PR, recomputing pending
      tails from scratch. Emits only for what the ticks missed, and
      writes one `reconciled` event naming what it found so a divergence
      is visible.
-  5. Every fetch error is caught, written to stderr, and retried on the
+  6. Every fetch error is caught, written to stderr, and retried on the
      next tick. The loop never exits on its own. A PR that reaches
      `MERGED` or `CLOSED` emits one `closed` event and leaves the set.
 - `--report`: the three-section report on demand (`/pr-watch status`). The
@@ -161,6 +173,15 @@ allowlist. Deterministic: no LLM in it.
 - `--findings <pr>`: for a `reviewed` PR, print the user's threads with
   every comment, the old and new head, and the files changed between
   them. Writes nothing.
+- `--checks <pr>`: print the head sha and every required check on it as
+  JSON: name, state, bucket, link, workflow, `completedAt`, the platform
+  read from the link (`github-actions` with `run_id` and `job_id` from
+  `github.com/<o>/<r>/actions/runs/<run>/job/<job>`; `azure-pipelines`
+  with `org`, `project`, and `build_id` from
+  `dev.azure.com/<org>/<project>/_build/results?buildId=<id>`; `other`
+  for anything else), and `on_base`: the same check's conclusion on the
+  base branch tip, from `repos/<o>/<r>/commits/<base>/check-runs`, or
+  `null` when the tip has no check of that name. Writes nothing.
 - `--assert-author <pr>`: the push guard (section 9). Reads the PR author
   and the acting login live from GitHub; exits 0 on a match and 3 on a
   mismatch. Reads no state file.
@@ -259,9 +280,19 @@ One JSON line per PR with actionable change:
  "old_head": "...", "new_head": "...", "touches_my_findings": true, "author_replied": false}
 ```
 
+```
+{"pr": 1411, "role": "authored", "kind": "ci-red", "head": "...",
+ "checks": [{"name": "Gated / Unit Tests", "completed_at": "..."}]}
+```
+
 Plus `reply` (a non-`me` comment landed on one of the user's threads on a
 `reviewed` PR with no head move), `tick` (push queue non-empty), `reconciled`
 (daily sweep found something), and `closed` (PR merged or closed).
+
+A `ci-red` signature is the head plus each red check's name and
+`completedAt`, stored apart from the comment signature. A rerun that fails
+again finishes at a new time, so it emits again; the same failure seen on
+two ticks does not.
 
 A head move on an `authored` PR emits nothing. The gate in 4.1 compares
 the worktree against the live `headRefOid` at fix time, which covers both
@@ -403,8 +434,9 @@ time, so the rule is about CI, not events: before pushing, step 04 checks
 every other `authored` PR in the watch with `gh pr checks`, and if any has
 a check still pending, this PR's fix stays committed locally and its
 number joins `push_queue`. The queue drains on `tick` events (3.1): the
-head of the queue is pushed as soon as no other watched PR has a pending
-check, and its replies wait until it has.
+head of the queue is pushed, and its queued CI reruns (4.6) started, as
+soon as no other watched PR has a pending check; its replies wait until
+the push has happened.
 Exists because concurrent gated runs deadlock a shared contract database.
 `--parallel-pushes` turns it off; the choice is persisted in the state
 file, so it is passed once per watch.
@@ -449,6 +481,54 @@ than the escalated comment clears the stop: the thread's id leaves
 tail again with the user's reply as the instruction. Without that, the
 user's answer would re-trip the same hard stop and go nowhere. Escalated
 ids are otherwise recorded so an item is sent once.
+
+### 4.6 CI
+
+Runs on a `ci-red` event, in the PR's worktree, under the gate in 4.1.
+An event whose `head` is no longer the live head is dropped: the new
+head gets its own checks. Nothing is posted on the PR; CI work shows
+there only as commits.
+
+1. `poll.py --checks <pr>`. Only required checks are considered.
+2. Classify each red check. The name regexes and the classes come from
+   `pr-loop-lib/steps/10-ci-failure-classify.md`; the log decides when
+   the name is ambiguous.
+   - Pre-existing: `on_base` is a failure. Slack note, no action.
+   - Flake: the log shows an infrastructure failure (checkout, runner or
+     agent lost, package feed or network fetch, provisioning timeout)
+     rather than a compiler error or a failed test, or the same check
+     passed on an earlier attempt at this head. Rerun it once per check
+     per head.
+   - Lint or format: run the repo's formatter, then 4.3.
+   - Build or test: fetch the failed log, dispatch the fixer with it as
+     the feedback body, then 4.2 and 4.3.
+   - `other` platform, or none of the above: Slack escalation with the
+     check name and link. SonarQube's quality gate reaches the fix path
+     through its PR comment (3.2), not here.
+3. Logs. GitHub Actions: `gh run view --job <job_id> --log-failed`.
+   Azure Pipelines: the build timeline
+   (`_apis/build/builds/<id>/timeline`) names the failed task and its log
+   id, then `_apis/build/builds/<id>/logs/<log id>`. The last 5,000
+   lines, through `secret-scan-rules.md` and the untrusted wrapper
+   (3.4), before any agent reads them.
+4. Reruns. GitHub Actions: `gh run rerun <run_id> --failed`. Azure
+   Pipelines: `PATCH _apis/build/builds/<id>/stages/<stage
+   identifier>?api-version=7.1` with `{"state": "retry",
+   "forceRetryAllJobs": false}`, the stage identifier taken from the
+   timeline's failed `Stage` record. A rerun is a gated run, so with push
+   serialisation on it waits the same way a push does: the check goes
+   into the PR's `ci_rerun_queued`, the PR joins `push_queue`, and the
+   drain in 4.3 performs whatever the PR has waiting, a push, its reruns,
+   or both.
+5. Azure credentials: the PAT in `AZURE_DEVOPS_EXT_PAT`, used only to
+   build the Authorization header inside the calling process. It is never
+   echoed, logged, written to a file, passed to a subagent, or sent to
+   Slack. Without it, an Azure check is escalated with its link.
+6. Caps. At most three CI fix pushes per PR; the counter resets when a
+   `ci-red` arrives on a head the watch did not push. At the cap, every
+   further red is escalated. Flake reruns do not count.
+7. Slack: one line in the PR's thread per action (rerun, pushed fix with
+   its sha, escalation).
 
 ## 5. Re-review (reviewed PRs)
 
@@ -539,7 +619,7 @@ Channel `C0C15VC8Y0Z`, one thread per PR, all replies in-thread.
 - First event on a PR posts the root: number, title, link, one standing
   line. Its `ts` is recorded in the state file.
 - Every later notification is a reply in that thread: escalations, pushed
-  fixes (commit and what changed), a posted re-review, a skipped PR
+  fixes (commit and what changed), a CI rerun, a posted re-review, a skipped PR
   (dirty worktree), a merge conflict, a monitor re-arm, the closing line
   on stop.
 - Nothing posts when nothing happened.
@@ -577,7 +657,10 @@ primitive, and each has exactly one writer.
       "settled_ids": [...],
       "escalated_ids": [...],
       "handled_top_level_ids": {"<id>": "<disposition>"},
-      "last_pushed_head": "..."
+      "last_pushed_head": "...",
+      "ci_fix_pushes": 0,
+      "ci_reruns": ["<head sha>|<check name>"],
+      "ci_rerun_queued": [{"platform": "github-actions", "run_id": "..."}]
     }
   },
   "push_queue": [1413]
@@ -593,7 +676,8 @@ primitive, and each has exactly one writer.
   "last_tick_queue": [1413],
   "closed": [1407],
   "prs": {
-    "1411": {"updated_at": "...", "last_head": "...", "last_signature": "..."}
+    "1411": {"updated_at": "...", "last_head": "...", "last_signature": "...",
+             "last_rollup": "FAILURE", "last_ci_signature": "..."}
   }
 }
 ```
@@ -655,14 +739,17 @@ Reused unchanged from `pr-loop-lib`: Filters B and C of step 03, step 04
 (dispatch, clustering, verifier, policy ladder), step 04.5,
 `fixer-prompt.md`, `fixer-verifier-prompt.md`, `known-bots.md`,
 `prompt-injection-defenses.md`, `secret-scan-rules.md`, `state-protocol.md`
-(lock primitives), `log-format.md`, `platform/github.md`, and the
-`context-schema.md` shape for `pr-<N>.json`.
+(lock primitives), `log-format.md`, `platform/github.md`, the
+`context-schema.md` shape for `pr-<N>.json`, and from step 10 its
+classification regexes, classes, and log-retrieval commands.
 
 Not used: step 01 (wait cycle), step 02 (timestamp-bounded fetch), Filter
 A, Filter B.5 (its self-login rescue contradicts 3.3 and its dedup keys on
 a preflight pass that never runs here), step 06 (hardcoded commit
 message; replaced by the sequence in 4.3), step 07 (templated replies),
-step 08 (quiescence), steps 09 to 11.
+step 08 (quiescence), step 09 (its blocking `--watch` wait; the poller's
+rollup replaces it), step 10's routing and outer cap (4.6 has its own),
+step 11.
 
 Owned by `pr-watch`:
 
@@ -675,6 +762,7 @@ skills/pr-tooling/pr-watch/
   steps/04-fix-path.md
   steps/05-rereview.md
   steps/06-notify.md
+  steps/07-ci.md
   references/fixer-addendum.md
   references/known-bots-overlay.md
   references/reply-voice.md
@@ -730,6 +818,16 @@ directory on the import path and stands in for `gh`.
 16. A bot comment from an allowlisted login (a quality-gate status line)
     receives no reply, and after the first event that carries it is
     recorded as skipped so no later event carries it again.
+17. `--monitor` emits one `ci-red` event when a required check on an
+    `authored` PR fails, none when only a non-required check fails, and
+    none on a later tick that sees the same failure.
+18. `--checks` against a real PR on a GitHub Actions repo and one on an
+    Azure Pipelines repo reports each required check with its platform,
+    run or build ids, and `on_base`.
+19. `--dry-run` on a `ci-red` event for a build or test failure fetches
+    the log, runs the fixer and verifier, and writes the would-be commit
+    and Slack line to the scratchpad; for a flake it writes the rerun
+    command it would run and runs nothing.
 
 ## 12. Delivery
 
@@ -754,3 +852,5 @@ says so.
 | Slack channel with one thread per PR | The user's requirement; channel is only about PRs in flight |
 | No stop other than the user's | The user's requirement |
 | Discovery per repo, not org-wide | SAML partial results return HTTP 200 with PRs silently omitted |
+| CI acts on required checks only, platform read per check from its link | Repos mid-migration run GitHub Actions and the legacy Azure pipelines side by side; on one PR the rollup read `FAILURE` from a non-required Azure job while every required check was green |
+| CI reruns are serialised with pushes | A rerun is a gated run and hits the same shared contract database a push does |
