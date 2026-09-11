@@ -170,8 +170,10 @@ allowlist. Deterministic: no LLM in it.
 Author kinds: `me` (`login == self_login`), `bot`, `human`. Bot when any of:
 `author.__typename == "Bot"`, login ends in `[bot]`, login in the
 allowlist held in the state file. The allowlist ships seeded with
-`sonarqube-mbodevme`, `mindbody-ado-pipelines`, and `mergewatch-playlist`,
-all typed `User` on GitHub.
+`sonarqube-mbodevme`, `mindbody-ado-pipelines`, and `mergewatch-playlist`.
+On `mindbody/Mindbody.Scheduling` all three post as GitHub Apps, typed
+`Bot` (GraphQL login without the `[bot]` suffix); the allowlist is a guard
+for repos where an account like these is typed `User`.
 
 The library's Filter B decides a bot comment's disposition from
 `known-bots.md` by exact login, and treats an unknown bot as actionable.
@@ -179,19 +181,27 @@ The allowlisted logins have no row there, so `pr-watch` ships
 `pr-watch/references/known-bots-overlay.md` with rows for them and
 concatenates it after the library table when Filter B runs. The library
 file is not edited. The rows are per surface, not a blanket Skip, because
-`mergewatch-playlist` posts real findings:
+two of the accounts post real findings:
 
 | Login | Surface | Signature | Classification |
 |---|---|---|---|
 | `sonarqube-mbodevme` | top-level | `Quality Gate passed` | Skip |
 | `sonarqube-mbodevme` | top-level | `Quality Gate failed` | Actionable |
-| `mindbody-ado-pipelines` | any | any | Skip (CI is a non-goal) |
-| `mergewatch-playlist` | inline, `path` set | any | Actionable |
-| `mergewatch-playlist` | review body | pointer to the anchor comment | Skip |
-| `mergewatch-playlist` | top-level | anchor comment | Parse, as the library's anchor example |
+| `mindbody-ado-pipelines` | top-level | `# AI Generated Pull Request Summary` | Skip |
+| `mindbody-ado-pipelines` | top-level | `# AI Generated Pull Request Review` | Actionable, one item for the whole review |
+| `mergewatch-playlist` | inline | `<!-- mergewatch-inline -->` | Actionable |
+| `mergewatch-playlist` | inline | no marker (a thread reply) | Skip |
+| `mergewatch-playlist` | top-level | `<!-- mergewatch-review -->` summary | Parse |
+| `mergewatch-playlist` | review body | `<!-- mergewatch-review -->` pointer | Parse the current summary |
 
-The build verifies each row's signature against live comments by those
-logins before the overlay ships.
+The pipeline account's review is a code review posted once per PR, with
+findings in no stable markup, so it is one item and the fixer splits it.
+The mergewatch summary carries findings that usually have no inline copy,
+and it is edited in place on every push; the pointer review each push
+submits is what surfaces the change. Parsed findings are keyed
+`<summary id>|<path>|<title>` in `handled_top_level_ids` so a finding
+already answered is not raised again. Signatures were verified against
+the last 40 PRs before the overlay shipped.
 
 ### 3.3 Pending tails
 

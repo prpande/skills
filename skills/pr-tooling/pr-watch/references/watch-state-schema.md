@@ -41,7 +41,7 @@ Per PR:
 | `posted_reply_ids` | array of node ids | Replies this watch posted (GraphQL `id`, not `databaseId`) |
 | `settled_ids` | array of node ids | Comments that close a tail with no reply: first-arm baseline, Filter B skips, acknowledged threads |
 | `escalated_ids` | array of node ids | Comments sent to Slack as needing the user |
-| `handled_top_level_ids` | object id to disposition | `baseline`, `skipped`, `escalated`, or the fixer verdict |
+| `handled_top_level_ids` | object id to disposition | `baseline`, `skipped`, `escalated`, `parsed`, or the fixer verdict. Findings parsed out of an anchor comment are keyed `<anchor id>\|<path>\|<title>` (`pr-watch/references/known-bots-overlay.md`) |
 | `last_pushed_head` | string or null | Sha of the last push this watch made |
 
 ## `watch-poller.json` — written only by `POLL --monitor`
