@@ -195,3 +195,165 @@ def tick_query(owner, repo, numbers):
         f"p{int(n)}: pullRequest(number: {int(n)}) {{ number updatedAt headRefOid state }}"
         for n in numbers)
     return f'query {{ repository(owner: "{owner}", name: "{repo}") {{ {fields} }} }}'
+
+
+def my_threads(pr, self_login, allowlist):
+    return [t for t in pr["reviewThreads"]["nodes"]
+            if any(classify(c["author"], self_login, allowlist)[1] == "me"
+                   for c in t["comments"]["nodes"])]
+
+
+def my_review_head(pr, self_login, allowlist):
+    mine = [r for r in pr["reviews"]["nodes"]
+            if classify(r["author"], self_login, allowlist)[1] == "me"
+            and r.get("submittedAt") and r.get("commit")]
+    return max(mine, key=lambda r: r["submittedAt"])["commit"]["oid"] if mine else None
+
+
+def replies_after_me(thread, self_login, allowlist):
+    comments = thread["comments"]["nodes"]
+    mine = [i for i, c in enumerate(comments)
+            if classify(c["author"], self_login, allowlist)[1] == "me"]
+    if not mine:
+        return []
+    return [c for c in comments[mine[-1] + 1:]
+            if classify(c["author"], self_login, allowlist)[1] != "me"]
+
+
+def changed_files(gh, owner, repo, old, new):
+    out = gh(["api", f"repos/{owner}/{repo}/compare/{old}...{new}", "--paginate",
+              "--jq", ".files[].filename"])
+    return sorted({line.strip() for line in out.splitlines() if line.strip()})
+
+
+def evaluate_authored(watch, pr, watch_pr, prev):
+    threads, top = pending(pr, watch_pr, watch["self_login"], watch["bot_allowlist"])
+    ids = sorted([c["id"] for _, tail in threads for c in tail] + [i["id"] for _, i in top])
+    if not ids:
+        return None, ""
+    signature = "pending:" + ",".join(ids)
+    if signature == prev.get("last_signature"):
+        return None, signature
+    return {"pr": pr["number"], "role": "authored", "kind": "pending",
+            "threads": [t["id"] for t, _ in threads],
+            "comments": [i["id"] for s, i in top if s == "issue"],
+            "reviews": [i["id"] for s, i in top if s == "review"]}, signature
+
+
+def evaluate_reviewed(gh, watch, pr, prev):
+    me, allow = watch["self_login"], watch["bot_allowlist"]
+    threads = my_threads(pr, me, allow)
+    if not threads:
+        return None, ""
+    old, new = my_review_head(pr, me, allow), pr["headRefOid"]
+    author = (pr.get("author") or {}).get("login")
+    replies = [c for t in threads for c in replies_after_me(t, me, allow)]
+    reply_ids = sorted(c["id"] for c in replies)
+    author_replied = any((c["author"] or {}).get("login") == author for c in replies)
+    if old and old != new:
+        signature = f"head:{new}:" + ",".join(reply_ids)
+        if signature == prev.get("last_signature"):
+            return None, signature
+        files = set(changed_files(gh, watch["owner"], watch["repo"], old, new))
+        touches = any(t["path"] in files for t in threads)
+        if not (touches or author_replied):
+            return None, signature
+        return {"pr": pr["number"], "role": "reviewed", "kind": "head-moved",
+                "old_head": old, "new_head": new, "touches_my_findings": touches,
+                "author_replied": author_replied}, signature
+    if not reply_ids:
+        return None, ""
+    signature = "reply:" + ",".join(reply_ids)
+    if signature == prev.get("last_signature"):
+        return None, signature
+    return {"pr": pr["number"], "role": "reviewed", "kind": "reply",
+            "threads": [t["id"] for t in threads if replies_after_me(t, me, allow)]}, signature
+
+
+def tick_once(gh, watch, poller, now, force=False):
+    events = []
+    prs = poller.setdefault("prs", {})
+    closed = poller.setdefault("closed", [])
+    numbers = sorted(int(n) for n in watch["prs"] if int(n) not in closed)
+    heads = {}
+    if numbers:
+        heads = graphql(gh, tick_query(watch["owner"], watch["repo"], numbers), {},
+                        allow_partial=True)["repository"]
+    for n in numbers:
+        node = heads.get(f"p{n}")
+        if node is None or node["state"] != "OPEN":
+            events.append({"pr": n, "kind": "closed",
+                           "state": node["state"] if node else "MISSING"})
+            closed.append(n)
+            prs.pop(str(n), None)
+            continue
+        prev = prs.get(str(n), {})
+        moved = (node["updatedAt"] != prev.get("updated_at")
+                 or node["headRefOid"] != prev.get("last_head"))
+        if not (moved or force):
+            continue
+        watch_pr = watch["prs"][str(n)]
+        seen = {} if force else prev
+        try:
+            pr = fetch_pr(gh, watch["owner"], watch["repo"], n)
+            if watch_pr["role"] == "authored":
+                event, signature = evaluate_authored(watch, pr, watch_pr, seen)
+            else:
+                event, signature = evaluate_reviewed(gh, watch, pr, seen)
+        except GhError as exc:
+            print(f"pr-watch poller: PR #{n}: {exc}", file=sys.stderr, flush=True)
+            continue
+        prs[str(n)] = {"updated_at": node["updatedAt"], "last_head": node["headRefOid"],
+                       "last_signature": signature}
+        if event:
+            events.append(event)
+    queue = list(watch.get("push_queue", []))
+    if not queue:
+        poller["last_tick_queue"] = []
+    elif (queue != poller.get("last_tick_queue")
+          or now - poller.get("last_tick_event", 0) >= TICK_EVENT_RETRY_SECONDS):
+        events.append({"kind": "tick", "push_queue": queue})
+        poller["last_tick_queue"] = queue
+        poller["last_tick_event"] = now
+    return events
+
+
+def read_json(path, default=None):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        if default is None:
+            raise
+        return json.loads(json.dumps(default))
+
+
+def write_json_atomic(path, data):
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    with tmp.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(data, indent=2) + "\n")
+    os.replace(tmp, path)
+
+
+def monitor(gh, state_dir, sleep=time.sleep, clock=time.time, max_ticks=None):
+    ticks = 0
+    while max_ticks is None or ticks < max_ticks:
+        ticks += 1
+        try:
+            watch = read_json(state_dir / "watch.json")
+            poller = read_json(state_dir / "watch-poller.json", default={})
+            now = int(clock())
+            last = poller.get("last_reconciliation", 0)
+            force = now - last >= RECONCILE_SECONDS
+            events = tick_once(gh, watch, poller, now, force=force)
+            if force:
+                poller["last_reconciliation"] = now
+                found = sorted({e["pr"] for e in events if "pr" in e})
+                if last and found:
+                    events.append({"kind": "reconciled", "prs": found})
+            for event in events:
+                print(json.dumps(event), flush=True)
+            write_json_atomic(state_dir / "watch-poller.json", poller)
+        except Exception as exc:  # a standing watch must outlive any single failure
+            print(f"pr-watch poller: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+        if max_ticks is None or ticks < max_ticks:
+            sleep(TICK_SECONDS)
