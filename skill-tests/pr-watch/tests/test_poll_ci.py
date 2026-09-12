@@ -5,13 +5,7 @@ import pathlib
 import tempfile
 import unittest
 
-from fakes import FakeGh, poll, pull, watch
-
-NOW = 2_000_000_000
-ACTIONS = "https://github.com/o/r/actions/runs/34439594621/job/102752575845"
-AZURE = ("https://dev.azure.com/mindbody/19477e8d-94b2-4461-9dfc-2f54fa23767d"
-         "/_build/results?buildId=3366211")
-SONAR = "https://sonarqube.example/dashboard?id=r&pullRequest=1411"
+from fakes import ACTIONS, AZURE, NOW, SONAR, FakeGh, poll, pull, watch
 
 
 def check(name, bucket="fail", workflow="App Gated", done="2026-09-10T05:16:39Z", link=ACTIONS):

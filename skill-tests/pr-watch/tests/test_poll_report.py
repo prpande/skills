@@ -5,11 +5,7 @@ import pathlib
 import tempfile
 import unittest
 
-from fakes import SELF, FakeGh, comment, poll, pull, thread, watch
-
-T0 = "2026-09-10T09:00:00Z"
-T1 = "2026-09-10T10:00:00Z"
-T2 = "2026-09-10T11:00:00Z"
+from fakes import SELF, T0, T1, T2, FakeGh, comment, poll, pull, thread, watch
 
 
 class ReportTests(unittest.TestCase):

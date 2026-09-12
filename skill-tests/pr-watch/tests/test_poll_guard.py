@@ -5,10 +5,7 @@ import pathlib
 import tempfile
 import unittest
 
-from fakes import SELF, FakeGh, comment, poll, pull, review, thread, watch
-
-T0 = "2026-09-10T09:00:00Z"
-T1 = "2026-09-10T10:00:00Z"
+from fakes import SELF, T0, T1, FakeGh, comment, poll, pull, review, thread, watch
 
 
 class GuardTests(unittest.TestCase):

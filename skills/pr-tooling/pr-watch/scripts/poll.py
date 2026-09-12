@@ -407,7 +407,7 @@ def read_json(path, default=None):
     except FileNotFoundError:
         if default is None:
             raise
-        return json.loads(json.dumps(default))
+        return default
 
 
 def write_json_atomic(path, data, attempts=5, sleep=time.sleep):

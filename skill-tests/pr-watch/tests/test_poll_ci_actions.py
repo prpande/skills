@@ -9,14 +9,10 @@ import unittest
 import urllib.error
 from unittest import mock
 
-from fakes import FakeGh, poll
+from fakes import ACTIONS, AZURE, SONAR, FakeGh, poll
 
-ACTIONS = "https://github.com/o/r/actions/runs/34439594621/job/102752575845"
-AZURE = ("https://dev.azure.com/mindbody/19477e8d-94b2-4461-9dfc-2f54fa23767d"
-         "/_build/results?buildId=3366211")
 BUILD = ("https://dev.azure.com/mindbody/19477e8d-94b2-4461-9dfc-2f54fa23767d"
          "/_apis/build/builds/3366211")
-SONAR = "https://sonarqube.example/dashboard?id=r&pullRequest=1411"
 PAT = "pat-value-for-tests"
 
 

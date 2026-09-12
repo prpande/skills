@@ -1,9 +1,7 @@
 import json
 import unittest
 
-from fakes import FakeGh, comment, poll, pull, thread
-
-T0 = "2026-09-10T09:00:00Z"
+from fakes import T0, FakeGh, comment, poll, pull, thread
 
 
 class GraphqlTests(unittest.TestCase):

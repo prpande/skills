@@ -1,11 +1,7 @@
 import unittest
 
-from fakes import ALLOW, SELF, comment, poll, pull, review, thread
+from fakes import ALLOW, SELF, T0, T1, T2, T3, comment, poll, pull, review, thread
 
-T0 = "2026-09-10T09:00:00Z"
-T1 = "2026-09-10T10:00:00Z"
-T2 = "2026-09-10T11:00:00Z"
-T3 = "2026-09-10T12:00:00Z"
 RECORD_KEYS = {"id", "surface", "author", "author_type", "created_at", "updated_at",
                "path", "line", "body", "thread_id", "is_resolved"}
 

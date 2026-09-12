@@ -13,6 +13,15 @@ import poll  # noqa: E402
 
 SELF = "prpande"
 ALLOW = ["sonarqube-mbodevme", "mindbody-ado-pipelines", "mergewatch-playlist"]
+T0 = "2026-09-10T09:00:00Z"
+T1 = "2026-09-10T10:00:00Z"
+T2 = "2026-09-10T11:00:00Z"
+T3 = "2026-09-10T12:00:00Z"
+NOW = 2_000_000_000
+ACTIONS = "https://github.com/o/r/actions/runs/34439594621/job/102752575845"
+AZURE = ("https://dev.azure.com/mindbody/19477e8d-94b2-4461-9dfc-2f54fa23767d"
+         "/_build/results?buildId=3366211")
+SONAR = "https://sonarqube.example/dashboard?id=r&pullRequest=1411"
 
 
 def author(login, typename="User"):

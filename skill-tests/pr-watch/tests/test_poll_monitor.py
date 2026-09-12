@@ -6,11 +6,7 @@ import tempfile
 import unittest
 import unittest.mock
 
-from fakes import SELF, FakeGh, comment, poll, pull, review, thread, watch
-
-T0 = "2026-09-10T09:00:00Z"
-T1 = "2026-09-10T10:00:00Z"
-NOW = 2_000_000_000
+from fakes import NOW, SELF, T0, T1, FakeGh, comment, poll, pull, review, thread, watch
 
 
 def authored_pr(updated="2026-09-11T10:00:00Z", extra=()):
