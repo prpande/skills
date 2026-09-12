@@ -30,6 +30,16 @@ git -C <worktree> branch --show-current
   - otherwise post "Skipped: the local branch has diverged from the PR
     head." and stop.
 
+Then, for a fix entered from step 03 (not from `pr-watch/steps/07-ci.md`
+and not from the drain):
+
+- the payload `head` is not `last_pushed_head`, or any record in the
+  dispatch set has an `author_type` other than `Bot`: set
+  `review_fix_pushes` to 0 and write `watch.json`;
+- otherwise, when `review_fix_pushes` is `3`: escalate ("needs you, no
+  comment", reason "bot findings keep coming after 3 fix pushes") and
+  stop. A human comment or a push the watch did not make clears it.
+
 ## 2. Relocate and lock
 
 1. `EnterWorktree` with `path` = the PR's worktree.
@@ -101,7 +111,9 @@ No returns in section 5: go to section 7, then section 9.
    `AB#<id>: <what changed, lower case after the colon, no period>`, or
    just `<what changed>` when no work item was found. No body, no
    trailer.
-5. `git commit -F <scratchpad>/commit-<N>.txt`.
+5. `git commit -F <scratchpad>/commit-<N>.txt`. When the fix came from
+   step 03 and no record in the dispatch set was human-authored, add 1 to
+   `review_fix_pushes` and write `watch.json`; a queued commit counts too.
 6. `git merge-base --is-ancestor origin/<base> HEAD`. On a non-zero exit,
    `git merge --no-edit origin/<base>`. On a conflict, `git merge --abort`
    and escalate with the conflicting paths and "Fix commit <sha7> is local

@@ -118,6 +118,9 @@ Owned by `pr-watch`:
   or a trailer, and commits carry no trailer. Every reply is written with
   `pr-watch/references/reply-voice.md`.
 - One automatic reply per human exchange; the next turn goes to the user.
+- At most three fix pushes per PR from bot-only feedback, and three from
+  CI. Either counter resets when a human comments or a head the watch did
+  not push arrives; at the cap the work is escalated instead.
 - Never post to Slack outside the configured channel. Never post to
   Notion.
 

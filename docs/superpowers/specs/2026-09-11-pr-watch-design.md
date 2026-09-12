@@ -436,6 +436,14 @@ push guard order:
 6. Only after the push succeeds: the replies for the threads that fix
    covers (4.4), since each names the commit.
 
+At most three fix pushes per PR come from feedback with no human record
+in it (`review_fix_pushes`), mirroring the CI cap in 4.6. The counter
+resets when a dispatch set holds a human record or a fix arrives on a
+head the watch did not push; at the cap the feedback is escalated
+instead. A bot that re-reviews every push would otherwise drive fix,
+push, new finding, fix without end, each round starting another gated
+run.
+
 Push serialisation is on by default. Events already arrive one PR at a
 time, so the rule is about CI, not events: before pushing, step 04 checks
 every other `authored` PR in the watch with `gh pr checks`, and if any has
@@ -669,6 +677,7 @@ primitive, and each has exactly one writer.
       "escalated_ids": [...],
       "handled_top_level_ids": {"<id>": "<disposition>"},
       "last_pushed_head": "...",
+      "review_fix_pushes": 0,
       "ci_fix_pushes": 0,
       "ci_reruns": ["<head sha>|<workflow>|<check name>"],
       "ci_rerun_queued": [{"link": "<check link>", "head": "<head sha>"}]

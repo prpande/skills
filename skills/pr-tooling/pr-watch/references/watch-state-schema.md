@@ -44,6 +44,7 @@ Per PR:
 | `handled_top_level_ids` | object id to disposition | `baseline`, `skipped`, `escalated`, `parsed`, or the fixer verdict. Findings parsed out of an anchor comment are keyed `<anchor id>\|<path>\|<title>` (`pr-watch/references/known-bots-overlay.md`) |
 | `last_pushed_head` | string or null | Sha of the last push this watch made |
 | `ci_fix_pushes` | integer | CI fix commits since the last head the watch did not push, queued ones included; reset to 0 when a `ci-red` arrives on such a head; cap 3 |
+| `review_fix_pushes` | integer | Fix commits for dispatch sets with no human record since the last head the watch did not push, queued ones included; reset to 0 when a fix arrives on such a head or any dispatch set holds a human record; cap 3 |
 | `ci_reruns` | array of strings | `<head>\|<workflow>\|<check name>` for every check rerun once; a check is rerun at most once per head |
 | `ci_rerun_queued` | array of `{link, head}` | Reruns waiting for the push-queue drain; entries whose `head` is no longer the PR head are dropped there |
 | `ci_handled` | array of strings | `<head>\|<workflow>\|<check name>\|<completed_at>` for every check occurrence step 07 has already escalated, reported pre-existing, or dispatched a fixer for; a re-emit of the same occurrence is skipped |
