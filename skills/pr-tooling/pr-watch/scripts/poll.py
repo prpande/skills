@@ -32,6 +32,9 @@ ACTIONS_LINK = re.compile(r"^https://github\.com/[^/]+/[^/]+/actions/runs/(\d+)/
 AZURE_LINK = re.compile(
     r"^https://dev\.azure\.com/([^/]+)/([^/]+)/_build/results\?buildId=(\d+)")
 ADO_BUILD = "https://dev.azure.com/{org}/{project}/_apis/build/builds/{build_id}"
+ADO_ORG = re.compile(r"^[A-Za-z0-9._-]+$")
+ADO_PROJECT = re.compile(r"^[A-Za-z0-9._ %-]+$")
+POLLER_ERROR_AFTER = 5
 LOG_LINES = 2000
 FAILURE_MARK = re.compile(
     r"##\[error\]|\berror [A-Z]{2,5}\d{3,5}\b|\bFailed [\w.]+ \[|\bTest Run Failed\b|npm ERR!")
@@ -370,7 +373,9 @@ def evaluate_reviewed(gh, watch, pr, prev):
         return None, ""
     replied = {t["id"]: replies_after_me(t, me, allow) for t in threads}
     replies = [c for thread_replies in replied.values() for c in thread_replies]
-    if not replies and all(t["isResolved"] for t in threads):
+    escalated = set(watch["prs"].get(str(pr["number"]), {}).get("escalated_ids") or [])
+    answered = all(c["id"] in escalated for c in replies)
+    if answered and all(t["isResolved"] for t in threads):
         if prev.get("last_signature") == "settled":
             return None, "settled"
         return {"pr": pr["number"], "role": "reviewed", "kind": "settled"}, "settled"
@@ -524,7 +529,18 @@ def monitor(gh, state_dir, sleep=time.sleep, clock=time.time, max_ticks=None):
         beat()
         return gh(args)
 
-    ticks = 0
+    def save(poller):
+        nonlocal failed_saves
+        try:
+            write_json_atomic(state_dir / "watch-poller.json", poller)
+        except OSError as exc:
+            failed_saves += 1
+            if failed_saves == POLLER_ERROR_AFTER:
+                print(json.dumps({"kind": "poller-error", "error": str(exc)}), flush=True)
+            raise
+        failed_saves = 0
+
+    ticks = failed_saves = 0
     while max_ticks is None or ticks < max_ticks:
         ticks += 1
         beat()
@@ -545,7 +561,7 @@ def monitor(gh, state_dir, sleep=time.sleep, clock=time.time, max_ticks=None):
                 if missed:
                     events.append({"kind": "reconciled", "prs": missed})
             # an unsaved tick prints nothing; the next tick recomputes it from the old file
-            write_json_atomic(state_dir / "watch-poller.json", poller)
+            save(poller)
             for event in events:
                 print(json.dumps(event), flush=True)
         except Exception as exc:  # a standing watch must outlive any single failure
@@ -708,25 +724,44 @@ def keep_failing(conclusions, key, value):
 
 
 def base_conclusions(gh, repo_slug, ref):
-    """name -> conclusion on `ref`; None when check suites disagree about one name."""
-    commit = f"repos/{repo_slug}/commits/{urllib.parse.quote(ref, safe='')}"
+    """(workflow, name) -> conclusion on the tip of `ref`; None when check suites disagree.
+
+    The workflow is "" for a check run outside GitHub Actions and for a commit status.
+    """
+    sha = gh(["api", f"repos/{repo_slug}/commits/{urllib.parse.quote(ref, safe='')}",
+              "--jq", ".sha"]).strip()
+    commit = f"repos/{repo_slug}/commits/{urllib.parse.quote(sha, safe='')}"
+    workflow_runs = gh(["api", f"repos/{repo_slug}/actions/runs?head_sha={urllib.parse.quote(sha, safe='')}",
+                        "--paginate", "--jq", ".workflow_runs[] | [.check_suite_id, .name] | @tsv"])
+    workflows = dict(row.split("\t", 1) for row in workflow_runs.splitlines() if "\t" in row)
     runs = gh(["api", f"{commit}/check-runs", "--paginate", "--jq",
                ".check_runs[] | [.name, (.conclusion // .status), .check_suite.id] | @tsv"])
     suites = {}
     for row in runs.splitlines():
         name, value, suite = (row.split("\t") + ["", ""])[:3]
         if name:
-            keep_failing(suites.setdefault(name, {}), suite, value)
+            keep_failing(suites.setdefault((workflows.get(suite, ""), name), {}), suite, value)
     out = {}
-    for name, by_suite in suites.items():
+    for key, by_suite in suites.items():
         values = set(by_suite.values())
-        out[name] = values.pop() if len(values) == 1 else None
+        out[key] = values.pop() if len(values) == 1 else None
     statuses = gh(["api", f"{commit}/status", "--jq", ".statuses[] | [.context, .state] | @tsv"])
     for row in statuses.splitlines():
         name, _, value = row.partition("\t")
-        if name and out.get(name, "") is not None:
-            keep_failing(out, name, value)
+        if name and out.get(("", name), "") is not None:
+            keep_failing(out, ("", name), value)
     return out
+
+
+def base_conclusion(on_base, workflow, name):
+    """The base result for a PR check, by workflow and name; by name alone only when
+    the one base row with that name has no workflow."""
+    if (workflow, name) in on_base:
+        return on_base[(workflow, name)]
+    same_name = [key for key in on_base if key[1] == name]
+    if len(same_name) == 1 and same_name[0][0] == "":
+        return on_base[same_name[0]]
+    return None
 
 
 def checks_payload(gh, watch, number):
@@ -736,7 +771,8 @@ def checks_payload(gh, watch, number):
     on_base = base_conclusions(gh, slug, base)
     checks = [{"name": c["name"], "state": c.get("state"), "bucket": c.get("bucket"),
                "link": c.get("link"), "workflow": c.get("workflow") or "",
-               "completed_at": c.get("completedAt"), "on_base": on_base.get(c["name"]),
+               "completed_at": c.get("completedAt"),
+               "on_base": base_conclusion(on_base, c.get("workflow") or "", c["name"]),
                **check_platform(c.get("link"))}
               for c in required_checks(gh, slug, number)]
     return {"pr": number, "head": head, "base": base, "checks": checks}
@@ -798,6 +834,15 @@ def failure_window(text, count=LOG_LINES):
 
 def ado_timeline(target, ado_orgs, ado):
     """The build URL and its timeline; refuses an org outside `ado_orgs` before any request."""
+    if not isinstance(ado_orgs, list):
+        raise GhError(f"ado_orgs must be a list of strings, not {type(ado_orgs).__name__}")
+    odd = next((org for org in ado_orgs if not isinstance(org, str)), None)
+    if odd is not None:
+        raise GhError(f"ado_orgs must be a list of strings, not a list holding {type(odd).__name__}")
+    if not ADO_ORG.match(target["org"]):
+        raise GhError(f"Azure DevOps org {target['org']} is not a valid name")
+    if not ADO_PROJECT.match(target["project"]):
+        raise GhError(f"Azure DevOps project {target['project']} is not a valid name")
     if target["org"].lower() not in {org.lower() for org in ado_orgs}:
         raise GhError(f"Azure DevOps org {target['org']} is not in ado_orgs")
     build = ADO_BUILD.format(**target)
@@ -894,10 +939,10 @@ def run_mode(args, gh):
         return report(gh, args.state_dir, reseed=args.reseed)
     watch = read_json(args.state_dir / "watch.json")
     if args.ci_log:
-        print(ci_log(gh, args.repo, args.ci_log, watch.get("ado_orgs") or []))
+        print(ci_log(gh, args.repo, args.ci_log, watch.get("ado_orgs", [])))
         return 0
     if args.ci_rerun:
-        for line in ci_rerun(gh, args.repo, args.ci_rerun, watch.get("ado_orgs") or []):
+        for line in ci_rerun(gh, args.repo, args.ci_rerun, watch.get("ado_orgs", [])):
             print(f"rerun started: {line}")
         return 0
     if args.checks:

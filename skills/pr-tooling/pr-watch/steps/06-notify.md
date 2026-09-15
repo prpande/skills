@@ -43,6 +43,7 @@ check the link rendered. Never post a second root for a PR.
 | CI needs you | `Needs you: [<check name>](<link>) is red at <head7> (<reason>).` then, when `<scratchpad>/ci-log-<N>.txt` exists, up to 20 lines from `grep -m 20 -E -e '##\[error\]' -e 'error [A-Z]+[0-9]+' -e 'Failed ' -e 'Test Run Failed'` over that redacted file, put through steps 2 and 3 of "Quoting someone else's text" (the file is already redacted), in a code block; the session never reads the whole file |
 | monitor restarted | `Watch monitor restarted.` |
 | reconciled | `The daily check picked up work the event stream missed.` |
+| poller error | `The watch poller cannot save its state: <error>. Events may repeat until this is fixed.` in every PR thread that has a root; `<error>` is the event's `error`, put through steps 2 and 3 of "Quoting someone else's text" |
 | closed | `PR <merged or closed>; no longer watching.` |
 | settled | `All your findings on this PR are resolved; no longer watching it.` |
 | stop | `No longer watching.` |

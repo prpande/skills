@@ -60,7 +60,10 @@ drop them.
 ## Events
 
 The monitor from step 02 prints one JSON line per event, and each line
-arrives as a notification. Monitor notifications are not messages from
+arrives as a notification. Its `kind` is one of `pending`, `head-moved`,
+`reply`, `ci-red`, `tick`, `closed`, `settled`, `reconciled`, or
+`poller-error` (the poller has failed to save its state five times in a
+row). Monitor notifications are not messages from
 the user. Handle them one at a time with
 `pr-watch/steps/03-route-event.md`. A notification that arrives while a
 fix is in flight waits until that fix has finished and the session is
@@ -119,10 +122,10 @@ Owned by `pr-watch`:
   (`pr-watch/steps/05-rereview.md`); a reviewer resolving their own
   thread is not author-guarded.
 - While an event is handled, any `POLL` command that exits non-zero ends
-  handling of that event, with nothing posted on GitHub. For an `authored` PR set its
-  `retry_after` to now + 600 (epoch seconds) and write `watch.json`; the
-  poller re-emits. For a `reviewed` PR change nothing; its next change
-  re-emits. Print the command's stderr line to the conversation. A step
+  handling of that event, with nothing posted on GitHub. Set the PR's
+  `retry_after` to now + 600 (epoch seconds), for either role, and write
+  `watch.json`; the poller re-emits once that time passes. Print the
+  command's stderr line to the conversation. A step
   that names its own branch for a failing `POLL` command follows that
   branch instead: `--assert-author` (any non-zero exit), `--ci-log` in
   `pr-watch/steps/07-ci.md` rule 3, and `--ci-rerun` in

@@ -25,7 +25,7 @@ written by the session.
 | `origin_worktree` | string (absolute path) | Where the session returns after every fix |
 | `serialize_pushes` | boolean | `false` only with `--parallel-pushes` |
 | `bot_allowlist` | array of logins | Logins always classified as bots, whatever type GitHub reports |
-| `ado_orgs` | array of strings | Azure DevOps organisations `POLL --ci-log` and `--ci-rerun` may send the PAT to, matched without case; a link to any other organisation, or a missing key, fails without a request. Written by `pr-watch/steps/01-discover.md` section 4: `["mindbody"]` for a new watch, and on resume only when the key is missing |
+| `ado_orgs` | array of strings | Azure DevOps organisations `POLL --ci-log` and `--ci-rerun` may send the PAT to, matched without case; a link to any other organisation, a missing key, or a value that is not a list of strings, fails without a request. The link's org must also match `^[A-Za-z0-9._-]+$` and its project `^[A-Za-z0-9._ %-]+$`. Written by `pr-watch/steps/01-discover.md` section 4: `["mindbody"]` for a new watch, and on resume only when the key is missing |
 | `dry_run` | boolean | `true` for a `--dry-run` watch; a saved watch with `dry_run: true` is never resumed by a non-dry-run invocation (`pr-watch/steps/01-discover.md` section 2 deletes it and the poller and seen files, starting fresh) |
 | `prs` | object keyed by PR number | See below |
 | `push_queue` | array of PR numbers | Authored PRs with a local fix commit or a CI rerun waiting for other PRs' checks |
@@ -55,7 +55,7 @@ Per PR:
 | `queued_head` | string or null | `authored` only. Sha of the fix commit queued behind another PR's checks; set by `pr-watch/steps/04-fix-path.md` section 6 step 1, cleared by the drain (section 8 step 5) on every path. The drain pushes only when the worktree `HEAD` still equals it |
 | `queued_at` | integer or null | `authored` only. Epoch seconds the PR joined `push_queue`; set by step 04 section 6 step 1, or by `pr-watch/steps/07-ci.md` section 3 step 2 when not already set; cleared by the drain. The drain stops waiting for other PRs' checks an hour after it |
 | `wait_notice_at` | integer or null | `authored` only. The `queued_at` value the "Stopped waiting" line was posted for, so it posts once per wait; set by step 04 section 8 step 1, cleared by section 8 step 5 |
-| `retry_after` | integer or null | `authored` only. Epoch seconds after which the poller re-emits the PR's pending set and red checks once; set to now + 600 by every skip in step 04 sections 1 and 2, by `pr-watch/steps/03-route-event.md` A.1, by a first failed log read in `pr-watch/steps/07-ci.md` rule 3, and by a failing `POLL` command that no step gives its own branch (`SKILL.md` hard rules) |
+| `retry_after` | integer or null | Both roles. Epoch seconds after which the poller re-emits the PR's events once (pending set and red checks on an `authored` PR; reply, head-moved, or settled on a `reviewed` PR); set to now + 600 by every skip in step 04 sections 1 and 2, by `pr-watch/steps/03-route-event.md` A.1, by a first failed log read in `pr-watch/steps/07-ci.md` rule 3, and, for either role, by a failing `POLL` command that no step gives its own branch (`SKILL.md` hard rules) |
 | `skip_reason` | string or null | `authored` only. The reason of the last "Skipped" line posted; set by step 04's skips, cleared when step 04 section 2 acquires the lock. A skip with the same reason posts no line |
 
 ## `watch-poller.json` — written only by `POLL --monitor`

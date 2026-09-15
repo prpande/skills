@@ -253,6 +253,21 @@ class ChecksPayloadTests(unittest.TestCase):
         by_name = {c["name"]: c for c in self.payload()["checks"]}
         self.assertEqual(by_name["Gated / Unit Tests"]["on_base"], "failure")
 
+    def test_a_same_named_job_failing_in_another_workflow_on_base_is_unknown(self):
+        self.gh.base_runs["main"] = [("Gated / Unit Tests", "failure", "901")]
+        self.gh.base_workflow_runs["main"] = [("901", "Sonarqube")]
+        by_name = {c["name"]: c for c in self.payload()["checks"]}
+        self.assertIsNone(by_name["Gated / Unit Tests"]["on_base"])
+
+    def test_the_same_workflow_and_job_failing_on_base_is_a_failure(self):
+        self.gh.base_runs["main"] = [("Gated / Unit Tests", "failure", "901"),
+                                     ("Gated / Unit Tests", "success", "902")]
+        self.gh.base_workflow_runs["main"] = [("901", "App Gated"), ("902", "Sonarqube")]
+        by_name = {c["name"]: c for c in self.payload()["checks"]}
+        self.assertEqual(by_name["Gated / Unit Tests"]["on_base"], "failure")
+        self.assertIn(["api", "repos/o/r/actions/runs?head_sha=main", "--paginate", "--jq",
+                       ".workflow_runs[] | [.check_suite_id, .name] | @tsv"], self.gh.calls)
+
     def test_base_check_runs_are_read_with_their_suite(self):
         self.payload()
         jq = next(c[c.index("--jq") + 1] for c in self.gh.calls if c[1].endswith("/check-runs"))

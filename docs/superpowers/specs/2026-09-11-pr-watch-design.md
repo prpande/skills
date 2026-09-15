@@ -176,7 +176,11 @@ allowlist. Deterministic: no LLM in it.
      is. A PR that reaches `MERGED` or `CLOSED` emits one
      `closed` event and leaves the set; once the session removes it from
      `watch.json`, the poller forgets it was closed, so a PR added again
-     later is polled again.
+     later is polled again. A tick whose `watch-poller.json` cannot be
+     saved prints nothing; at the fifth failed save in a row the poller
+     prints one `poller-error` event with the error, and the count starts
+     again after a successful save. The session posts it in every PR
+     thread that has a root, since events may repeat until it is fixed.
 - `--report`: the three-section report on demand (`/pr-watch status`). The
   sections are ATTENTION, NEW, and STANDING. ATTENTION is every pending
   tail and top-level item on an `authored` PR, every `reviewed` PR whose
@@ -206,11 +210,17 @@ allowlist. Deterministic: no LLM in it.
   with `org`, `project`, and `build_id` from
   `dev.azure.com/<org>/<project>/_build/results?buildId=<id>`; `other`
   for anything else), and `on_base`: the same check's conclusion on the
-  base branch tip, from `repos/<o>/<r>/commits/<base>/check-runs`, or
-  `null` when the tip has no check of that name. Check names are not
-  unique: on `Mindbody.BizApp.Bff` the same job name runs in two
-  workflows, so a check is identified by workflow and name together.
-  Writes nothing.
+  base branch tip. The tip's check runs (`repos/<o>/<r>/commits/<sha>/check-runs`)
+  are tied to their workflow through
+  `repos/<o>/<r>/actions/runs?head_sha=<sha>`, whose check suite ids name
+  the workflow; a run outside GitHub Actions, and a commit status, has no
+  workflow. Check names are not unique: on `Mindbody.BizApp.Bff` the same
+  job name runs in two workflows, so a check is identified by workflow and
+  name together. `on_base` is the tip's result for that workflow and name.
+  Without one, it is the result by name only when exactly one base check
+  has that name and it has no workflow, and otherwise `null`: a job of
+  the same name failing in an unrelated workflow says nothing about this
+  one. Writes nothing.
 - `--ci-log <link> --repo <o>/<r> --state-dir <dir>`: print the log
   behind a check link, cut to a window that keeps the first and the last
   failure marker (4.6). Reads `ado_orgs` from `watch.json`.
@@ -224,9 +234,8 @@ Every mode except `--monitor` reports a failure (a `gh` error, an
 unreadable or corrupt state file, a refused Azure DevOps organisation) as
 one stderr line `pr-watch: <error>` and exit 1; `--assert-author` keeps
 exit 3 for a refusal. While an event is handled, a session command that exits non-zero ends
-the event with nothing posted on GitHub: an `authored` PR gets
-`retry_after` (3.4) so the poller re-emits, a `reviewed` PR waits for its
-next change. The exceptions are the guard's refusal (section 9), which
+the event with nothing posted on GitHub, and the PR, of either role, gets
+`retry_after` (3.4) so the poller re-emits ten minutes later. The exceptions are the guard's refusal (section 9), which
 escalates, the CI log read, which retries once and then escalates, and a
 failed rerun, which escalates (4.6). During discovery a failing command
 leaves its PR out of the watch, and the confirmation lists it with the
@@ -333,10 +342,13 @@ One JSON line per PR with actionable change:
 
 Plus `reply` (a non-`me` comment landed on one of the user's threads on a
 `reviewed` PR with no head move), `settled` (every thread the user opened
-on a `reviewed` PR is resolved and nobody commented after the user on
-any of them; emitted once, and the session stops watching the PR),
-`tick` (push queue non-empty), `reconciled` (daily sweep found
-something), and `closed` (PR merged or closed).
+on a `reviewed` PR is resolved, and every comment after the user's last
+one on each is already escalated or there is none, so an author's
+"thanks" after resolving does not hold the PR open; emitted once, and
+the session stops watching the PR), `tick` (push queue non-empty),
+`reconciled` (daily sweep found something), `closed` (PR merged or
+closed), and `poller-error` (`{"kind": "poller-error", "error": "..."}`,
+five failed saves of `watch-poller.json` in a row; 3.1).
 
 A `ci-red` signature is the head plus each red check's workflow, name,
 and `completedAt`, stored apart from the comment signature. A rerun that fails
@@ -368,11 +380,12 @@ push does not wake the session every minute.
 
 A skipped event is retried without waiting for new activity. Every skip
 in the fix path, a `pending` event on a PR still in `push_queue`, a first
-failed CI log read (4.6), and a failed session command on an `authored`
-PR (3.1) write `retry_after` (now plus ten minutes) on the PR's
+failed CI log read (4.6), and a failed session command on a PR of
+either role (3.1) write `retry_after` (now plus ten minutes) on the PR's
 `watch.json` entry. On the first tick at or after that time, the poller
 evaluates that PR as a forced pass, ignoring its stored signatures, so
-the unchanged pending set and red checks are emitted again, and it
+the unchanged pending set and red checks, or a reviewed PR's reply,
+head move, or settle, are emitted again, and it
 records the value as `retried_at` in its own file so each `retry_after`
 forces exactly one re-emit.
 
@@ -660,8 +673,10 @@ there only as commits.
    `watch.json`'s `ado_orgs` (matched without case; step 01 seeds
    `["mindbody"]`), so a check link naming another organisation cannot
    collect it: that link fails before any request, as does every Azure
-   link when `ado_orgs` is missing. Without the PAT, or for a refused
-   organisation, an Azure check is escalated at once with its link and
+   link when `ado_orgs` is missing or is not a list of strings, and every
+   link whose org is not `^[A-Za-z0-9._-]+$` or whose project is not
+   `^[A-Za-z0-9._ %-]+$`. Without the PAT, or for a refused
+   link, an Azure check is escalated at once with its link and
    the error line.
 6. Caps. At most three CI fix pushes per PR; the counter resets when a
    `ci-red` arrives on a head the watch did not push. At the cap, every
@@ -720,8 +735,9 @@ other than where it was flagged.
   is recorded as `rereviewed_head` only when no reply failed.
 - Never approve, never request changes, never touch another reviewer's
   threads.
-- Once every thread the user opened is resolved with nobody commenting
-  after the user, the poller emits `settled`. The session refetches the
+- Once every thread the user opened is resolved, with nobody commenting
+  after the user except in comments already escalated, the poller emits
+  `settled`. The session refetches the
   findings, and when they still say so the PR's Slack thread says so and
   the PR leaves the watch. Discovery adds a reviewed PR only while at
   least one of the user's threads is unresolved, so a settled PR is not
@@ -782,7 +798,7 @@ Channel `C0C15VC8Y0Z`, one thread per PR, all replies in-thread.
   fixes (commit and what changed), a CI rerun, a dropped queued rerun, a
   posted re-review, a skipped PR (dirty worktree), a merge conflict, a
   failed resolve, a monitor re-arm, a reviewed PR leaving the watch once
-  settled, the closing line on stop.
+  settled, a poller that cannot save its state, the closing line on stop.
 - Nothing posts when nothing happened.
 - The MCP cannot edit a posted message; the root stays as posted. The
   MCP appends a "Sent using @Claude" footer to agent messages; acceptable
@@ -842,7 +858,8 @@ primitive, and each has exactly one writer.
       "escalated_ids": [],
       "handled_top_level_ids": {},
       "finding_verdicts": {"<thread id>": "addressed"},
-      "rereviewed_head": "..."
+      "rereviewed_head": "...",
+      "retry_after": null
     }
   },
   "push_queue": [1413]
@@ -1006,7 +1023,9 @@ directory on the import path and stands in for `gh`.
     commit, reply, and resolve decision written to the scratchpad.
 13. `--dry-run` against a real reviewed PR whose head moved over a file
     one of the user's threads names produces one verdict per finding with
-    evidence, and posts nothing.
+    evidence, and posts nothing. No reply-failed or resolve-failed line
+    is written, since no mutation ran, and `rereviewed_head` advances as
+    it would after a real round.
 14. A user reply under an escalated thread makes that thread pending
     again and the fix path runs one more round on it.
 15. The `Monitor` armed in step 02 is still delivering events after the

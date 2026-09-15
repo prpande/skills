@@ -206,6 +206,22 @@ class ReviewedTickTests(unittest.TestCase):
         self.gh.prs[1420] = pr
         self.assertEqual([e["kind"] for e in self.tick()], ["reply"])
 
+    def test_an_escalated_reply_after_mine_on_a_resolved_thread_still_settles(self):
+        pr = reviewed_pr(head="h1", replies=[comment("a1", "author-b", T1, body="thanks")])
+        pr["reviewThreads"]["nodes"][0]["isResolved"] = True
+        self.gh.prs[1420] = pr
+        self.watch["prs"]["1420"]["escalated_ids"] = ["a1"]
+        self.assertEqual(self.tick(), [{"pr": 1420, "role": "reviewed", "kind": "settled"}])
+
+    def test_a_reviewed_pr_is_re_emitted_once_when_its_retry_time_passes(self):
+        self.gh.prs[1420] = reviewed_pr(head="h1", replies=[comment("a1", "author-b", T1)])
+        self.assertEqual([e["kind"] for e in self.tick()], ["reply"])
+        self.watch["prs"]["1420"]["retry_after"] = NOW + 600
+        self.assertEqual(poll.tick_once(self.gh, self.watch, self.poller, NOW + 60), [])
+        self.assertEqual([e["kind"] for e in poll.tick_once(self.gh, self.watch, self.poller,
+                                                            NOW + 600)], ["reply"])
+        self.assertEqual(poll.tick_once(self.gh, self.watch, self.poller, NOW + 660), [])
+
     def test_one_unresolved_thread_is_not_settled(self):
         pr = reviewed_pr(head="h1")
         pr["reviewThreads"]["nodes"].append(
@@ -370,6 +386,21 @@ class MonitorLoopTests(unittest.TestCase):
             self.assertIn("watch-poller.json is open", err)
             events, _ = self.run_monitor(2)
         self.assertEqual([e["kind"] for e in events], ["pending"])
+
+    def test_five_failed_poller_writes_in_a_row_print_one_poller_error(self):
+        real = poll.write_json_atomic
+        saves = iter([False] * 6 + [True] + [False] * 5)
+
+        def write(path, data, **kwargs):
+            if path.name == "watch-poller.json" and not next(saves):
+                raise PermissionError("watch-poller.json is read-only")
+            return real(path, data, **kwargs)
+        with unittest.mock.patch.object(poll, "write_json_atomic", write):
+            events, _ = self.run_monitor(12)
+        self.assertEqual([e for e in events if e["kind"] == "poller-error"],
+                         [{"kind": "poller-error", "error": "watch-poller.json is read-only"}] * 2)
+        kinds = [e["kind"] for e in events]
+        self.assertLess(kinds.index("pending"), kinds.index("poller-error", 1))
 
 
 class Clock:

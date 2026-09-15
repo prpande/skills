@@ -88,6 +88,35 @@ class AdoOrgTests(unittest.TestCase):
                                  "Azure DevOps org attacker-org is not in ado_orgs")
         self.assertEqual(opener.requests, [])
 
+    def refused(self, link, orgs):
+        messages = []
+        for run in (poll.ci_log, poll.ci_rerun):
+            ado = FakeAdo([record("Stage", "failed", "Gated", identifier="gated")])
+            with self.subTest(mode=run.__name__), self.assertRaises(poll.GhError) as caught:
+                run(FakeGh(), "o/r", link, orgs, ado=ado)
+            self.assertEqual(ado.calls, [])
+            messages.append(str(caught.exception))
+        return messages
+
+    def test_ado_orgs_that_is_not_a_list_of_strings_allows_no_org(self):
+        self.assertEqual(self.refused(AZURE, "mindbody"),
+                         ["ado_orgs must be a list of strings, not str"] * 2)
+        self.assertEqual(self.refused(AZURE, ["mindbody", 7]),
+                         ["ado_orgs must be a list of strings, not a list holding int"] * 2)
+
+    def test_an_org_or_project_outside_the_safe_characters_is_refused(self):
+        odd_org = AZURE.replace("/mindbody/", "/mind?body/")
+        self.assertEqual(self.refused(odd_org, ["mind?body"]),
+                         ["Azure DevOps org mind?body is not a valid name"] * 2)
+        odd_project = AZURE.replace("/19477e8d-94b2-4461-9dfc-2f54fa23767d/", "/proj#x/")
+        self.assertEqual(self.refused(odd_project, ORGS),
+                         ["Azure DevOps project proj#x is not a valid name"] * 2)
+
+    def test_a_project_with_an_encoded_space_is_accepted(self):
+        link = AZURE.replace("/19477e8d-94b2-4461-9dfc-2f54fa23767d/", "/My%20Project/")
+        ado = FakeAdo([record("Task", "failed", "Run tests", log_id=7)], logs={7: "boom"})
+        self.assertIn("boom", poll.ci_log(FakeGh(), "o/r", link, ORGS, ado=ado))
+
 
 class AdoRequestTests(unittest.TestCase):
     def test_header_is_basic_auth_of_the_pat(self):

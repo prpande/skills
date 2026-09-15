@@ -2,8 +2,9 @@
 
 An event line is a wake-up, not the truth. Sections A, B, and D, and the
 step files the table routes to, re-read state and refetch before acting.
-Section C and the `reconciled` line act on the event as given: a PR the
-poller saw closed or merged, and a note about the daily check.
+Section C and the `reconciled` and `poller-error` lines act on the event
+as given: a PR the poller saw closed or merged, a note about the daily
+check, and a note about the poller's own state file.
 
 1. Parse the notification line as JSON. A line that does not parse is
    not an event; ignore it.
@@ -21,6 +22,7 @@ poller saw closed or merged, and a note about the daily check.
 | `closed` | section C |
 | `settled` | section D |
 | `reconciled` | post "The daily check picked up work the event stream missed." in each listed PR's thread (`pr-watch/steps/06-notify.md`) |
+| `poller-error` | post "The watch poller cannot save its state: <error>. Events may repeat until this is fixed." in each PR thread that has a root (`slack_ts` set), with the event's `error` (`pr-watch/steps/06-notify.md`, "poller error") |
 
 Write `watch.json` after every numbered action below that changes it.
 
@@ -96,11 +98,13 @@ and from `push_queue`.
 ## D. Settled reviewed PR
 
 The poller saw every thread the user opened on the PR resolved, with
-nobody commenting after the user on any of them.
+every comment after the user's last one on each thread already escalated
+(its id in `escalated_ids`), or no such comment.
 
 1. Run `POLL --findings <N> --state-dir <STATE_DIR>`. Go on only when
-   every thread has `is_resolved: true` and no entry other than `me`
-   after the last `me` in its `kinds`. Otherwise stop and keep watching;
+   every thread has `is_resolved: true` and each comment after the
+   user's last comment on it (the entries after the last `me` in
+   `kinds`) has its id in `escalated_ids`. Otherwise stop and keep watching;
    a new reply raises its own event, and the poller emits `settled`
    again once the threads settle.
 2. Post "All your findings on this PR are resolved; no longer watching

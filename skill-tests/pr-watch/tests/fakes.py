@@ -87,6 +87,7 @@ class FakeGh:
         self.no_checks = set()
         self.base_runs = {}
         self.base_statuses = {}
+        self.base_workflow_runs = {}
         self.job_logs = {}
         self.thread_comment_pages = {}
         self.earlier = {}
@@ -152,6 +153,10 @@ class FakeGh:
         path = args[1]
         if "/actions/jobs/" in path and path.endswith("/logs"):
             return self.job_logs[path.split("/actions/jobs/")[1].split("/")[0]]
+        if "/actions/runs?head_sha=" in path:
+            sha = urllib.parse.unquote(path.split("head_sha=")[1])
+            return "".join(f"{suite}\t{name}\n"
+                           for suite, name in self.base_workflow_runs.get(sha, []))
         if "/compare/" in path:
             files = self.compare.get(path.split("/compare/")[1], [])
             if files is None and not args[args.index("--jq") + 1].startswith("(.files // [])"):
@@ -162,7 +167,10 @@ class FakeGh:
                 raise poll.GhError("HTTP 401: Bad credentials")
             return self.user + "\n"
         if "/commits/" in path:
-            ref = urllib.parse.unquote(path.split("/commits/")[1].rsplit("/", 1)[0])
+            tail = path.split("/commits/")[1]
+            if not tail.endswith(("/check-runs", "/status")):
+                return urllib.parse.unquote(tail) + "\n"  # a ref resolves to itself as its sha
+            ref = urllib.parse.unquote(tail.rsplit("/", 1)[0])
             if path.endswith("/check-runs"):
                 return "".join("\t".join((*row, "1")[:3]) + "\n"
                                for row in self.base_runs.get(ref, []))

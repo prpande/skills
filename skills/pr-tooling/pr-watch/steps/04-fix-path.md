@@ -206,7 +206,10 @@ to section 9.
    A reply mutation that exits non-zero or returns no `id`: append
    nothing, escalate ("needs you, no comment", reason "reply failed on
    <thread path:line, or the top-level item's id>"), and continue with
-   the next return; steps 3 and 4 do not run for this one.
+   the next return; steps 3 and 4 do not run for this one. Under
+   `dry_run` no mutation runs, so this failure branch does not apply:
+   the mutation goes to the dry-run file, step 3 has no id to append,
+   and step 4 runs.
 3. Append the posted reply's returned `id` to `posted_reply_ids` and
    write `watch.json` at once. For a top-level item also set
    `handled_top_level_ids[<record id>]` to the verdict, where
@@ -224,7 +227,8 @@ to section 9.
    a condition. Never resolve to tidy up. A resolve that exits non-zero
    or does not return `isResolved: true`: post the "resolve failed" line
    (`pr-watch/steps/06-notify.md`) in the PR thread and continue with the
-   next return.
+   next return. Under `dry_run` the resolve goes to the dry-run file and
+   this failure branch does not apply.
 
 ## 8. Drain the push queue
 
@@ -288,7 +292,8 @@ On a `tick` event, take the first PR `N` in `push_queue`:
       or a second push rejection was not resolved): escalate ("needs you,
       no comment", reason "queued fix <sha7> could not be pushed",
       `<sha7>` from `queued_head`).
-   2. Always, whether step 3 pushed, escalated, or did not run: remove
+   2. Always, except after step 3.3's lock-held return, where `N` stays
+      queued. Whether step 3 pushed, escalated, or did not run: remove
       `N` from `push_queue`, set `queued_head`, `queued_at`, and
       `wait_notice_at` to null, and write `watch.json`.
 

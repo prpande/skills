@@ -39,19 +39,24 @@ creates a worktree. Under `dry_run`, verdicts, replies, and resolutions go to
    recorded one gets neither a reply nor a resolve. A reply that exits
    non-zero or returns no `id`: record nothing for that finding, escalate
    ("needs you, no comment", reason "reply failed on <path>:<line>"), and
-   go on to the next finding.
+   go on to the next finding. Under `dry_run` no mutation runs, so this
+   failure branch does not apply: the reply goes to the dry-run file,
+   there is no reply id to record, and `finding_verdicts` is set as
+   above.
 6. Resolve a thread only when step 5 replied on it this round with the
    verdict `addressed`, which differs from the verdict recorded before
    this round. Use the `resolveReviewThread` mutation in
    `pr-watch/steps/04-fix-path.md` section 7 step 4. A resolve that fails
-   posts the "resolve failed" line and goes on. This resolve is not
+   posts the "resolve failed" line and goes on; under `dry_run` the
+   resolve goes to the dry-run file and this branch does not apply. This resolve is not
    author-guarded: the user opened the thread.
 7. Post the summary in the PR's Slack thread
    (`pr-watch/steps/06-notify.md`, "re-review").
 8. When every judged finding has been replied to, escalated, or left
    because its verdict was unchanged (no reply failed), set the PR's
    `rereviewed_head` to the event's `new_head` and write `watch.json`.
-   The next compare starts there.
+   The next compare starts there. A `dry_run` round sets it the same way,
+   as a real round would.
 9. Never approve, never request changes, never touch a thread another
    reviewer opened. If the author later disputes a verdict, step 03
    section B escalates it; there is no second automatic reply.

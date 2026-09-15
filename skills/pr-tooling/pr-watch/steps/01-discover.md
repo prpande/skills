@@ -117,8 +117,8 @@ as `null`. A new `authored` PR also starts with:
 - `last_pushed_head`, `queued_head`, `queued_at`, `wait_notice_at`,
   `retry_after`, and `skip_reason` as `null`.
 
-A new `reviewed` PR also starts with `finding_verdicts` as `{}` and
-`rereviewed_head` as `null`. On resume, a PR entry missing any key this
+A new `reviewed` PR also starts with `finding_verdicts` as `{}`, and
+`rereviewed_head` and `retry_after` as `null`. On resume, a PR entry missing any key this
 section lists for its role gets it with that starting value; every key
 it already has is kept.
 
