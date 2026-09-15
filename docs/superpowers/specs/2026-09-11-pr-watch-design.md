@@ -176,10 +176,10 @@ allowlist. Deterministic: no LLM in it.
      is. A PR that reaches `MERGED` or `CLOSED` emits one
      `closed` event and leaves the set; once the session removes it from
      `watch.json`, the poller forgets it was closed, so a PR added again
-     later is polled again. A tick whose `watch-poller.json` cannot be
-     saved prints nothing; at the fifth failed save in a row the poller
-     prints one `poller-error` event with the error, and the count starts
-     again after a successful save. The session posts it in every PR
+     later is polled again. A tick that fails, including one whose
+     `watch-poller.json` cannot be saved, prints nothing; at the fifth
+     failed tick in a row the poller prints one `poller-error` event with
+     the error, and the count starts again after a successful tick. The session posts it in every PR
      thread that has a root, since no events are handled until it is
      fixed.
 - `--report`: the three-section report on demand (`/pr-watch status`). The
@@ -350,7 +350,7 @@ one on each is already escalated or there is none, so an author's
 the session stops watching the PR), `tick` (push queue non-empty),
 `reconciled` (daily sweep found something), `closed` (PR merged or
 closed), and `poller-error` (`{"kind": "poller-error", "error": "..."}`,
-five failed saves of `watch-poller.json` in a row; 3.1).
+five failed ticks in a row; 3.1).
 
 A `ci-red` signature is the head plus each red check's workflow, name,
 and `completedAt`, stored apart from the comment signature. A rerun that fails
