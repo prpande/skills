@@ -485,9 +485,10 @@ def tick_once(gh, watch, poller, now, force=False):
         retried_at = retry_spend(retry_after, retry_review, review_failed, prev, "retried_at")
         if retried_at is not None:
             entry["retried_at"] = retried_at
-        ci_retried_at = retry_spend(retry_after, retry_ci, ci_failed, prev, "ci_retried_at")
-        if ci_retried_at is not None:
-            entry["ci_retried_at"] = ci_retried_at
+        if watch_pr["role"] == "authored":
+            ci_retried_at = retry_spend(retry_after, retry_ci, ci_failed, prev, "ci_retried_at")
+            if ci_retried_at is not None:
+                entry["ci_retried_at"] = ci_retried_at
         prs[str(n)] = entry
     queue = list(watch.get("push_queue", []))
     if not queue:

@@ -222,6 +222,13 @@ class ReviewedTickTests(unittest.TestCase):
                                                             NOW + 600)], ["reply"])
         self.assertEqual(poll.tick_once(self.gh, self.watch, self.poller, NOW + 660), [])
 
+    def test_a_reviewed_pr_retry_tick_writes_no_ci_retried_at(self):
+        self.gh.prs[1420] = reviewed_pr(head="h1", replies=[comment("a1", "author-b", T1)])
+        self.tick()
+        self.watch["prs"]["1420"]["retry_after"] = NOW + 600
+        poll.tick_once(self.gh, self.watch, self.poller, NOW + 600)
+        self.assertNotIn("ci_retried_at", self.poller["prs"]["1420"])
+
     def test_one_unresolved_thread_is_not_settled(self):
         pr = reviewed_pr(head="h1")
         pr["reviewThreads"]["nodes"].append(

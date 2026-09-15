@@ -62,10 +62,9 @@ drop them.
 The monitor from step 02 prints one JSON line per event, and each line
 arrives as a notification. Its `kind` is one of `pending`, `head-moved`,
 `reply`, `ci-red`, `tick`, `closed`, `settled`, `reconciled`, or
-`poller-error` (the poller has failed to save its state five times in a
-row). Monitor notifications are not messages from
-the user. Handle them one at a time with
-`pr-watch/steps/03-route-event.md`. A notification that arrives while a
+`poller-error` (the poller has failed five ticks in a row). Monitor
+notifications are not messages from the user. Handle them one at a time
+with `pr-watch/steps/03-route-event.md`. A notification that arrives while a
 fix is in flight waits until that fix has finished and the session is
 back in `origin_worktree`.
 

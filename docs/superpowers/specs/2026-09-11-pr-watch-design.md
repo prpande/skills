@@ -52,8 +52,8 @@ With no PR numbers, step 01 discovers the set within the current repo:
 
 - open PRs authored by `self_login` whose head branch is checked out in a
   worktree registered by `git worktree list` for this repo, and
-- open PRs in this repo where at least one review thread `self_login`
-  opened is still unresolved.
+- open PRs in this repo where a thread `self_login` opened is unresolved
+  or has an unescalated comment after the user's last one.
 
 Discovery uses `gh pr list` scoped to the repo, never org-wide search, so
 SAML partial results cannot silently drop a PR. The proposed set is shown
@@ -387,9 +387,11 @@ either role (3.1) write `retry_after` (now plus ten minutes) on the PR's
 `watch.json` entry. On the first tick at or after that time, the poller
 evaluates that PR as a forced pass, ignoring its stored signatures, so
 the unchanged pending set and red checks, or a reviewed PR's reply,
-head move, or settle, are emitted again, and it
-records the value as `retried_at` in its own file so each `retry_after`
-forces exactly one re-emit.
+head move, or settle, are emitted again, and it records the value in
+its own file so each `retry_after` forces exactly one re-emit: as
+`retried_at` for the pending/reviewed branch, and, on an authored PR,
+separately as `ci_retried_at` for the CI branch, so a standing failure
+on one branch does not keep forcing the other.
 
 Bodies are not in the event line. The session reads them from the poller's
 per-PR JSON dump, wrapping each in a nonce-delimited `<UNTRUSTED_COMMENT>`
@@ -800,7 +802,8 @@ Channel `C0C15VC8Y0Z`, one thread per PR, all replies in-thread.
   fixes (commit and what changed), a CI rerun, a dropped queued rerun, a
   posted re-review, a skipped PR (dirty worktree), a merge conflict, a
   failed resolve, a monitor re-arm, a reviewed PR leaving the watch once
-  settled, a poller that cannot save its state, the closing line on stop.
+  settled, a poller that has failed five ticks in a row, the closing
+  line on stop.
 - Nothing posts when nothing happened.
 - The MCP cannot edit a posted message; the root stays as posted. The
   MCP appends a "Sent using @Claude" footer to agent messages; acceptable
@@ -842,7 +845,8 @@ primitive, and each has exactly one writer.
       "ci_fix_pushes": 0,
       "ci_reruns": ["<head sha>|<workflow>|<check name>"],
       "ci_rerun_queued": [{"link": "<check link>", "head": "<head sha>",
-                           "name": "<check name>"}],
+                           "name": "<check name>",
+                           "sibling_keys": ["<head sha>|<workflow>|<check name>"]}],
       "ci_handled": ["<head sha>|<workflow>|<check name>|<completed at>"],
       "ci_log_retries": [],
       "queued_head": null,
@@ -879,7 +883,7 @@ primitive, and each has exactly one writer.
   "prs": {
     "1411": {"updated_at": "...", "last_head": "...", "last_signature": "...",
              "last_rollup": "FAILURE", "last_ci_signature": "...",
-             "retried_at": <epoch seconds>}
+             "retried_at": <epoch seconds>, "ci_retried_at": <epoch seconds>}
   }
 }
 ```
@@ -905,8 +909,9 @@ from `closed` once it is no longer in `watch.json`.
 
 `queued_head`, `queued_at`, and `wait_notice_at` describe a fix waiting
 in `push_queue` (4.3); `retry_after` and `skip_reason` belong to a skip
-(4.1, 3.4). All five are written by the session; `retried_at` is the poller's own record
-of the last `retry_after` it acted on.
+(4.1, 3.4). All five are written by the session; `retried_at` and, on an
+authored PR, `ci_retried_at` are the poller's own record of the last
+`retry_after` each independently acted on.
 
 Bridge to the library. Steps 04, 04.5, and the fixer and verifier prompts
 read the library's `context` object and its `pr-<N>.json`, `pr-<N>.lock`,

@@ -22,7 +22,7 @@ check, and a note about the poller's own state file.
 | `closed` | section C |
 | `settled` | section D |
 | `reconciled` | post "The daily check picked up work the event stream missed." in each listed PR's thread (`pr-watch/steps/06-notify.md`) |
-| `poller-error` | post "The watch poller cannot save its state: <error>. No events are handled until this is fixed." in each PR thread that has a root (`slack_ts` set), with the event's `error` (`pr-watch/steps/06-notify.md`, "poller error") |
+| `poller-error` | post "The watch poller has failed five ticks in a row: <error>. No events are handled until this is fixed." in each PR thread that has a root (`slack_ts` set), with the event's `error` (`pr-watch/steps/06-notify.md`, "poller error") |
 
 Write `watch.json` after every numbered action below that changes it.
 
@@ -89,11 +89,11 @@ Write `watch.json` after every numbered action below that changes it.
    are not the user's and whose ids are not in `escalated_ids`.
 3. Escalate each (`pr-watch/steps/06-notify.md`, "author reply"), add the
    ids to `escalated_ids`. Post nothing on GitHub; the user answers there.
-4. Set the PR's `retry_after` to now + 600 (epoch seconds) and write
-   `watch.json`. Once it passes, the poller re-evaluates the PR; if
-   every thread is now resolved with every reply already in
-   `escalated_ids`, `settled` fires then instead of waiting for the next
-   PR change or the daily pass.
+4. If step 3 escalated at least one id: set the PR's `retry_after` to
+   now + 600 (epoch seconds) and write `watch.json`. Once it passes, the
+   poller re-evaluates the PR; if every thread is now resolved with
+   every reply already in `escalated_ids`, `settled` fires then instead
+   of waiting for the next PR change or the daily pass.
 
 ## C. Closed
 
