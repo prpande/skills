@@ -22,6 +22,12 @@ Never edit `.gitignore`.
 
 ## 2. Resume or start
 
+If this invocation is `--dry-run` and `<STATE_DIR>/watch.json` exists
+with `dry_run` other than `true`: stop and tell the user a real watch
+exists here; a dry run needs it stopped (`/pr-watch stop`) and its state
+files (`watch.json`, `watch-poller.json`, `watch-seen.json`) moved aside
+first. Write nothing.
+
 If `<STATE_DIR>/watch.json` exists and its `dry_run` is `true` and this
 invocation is not `--dry-run`: a dry run is never resumed by a real one.
 Delete `watch.json`, `watch-poller.json`, and `watch-seen.json`, and
@@ -30,9 +36,18 @@ every PR added below).
 
 Otherwise, if `<STATE_DIR>/watch.json` exists, read it. Its PRs are the
 starting set, their id lists are kept, and discovery below only adds to
-it. Set `session_id` to a fresh UUID
-(`python -c "import uuid; print(uuid.uuid4())"`); the library lock
-protocol reclaims stale locks from the old session.
+it. Then:
+
+- This session already has a running monitor for this watch: keep the
+  existing `session_id`.
+- This session has no running monitor for this watch: run
+  `python -c "import os, sys, time; print(int(time.time() - os.path.getmtime(sys.argv[1])))" "<STATE_DIR>/watch-poller.json"`.
+  If it prints a number below 180, another session is watching this
+  repo: stop and tell the user to run `/pr-watch stop` there and then
+  wait three minutes. Otherwise (a larger number, or a non-zero exit
+  because the file does not exist) set `session_id` to a fresh UUID
+  (`python -c "import uuid; print(uuid.uuid4())"`); the library lock
+  protocol reclaims stale locks from the old session.
 
 Otherwise start from an empty set with a fresh `session_id`.
 
@@ -80,7 +95,8 @@ Write it per `pr-watch/references/watch-state-schema.md` "Writing", with
 `["sonarqube-mbodevme", "mindbody-ado-pipelines", "mergewatch-playlist"]`
 (kept as is on resume), and each new PR with empty id lists and objects
 (including `ci_reruns`, `ci_rerun_queued`, `ci_handled`, and
-`finding_verdicts`) and `slack_ts: null`.
+`finding_verdicts`), and with `slack_ts`, `queued_head`, `queued_at`,
+`retry_after`, and `skip_reason` all `null`.
 
 ## 5. Baseline new authored PRs
 

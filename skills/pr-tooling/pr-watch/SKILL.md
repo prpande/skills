@@ -90,8 +90,10 @@ Adapted from `pr-autopilot`'s hard rules:
 - Never commit secrets. Secret scan is BLOCKING before every commit.
 - Destructive git ops (reset --hard, clean -fd, push --force) are never
   used by this skill.
-- Rollback uses `git checkout -- <file>` scoped to the current event's
-  modified files only.
+- Rollback (`pr-watch/steps/04-fix-path.md` section 10) uses
+  `git checkout -- <file>` for tracked files and deletes untracked ones,
+  scoped to the current event's modified files only, and must leave
+  `git status --porcelain` empty.
 - Never hard-code `--no-paginate` behavior on `gh api` for list
   endpoints. When fetching PR comments, reviews, or issue comments,
   always use `--paginate` (or the equivalent for the platform).
@@ -105,8 +107,10 @@ Owned by `pr-watch`:
 
 - Commit, push, and resolve only on PRs whose live author is the acting
   login. `POLL --assert-author <N> --repo <SLUG>` runs immediately before
-  every `git push`, and any non-zero exit aborts the push. It reads no
-  state file.
+  every `git push`, before the first reply or resolve of each pass of
+  `pr-watch/steps/04-fix-path.md` section 7, and before the acknowledge
+  resolve in `pr-watch/steps/03-route-event.md` A.7; any non-zero exit
+  aborts that push, reply, or resolve. It reads no state file.
 - A `reviewed` PR never gets a worktree, a commit, or a push.
 - CI is acted on only for required checks on `authored` PRs
   (`pr-watch/steps/07-ci.md`). The Azure DevOps PAT is read only inside

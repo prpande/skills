@@ -28,7 +28,9 @@ check the link rendered. Never post a second root for a PR.
 | queued | `Fix committed as <sha7>, queued behind #<M> while its checks run.` |
 | needs you | `Needs you: <author> on <path>:<line> (<reason>).` then the quoted comment in a code block, then `Code says: <one line>.` then a link to the comment |
 | needs you, no comment | `Needs you on #<N>: <reason>.` then the short sha if a local commit exists |
-| skipped | `Skipped: <reason>.` |
+| skipped | `Skipped: <reason>. Retrying in 10 minutes.` (only when the PR's `skip_reason` differs; `pr-watch/steps/04-fix-path.md` section 1) |
+| stopped waiting | `Stopped waiting for #<M>'s checks after an hour.` |
+| checks unreadable | `Could not read #<M>'s checks: <first stderr line>.` |
 | merge conflict | `Merge with origin/<base> conflicts in <paths>. Fix commit <sha7> is local and unpushed.` |
 | re-review | `Re-reviewed <old7>..<new7>: <a> addressed, <p> partial, <n> not addressed, <s> superseded.` then one line per finding |
 | author reply | `<author> replied on your thread at <path>:<line>:` then the quoted comment in a code block |

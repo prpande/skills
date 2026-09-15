@@ -65,7 +65,13 @@ recorded. A PR number mentioned in conversation is never added silently.
 
 If the repo already holds a watch state file (section 8), step 01 offers
 to resume it, merged with whatever discovery finds. This is how the watch
-survives `--resume` and a new session in the same repo.
+survives `--resume` and a new session in the same repo. A resume in the
+session that already runs the monitor keeps the watch's session id; a
+resume with no live monitor in the session refuses while
+`watch-poller.json` was written in the last 180 seconds (another session
+is watching the repo) and otherwise takes a fresh session id. A
+`--dry-run` invocation never touches a saved real watch: it stops and
+asks for that watch to be stopped and its state files moved aside.
 
 `--dry-run` runs every path up to its first mutation and writes what it
 would have committed, pushed, replied, or resolved to the scratchpad
@@ -139,11 +145,13 @@ allowlist. Deterministic: no LLM in it.
      tick: the full thread fetch for that PR only, then the pending-tail
      computation (3.3), then zero or one event line. A full fetch of ten
      PRs costs roughly 500 points, which is why it runs only on change.
-  3. For each `authored` PR whose rollup or head changed and whose rollup
-     is `FAILURE` or `ERROR`: `gh pr checks <n> --required --json
+  3. For each `authored` PR whose rollup is `FAILURE` or `ERROR`, on
+     every tick while it stays so: `gh pr checks <n> --required --json
      name,state,bucket,link,workflow,completedAt`, keeping the checks in
-     bucket `fail`. When any remain, one `ci-red` event (3.4). The rollup
-     alone is not trusted: it counts checks the branch rules do not
+     bucket `fail`. When any remain and the red set differs from the last
+     one emitted, one `ci-red` event (3.4). Checking on every red tick
+     catches a second required check failing on a head whose rollup was
+     already `FAILURE`. The rollup alone is not trusted: it counts checks the branch rules do not
      require, and on repos mid-migration a legacy pipeline can fail while
      every required check is green.
   4. Same tick: if `push_queue` in the session's state file is non-empty,
@@ -154,8 +162,14 @@ allowlist. Deterministic: no LLM in it.
      writes one `reconciled` event naming what it found so a divergence
      is visible.
   6. Every fetch error is caught, written to stderr, and retried on the
-     next tick. The loop never exits on its own. A PR that reaches
-     `MERGED` or `CLOSED` emits one `closed` event and leaves the set.
+     next tick. Each `gh` call times out after 120 seconds and counts as
+     a fetch error. A heads response that carries both `data` and
+     `errors` (gh exits 1 and still prints the body) is used for the PRs
+     that resolved; a null alias is logged and skipped. The loop never
+     exits on its own. A PR that reaches `MERGED` or `CLOSED` emits one
+     `closed` event and leaves the set; once the session removes it from
+     `watch.json`, the poller forgets it was closed, so a PR added again
+     later is polled again.
 - `--report`: the three-section report on demand (`/pr-watch status`). The
   sections are ATTENTION, NEW, and STANDING. ATTENTION is every pending
   tail and top-level item on an `authored` PR, every `reviewed` PR whose
@@ -185,8 +199,9 @@ allowlist. Deterministic: no LLM in it.
   unique: on `Mindbody.BizApp.Bff` the same job name runs in two
   workflows, so a check is identified by workflow and name together.
   Writes nothing.
-- `--ci-log <link> --repo <o>/<r>`: print the last 5,000 lines of the
-  failed steps behind a check link (4.6). Reads no state file.
+- `--ci-log <link> --repo <o>/<r>`: print the log behind a check link,
+  cut to a window anchored on the first failure marker (4.6). Reads no
+  state file.
 - `--ci-rerun <link> --repo <o>/<r>`: rerun the failed jobs behind a
   check link (4.6). Reads no state file.
 - `--assert-author <pr>`: the push guard (section 9). Reads the PR author
@@ -321,13 +336,24 @@ within a day. A `tick` line is emitted when the push queue differs from
 the last one emitted, or ten minutes after the last `tick`, so a blocked
 push does not wake the session every minute.
 
+A skipped event is retried without waiting for new activity. Every skip
+in the fix path, and a `pending` event on a PR still in `push_queue`,
+writes `retry_after` (now plus ten minutes) on the PR's
+`watch.json` entry. On the first tick at or after that time, the poller
+evaluates that PR as a forced pass, ignoring its stored signatures, so
+the unchanged pending set and red checks are emitted again, and it
+records the value as `retried_at` in its own file so each `retry_after`
+forces exactly one re-emit.
+
 Bodies are not in the event line. The session reads them from the poller's
 per-PR JSON dump, wrapping each in a nonce-delimited `<UNTRUSTED_COMMENT>`
 block per `pr-loop-lib/references/prompt-injection-defenses.md` before any
 agent sees it. Step 03 then runs the library's Filter C (the
 prompt-injection regex from `03-triage.md`) on every body in the tail. A
 hit removes that thread from the dispatch set for this event, records the
-id, and escalates it (4.5); nothing is posted on the thread.
+id, and escalates it (4.5); nothing is posted on the thread. Records
+already in `escalated_ids` are dropped before Filter C runs, so a hit is
+escalated once.
 
 ### 3.5 Watermarks
 
@@ -352,12 +378,22 @@ git -C <worktree> rev-parse HEAD          # must equal the PR headRefOid
 ```
 
 A dirty worktree means the user is in it: skip this PR for this event,
-report it as skipped in the PR's Slack thread, retry on the next event or
-sweep. A HEAD mismatch means another session moved the branch: same.
+set its `retry_after` ten minutes out (3.4), and report "Skipped: <reason>.
+Retrying in 10 minutes." in the PR's Slack thread, only when the reason
+differs from the PR's last `skip_reason`. A diverged HEAD means another
+session moved the branch: same. A local HEAD that is merely behind the PR
+head is fast-forwarded.
 
 Then `EnterWorktree(path=<worktree>)`, acquire the library's `pr-<N>.lock`
-per `state-protocol.md` (so `pr-followup` cannot collide), run the path,
-release the lock, and `EnterWorktree(path=<origin worktree>)` to return.
+per `state-protocol.md` (so `pr-followup` cannot collide; a lock held by
+another session is a skip like the ones above, and acquiring it clears
+`skip_reason`), set `pr-<N>.json`'s `session_id` to the watch's, run the
+path, release the lock, and `EnterWorktree(path=<origin worktree>)` to
+return.
+
+A rollback restores tracked files with `git checkout --`, deletes files
+the fixer created, and must leave `git status --porcelain` empty; when it
+does not, the PR is escalated instead of left dirty.
 
 Subagents cannot switch worktrees (measured 2026-09-11: a subagent's
 `EnterWorktree(path=B)` reports success and its next Write into B is
@@ -446,12 +482,17 @@ run.
 
 Push serialisation is on by default. Events already arrive one PR at a
 time, so the rule is about CI, not events: before pushing, step 04 checks
-every other `authored` PR in the watch with `gh pr checks`, and if any has
-a check still pending, this PR's fix stays committed locally and its
-number joins `push_queue`. The queue drains on `tick` events (3.1): the
-head of the queue is pushed, and its queued CI reruns (4.6) started, as
-soon as no other watched PR has a pending check; its replies wait until
-the push has happened.
+every other `authored` PR in the watch with `gh pr checks --required`,
+and if any has a required check still pending, this PR's fix stays
+committed locally, its sha is recorded as `queued_head` with the time as
+`queued_at`, and its number joins `push_queue`. A PR with no required
+checks, or whose checks cannot be read, counts as nothing pending. The
+queue drains on `tick` events (3.1): the head of the queue is pushed, and
+its queued CI reruns (4.6) started, as soon as no other watched PR has a
+pending required check, or once it has waited an hour; its replies wait
+until the push has happened. The drain pushes only when the worktree
+`HEAD` is still `queued_head`; commits the watch did not make are
+escalated, never pushed.
 Exists because concurrent gated runs deadlock a shared contract database.
 `--parallel-pushes` turns it off; the choice is persisted in the state
 file, so it is passed once per watch.
@@ -460,9 +501,11 @@ file, so it is passed once per watch.
 
 Every reply is composed through `pr-watch/references/reply-voice.md`
 (section 6). No templates, no markers, no fixed prefixes. A reply that
-names a commit posts only after that commit is on the remote. The reply
-mutation's returned comment id is appended to `posted_reply_ids` in the
-same state write that records the disposition.
+names a commit posts only after that commit is on the remote. The push
+guard (section 9) runs before the first reply or resolve of each pass. The
+reply mutation's returned comment id is appended to `posted_reply_ids` in
+the same state write that records the disposition; a top-level item's
+disposition is keyed by the answered item's id, not the reply's.
 
 Resolve the thread when any of:
 
@@ -521,12 +564,15 @@ there only as commits.
      check name and link. SonarQube's quality gate reaches the fix path
      through its PR comment (3.2), not here.
 3. Logs, through `poll.py --ci-log <link>`. GitHub Actions:
-   `gh run view --job <job_id> --log-failed`. Azure Pipelines: the build
+   `gh api repos/<o>/<r>/actions/jobs/<job_id>/logs`, the job's full
+   timestamped log, available once that job has finished even while
+   other jobs in the run still run. Azure Pipelines: the build
    timeline (`_apis/build/builds/<id>/timeline?api-version=7.1`) names
    the failed tasks and their log ids, then
-   `_apis/build/builds/<id>/logs/<log id>?api-version=7.1`. The last
-   5,000 lines, through `secret-scan-rules.md` and the untrusted wrapper
-   (3.4), before any agent reads them.
+   `_apis/build/builds/<id>/logs/<log id>?api-version=7.1`. A window of
+   the log anchored on the first failure marker, through
+   `secret-scan-rules.md` and the untrusted wrapper (3.4), before any
+   agent reads them.
 4. Reruns, through `poll.py --ci-rerun <link>`. GitHub Actions:
    `gh run rerun <run_id> --failed`. Azure Pipelines:
    `PATCH _apis/build/builds/<id>/stages/<stage identifier>?api-version=7.1-preview.1`
@@ -564,7 +610,9 @@ Trigger: a PR where the user has review threads and whose head has moved
 since the user's newest comment on those threads. Re-review only when the
 head moved and either the diff since the user's review touches a file one
 of the user's threads names, or the author replied on one of those
-threads. Otherwise record the head move and stay quiet.
+threads. Otherwise record the head move and stay quiet. GitHub's compare
+lists at most 300 files, so a diff listing 300 or more counts as touching
+the user's findings.
 
 ### 5.3 Judgement
 
@@ -680,7 +728,11 @@ primitive, and each has exactly one writer.
       "review_fix_pushes": 0,
       "ci_fix_pushes": 0,
       "ci_reruns": ["<head sha>|<workflow>|<check name>"],
-      "ci_rerun_queued": [{"link": "<check link>", "head": "<head sha>"}]
+      "ci_rerun_queued": [{"link": "<check link>", "head": "<head sha>"}],
+      "queued_head": null,
+      "queued_at": null,
+      "retry_after": null,
+      "skip_reason": null
     }
   },
   "push_queue": [1413]
@@ -697,7 +749,8 @@ primitive, and each has exactly one writer.
   "closed": [1407],
   "prs": {
     "1411": {"updated_at": "...", "last_head": "...", "last_signature": "...",
-             "last_rollup": "FAILURE", "last_ci_signature": "..."}
+             "last_rollup": "FAILURE", "last_ci_signature": "...",
+             "retried_at": <epoch seconds>}
   }
 }
 ```
@@ -710,7 +763,13 @@ The poller reads `watch.json` for the set, roles, allowlist, push queue,
 writes it. The session never writes either poller file. Resume merges
 discovery into the existing `watch.json`; a PR no longer open is dropped
 from `watch.json` by the session on the `closed` event, and the poller
-stops polling it as soon as it is in `closed`.
+stops polling it as soon as it is in `closed`. The poller drops a number
+from `closed` once it is no longer in `watch.json`.
+
+`queued_head` and `queued_at` describe a fix waiting in `push_queue`
+(4.3); `retry_after` and `skip_reason` belong to a skip (4.1, 3.4). All
+four are written by the session; `retried_at` is the poller's own record
+of the last `retry_after` it acted on.
 
 Bridge to the library. Steps 04, 04.5, and the fixer and verifier prompts
 read the library's `context` object and its `pr-<N>.json`, `pr-<N>.lock`,
@@ -735,7 +794,8 @@ because the state file the lock protects now exists.
 
 - Ownership is enforced three ways, independently: `reviewed` entries have
   no worktree; the fix path holds the library lock; a push guard
-  immediately before every `git push` re-fetches the PR author from
+  immediately before every `git push`, and before the first reply or
+  resolve of each pass on an `authored` PR, re-fetches the PR author from
   GitHub and aborts on mismatch with `self_login`. The guard does not
   trust the state file.
 - The hard rules of `pr-autopilot/SKILL.md` apply verbatim: never on

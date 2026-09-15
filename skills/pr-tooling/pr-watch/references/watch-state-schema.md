@@ -27,7 +27,7 @@ written by the session.
 | `bot_allowlist` | array of logins | Logins always classified as bots, whatever type GitHub reports |
 | `dry_run` | boolean | `true` for a `--dry-run` watch; a saved watch with `dry_run: true` is never resumed by a non-dry-run invocation (`pr-watch/steps/01-discover.md` section 2 deletes it and the poller and seen files, starting fresh) |
 | `prs` | object keyed by PR number | See below |
-| `push_queue` | array of PR numbers | Authored PRs with a local fix commit waiting to push |
+| `push_queue` | array of PR numbers | Authored PRs with a local fix commit or a CI rerun waiting for other PRs' checks |
 
 Per PR:
 
@@ -49,15 +49,22 @@ Per PR:
 | `ci_rerun_queued` | array of `{link, head}` | Reruns waiting for the push-queue drain; entries whose `head` is no longer the PR head are dropped there |
 | `ci_handled` | array of strings | `<head>\|<workflow>\|<check name>\|<completed_at>` for every check occurrence step 07 has already escalated, reported pre-existing, or dispatched a fixer for; a re-emit of the same occurrence is skipped |
 | `finding_verdicts` | object thread id to verdict | `reviewed` only; the last re-review verdict posted on that thread (`pr-watch/steps/05-rereview.md`); a judge return that matches it is not replied or resolved again |
+| `queued_head` | string or null | `authored` only. Sha of the fix commit queued behind another PR's checks; set by `pr-watch/steps/04-fix-path.md` section 6 step 1, cleared by the drain (section 8 step 5). The drain pushes only when the worktree `HEAD` still equals it |
+| `queued_at` | integer or null | `authored` only. Epoch seconds the PR joined `push_queue`; set by step 04 section 6 step 1, or by `pr-watch/steps/07-ci.md` section 3 step 2 when not already set; cleared by the drain. The drain stops waiting for other PRs' checks an hour after it |
+| `retry_after` | integer or null | `authored` only. Epoch seconds after which the poller re-emits the PR's pending set and red checks once; set to now + 600 by every skip in step 04 sections 1 and 2 and by `pr-watch/steps/03-route-event.md` A.1 |
+| `skip_reason` | string or null | `authored` only. The reason of the last "Skipped" line posted; set by step 04's skips, cleared when step 04 section 2 acquires the lock. A skip with the same reason posts no line |
 
 ## `watch-poller.json` — written only by `POLL --monitor`
 
 `last_reconciliation` (epoch seconds), `last_tick_event` (epoch seconds),
-`last_tick_queue` (array), `closed` (array of PR numbers), and `prs` keyed
-by PR number with `updated_at`, `last_head`, `last_signature`,
-`last_rollup` (the head commit's check rollup state), and
-`last_ci_signature`. Deleting the file makes the next tick a full
-reconciliation.
+`last_tick_queue` (array), `closed` (array of PR numbers; a number no
+longer in `watch.json` `prs` is dropped at the start of each tick), and
+`prs` keyed by PR number with `updated_at`, `last_head`,
+`last_signature`, `last_rollup` (the head commit's check rollup state),
+`last_ci_signature`, and `retried_at` (the `retry_after` value the
+poller last acted on, so each `retry_after` forces one re-emit; kept
+across later writes of the entry). Deleting the file makes the next tick
+a full reconciliation.
 
 ## `watch-seen.json` — written only by `POLL --report` and `--reseed`
 
@@ -70,8 +77,9 @@ nothing else.
 `pr-loop-lib/references/context-schema.md`; unknown keys are forbidden
 there. Step 01 creates it with exactly `session_id`, `host_platform`,
 `platform`, `repo_root`, `base`, `branch`, `head_sha`, `base_sha`,
-`pr_number`, `pr_url`, `self_login`. Step 04 resyncs `session_id` to
-`watch.json`'s current value on every fix, and adds `all_comments`,
+`pr_number`, `pr_url`, `self_login`. Step 04 section 2 step 3a resyncs
+`session_id` to `watch.json`'s current value on every fix, formatter
+run, and drain, and step 04 adds `all_comments`,
 `actionable`, `agent_returns`, `verifier_judgements`,
 `files_changed_this_iteration`, `needs_human_items`, `last_push_sha`, and
 `last_push_timestamp` as the library steps write them. The lock and log
