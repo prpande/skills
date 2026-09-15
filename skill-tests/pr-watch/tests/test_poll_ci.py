@@ -281,6 +281,12 @@ class ChecksPayloadTests(unittest.TestCase):
         self.assertIn("repos/o/r/commits/release%2F2026/check-runs", [c[1] for c in self.gh.calls])
         self.assertEqual(payload["checks"][0]["on_base"], "success")
 
+    def test_the_base_sha_is_resolved_with_the_sha_media_type_not_the_full_commit(self):
+        self.payload()
+        call = next(c for c in self.gh.calls if c[1] == "repos/o/r/commits/main")
+        self.assertEqual(call[call.index("-H") + 1], "Accept: application/vnd.github.sha")
+        self.assertNotIn("--jq", call)
+
     def test_cli_prints_the_payload(self):
         with tempfile.TemporaryDirectory() as tmp:
             (pathlib.Path(tmp) / "watch.json").write_text(

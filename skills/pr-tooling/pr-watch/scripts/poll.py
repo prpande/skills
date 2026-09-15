@@ -33,7 +33,7 @@ AZURE_LINK = re.compile(
     r"^https://dev\.azure\.com/([^/]+)/([^/]+)/_build/results\?buildId=(\d+)")
 ADO_BUILD = "https://dev.azure.com/{org}/{project}/_apis/build/builds/{build_id}"
 ADO_ORG = re.compile(r"^[A-Za-z0-9._-]+$")
-ADO_PROJECT = re.compile(r"^[A-Za-z0-9._ %-]+$")
+ADO_PROJECT = re.compile(r"^[A-Za-z0-9._ %!&()@~-]+$")
 POLLER_ERROR_AFTER = 5
 LOG_LINES = 2000
 FAILURE_MARK = re.compile(
@@ -407,6 +407,19 @@ def warn(message):
     print(f"pr-watch poller: {message}", file=sys.stderr, flush=True)
 
 
+def retry_gate(retry_after, key, prev, now, force):
+    """(forced, seen, due-and-unspent) for one branch's slice of a shared retry_after."""
+    due = isinstance(retry_after, int) and retry_after <= now
+    retry = due and retry_after != prev.get(key)
+    forced = force or retry
+    return forced, ({} if forced else prev), retry
+
+
+def retry_spend(retry_after, retry, failed, prev, key):
+    """The value to store under `key`: spent (this retry_after) once, else kept."""
+    return retry_after if retry and not failed else prev.get(key)
+
+
 def tick_once(gh, watch, poller, now, force=False):
     events = []
     prs = poller.setdefault("prs", {})
@@ -431,16 +444,14 @@ def tick_once(gh, watch, poller, now, force=False):
         watch_pr = watch["prs"][str(n)]
         rollup = rollup_state(node)
         retry_after = watch_pr.get("retry_after")
-        retry = (isinstance(retry_after, int) and retry_after <= now
-                 and retry_after != prev.get("retried_at"))
-        forced = force or retry
+        forced, seen, retry_review = retry_gate(retry_after, "retried_at", prev, now, force)
+        ci_forced, ci_seen, retry_ci = retry_gate(retry_after, "ci_retried_at", prev, now, force)
         moved = (node["updatedAt"] != prev.get("updated_at")
                  or node["headRefOid"] != prev.get("last_head"))
         ci_moved = (node["headRefOid"] != prev.get("last_head")
                     or rollup != prev.get("last_rollup") or rollup in FAILED_ROLLUP)
-        if not (moved or ci_moved or forced):
+        if not (moved or ci_moved or forced or ci_forced):
             continue
-        seen = {} if forced else prev
         signature = prev.get("last_signature", "")
         ci_signature = prev.get("last_ci_signature", "")
         review_event = ci_event = None
@@ -455,9 +466,9 @@ def tick_once(gh, watch, poller, now, force=False):
             except GhError as exc:
                 warn(f"PR #{n}: {exc}")
                 review_failed = True
-        if watch_pr["role"] == "authored" and (ci_moved or forced):
+        if watch_pr["role"] == "authored" and (ci_moved or ci_forced):
             try:
-                ci_event, ci_signature = evaluate_ci(gh, watch, n, node, seen, ci_signature)
+                ci_event, ci_signature = evaluate_ci(gh, watch, n, node, ci_seen, ci_signature)
             except GhError as exc:
                 warn(f"PR #{n}: {exc}")
                 ci_failed = True
@@ -469,10 +480,14 @@ def tick_once(gh, watch, poller, now, force=False):
         entry = {"updated_at": node["updatedAt"], "last_head": node["headRefOid"],
                  "last_signature": signature, "last_rollup": rollup,
                  "last_ci_signature": ci_signature}
-        # A retry that hit an error is not spent, so the next tick forces it again.
-        retried_at = retry_after if retry and not ci_failed else prev.get("retried_at")
+        # Spent independently per branch, so a standing CI-only failure does not
+        # keep re-forcing the unchanged review branch too.
+        retried_at = retry_spend(retry_after, retry_review, review_failed, prev, "retried_at")
         if retried_at is not None:
             entry["retried_at"] = retried_at
+        ci_retried_at = retry_spend(retry_after, retry_ci, ci_failed, prev, "ci_retried_at")
+        if ci_retried_at is not None:
+            entry["ci_retried_at"] = ci_retried_at
         prs[str(n)] = entry
     queue = list(watch.get("push_queue", []))
     if not queue:
@@ -530,17 +545,9 @@ def monitor(gh, state_dir, sleep=time.sleep, clock=time.time, max_ticks=None):
         return gh(args)
 
     def save(poller):
-        nonlocal failed_saves
-        try:
-            write_json_atomic(state_dir / "watch-poller.json", poller)
-        except OSError as exc:
-            failed_saves += 1
-            if failed_saves == POLLER_ERROR_AFTER:
-                print(json.dumps({"kind": "poller-error", "error": str(exc)}), flush=True)
-            raise
-        failed_saves = 0
+        write_json_atomic(state_dir / "watch-poller.json", poller)
 
-    ticks = failed_saves = 0
+    ticks = failed_ticks = 0
     while max_ticks is None or ticks < max_ticks:
         ticks += 1
         beat()
@@ -564,8 +571,12 @@ def monitor(gh, state_dir, sleep=time.sleep, clock=time.time, max_ticks=None):
             save(poller)
             for event in events:
                 print(json.dumps(event), flush=True)
+            failed_ticks = 0
         except Exception as exc:  # a standing watch must outlive any single failure
             warn(f"{type(exc).__name__}: {exc}")
+            failed_ticks += 1
+            if failed_ticks == POLLER_ERROR_AFTER:
+                print(json.dumps({"kind": "poller-error", "error": str(exc)}), flush=True)
         if max_ticks is None or ticks < max_ticks:
             sleep(TICK_SECONDS)
             beat()
@@ -729,7 +740,7 @@ def base_conclusions(gh, repo_slug, ref):
     The workflow is "" for a check run outside GitHub Actions and for a commit status.
     """
     sha = gh(["api", f"repos/{repo_slug}/commits/{urllib.parse.quote(ref, safe='')}",
-              "--jq", ".sha"]).strip()
+              "-H", "Accept: application/vnd.github.sha"]).strip()
     commit = f"repos/{repo_slug}/commits/{urllib.parse.quote(sha, safe='')}"
     workflow_runs = gh(["api", f"repos/{repo_slug}/actions/runs?head_sha={urllib.parse.quote(sha, safe='')}",
                         "--paginate", "--jq", ".workflow_runs[] | [.check_suite_id, .name] | @tsv"])

@@ -25,7 +25,7 @@ written by the session.
 | `origin_worktree` | string (absolute path) | Where the session returns after every fix |
 | `serialize_pushes` | boolean | `false` only with `--parallel-pushes` |
 | `bot_allowlist` | array of logins | Logins always classified as bots, whatever type GitHub reports |
-| `ado_orgs` | array of strings | Azure DevOps organisations `POLL --ci-log` and `--ci-rerun` may send the PAT to, matched without case; a link to any other organisation, a missing key, or a value that is not a list of strings, fails without a request. The link's org must also match `^[A-Za-z0-9._-]+$` and its project `^[A-Za-z0-9._ %-]+$`. Written by `pr-watch/steps/01-discover.md` section 4: `["mindbody"]` for a new watch, and on resume only when the key is missing |
+| `ado_orgs` | array of strings | Azure DevOps organisations `POLL --ci-log` and `--ci-rerun` may send the PAT to, matched without case; a link to any other organisation, a missing key, or a value that is not a list of strings, fails without a request. The link's org must also match `^[A-Za-z0-9._-]+$` and its project `^[A-Za-z0-9._ %!&()@~-]+$`. Written by `pr-watch/steps/01-discover.md` section 4: `["mindbody"]` for a new watch, and on resume only when the key is missing |
 | `dry_run` | boolean | `true` for a `--dry-run` watch; a saved watch with `dry_run: true` is never resumed by a non-dry-run invocation (`pr-watch/steps/01-discover.md` section 2 deletes it and the poller and seen files, starting fresh) |
 | `prs` | object keyed by PR number | See below |
 | `push_queue` | array of PR numbers | Authored PRs with a local fix commit or a CI rerun waiting for other PRs' checks |
@@ -65,9 +65,12 @@ Per PR:
 longer in `watch.json` `prs` is dropped at the start of each tick), and
 `prs` keyed by PR number with `updated_at`, `last_head`,
 `last_signature`, `last_rollup` (the head commit's check rollup state),
-`last_ci_signature`, and `retried_at` (the `retry_after` value the
-poller last acted on, so each `retry_after` forces one re-emit; kept
-across later writes of the entry). Deleting the file makes the next tick
+`last_ci_signature`, `retried_at` (the `retry_after` value the poller
+last acted on for the pending/reviewed branch, so each `retry_after`
+forces one re-emit of it; kept across later writes of the entry), and,
+`authored` PRs only, `ci_retried_at` (the same, for the CI branch;
+spent independently, so a standing CI-only failure does not keep
+forcing the pending set too). Deleting the file makes the next tick
 a full reconciliation.
 
 ## `watch-heartbeat` — written only by `POLL --monitor`

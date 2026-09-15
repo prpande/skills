@@ -117,6 +117,12 @@ class AdoOrgTests(unittest.TestCase):
         ado = FakeAdo([record("Task", "failed", "Run tests", log_id=7)], logs={7: "boom"})
         self.assertIn("boom", poll.ci_log(FakeGh(), "o/r", link, ORGS, ado=ado))
 
+    def test_a_project_with_unescaped_url_safe_punctuation_is_accepted(self):
+        link = AZURE.replace("/19477e8d-94b2-4461-9dfc-2f54fa23767d/",
+                             "/Payments%20(Legacy)/")
+        ado = FakeAdo([record("Task", "failed", "Run tests", log_id=7)], logs={7: "boom"})
+        self.assertIn("boom", poll.ci_log(FakeGh(), "o/r", link, ORGS, ado=ado))
+
 
 class AdoRequestTests(unittest.TestCase):
     def test_header_is_basic_auth_of_the_pat(self):

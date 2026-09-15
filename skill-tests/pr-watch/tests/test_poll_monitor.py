@@ -270,10 +270,24 @@ class RetryAfterTests(unittest.TestCase):
         self.gh.fail_checks.add(1411)
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual([e["kind"] for e in self.tick(NOW + 600)], ["pending"])
-        self.assertNotIn("retried_at", self.poller["prs"]["1411"])
-        self.gh.fail_checks.clear()
-        self.assertEqual([e["kind"] for e in self.tick(NOW + 660)], ["pending", "ci-red"])
         self.assertEqual(self.poller["prs"]["1411"]["retried_at"], NOW + 600)
+        self.assertNotIn("ci_retried_at", self.poller["prs"]["1411"])
+        self.gh.fail_checks.clear()
+        self.assertEqual([e["kind"] for e in self.tick(NOW + 660)], ["ci-red"])
+        self.assertEqual(self.poller["prs"]["1411"]["ci_retried_at"], NOW + 600)
+
+    def test_a_persistent_checks_error_does_not_re_emit_the_unchanged_pending_set(self):
+        self.watch["prs"]["1411"]["retry_after"] = NOW + 600
+        self.gh.fail_checks.add(1411)
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual([e["kind"] for e in self.tick(NOW + 600)], ["pending"])
+        self.assertEqual(self.poller["prs"]["1411"]["retried_at"], NOW + 600)
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(self.tick(NOW + 660), [])
+            self.assertEqual(self.tick(NOW + 1200), [])
+        self.gh.fail_checks.clear()
+        self.assertEqual([e["kind"] for e in self.tick(NOW + 1800)], ["ci-red"])
+        self.assertEqual(self.poller["prs"]["1411"]["ci_retried_at"], NOW + 600)
 
     def test_a_thread_fetch_error_on_the_retry_tick_retries_again_on_the_next_tick(self):
         self.watch["prs"]["1411"]["retry_after"] = NOW + 600
@@ -401,6 +415,12 @@ class MonitorLoopTests(unittest.TestCase):
                          [{"kind": "poller-error", "error": "watch-poller.json is read-only"}] * 2)
         kinds = [e["kind"] for e in events]
         self.assertLess(kinds.index("pending"), kinds.index("poller-error", 1))
+
+    def test_five_failures_reading_watch_json_before_any_save_print_one_poller_error(self):
+        (self.state / "watch.json").write_text("{not json", encoding="utf-8")
+        events, err = self.run_monitor(5)
+        self.assertEqual([e["kind"] for e in events], ["poller-error"])
+        self.assertEqual(err.count("JSONDecodeError"), 5)
 
 
 class Clock:

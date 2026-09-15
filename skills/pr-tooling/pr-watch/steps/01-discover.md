@@ -74,13 +74,18 @@ Reviewed PRs:
   If the response headers contain `X-GitHub-SSO: partial-results`, stop:
   the token is not SSO-authorised for this org and results are silently
   incomplete. Tell the user to authorise it.
-- Each result joins the set as `reviewed` if, after step 5 writes
-  `watch.json`, `POLL --findings <N> --state-dir <STATE_DIR>` shows at
-  least one thread with `is_resolved: false`. Otherwise remove it from
-  `watch.json`: a PR whose threads are all resolved has nothing left to
-  watch. When that command exits non-zero, remove the PR from
-  `watch.json` too and list it among the excluded PRs in step 6 with the
-  command's stderr line.
+- Each result joins the set as `reviewed`. A result already in the
+  starting set from a resume is never removed by this bullet; only a
+  newly discovered one is checked. For a newly discovered one, after
+  step 5 writes `watch.json`, run `POLL --findings <N> --state-dir
+  <STATE_DIR>`. Remove it from `watch.json` when every thread is
+  `is_resolved: true` and every comment after the user's last comment on
+  it (the entries after the last `me` in `kinds`) has its id in
+  `escalated_ids` (empty for a new PR, so any such comment keeps it) —
+  03 D step 1's settle condition, meaning nothing is left to watch. When
+  that command exits non-zero, remove the PR from `watch.json` too and
+  list it among the excluded PRs in step 6 with the command's stderr
+  line.
 
 Explicit numbers from the invocation join the set. For each, read the
 live author with `gh pr view <N> --repo <SLUG> --json author,title,url,headRefName`;
@@ -148,8 +153,12 @@ Under the table list the excluded PRs and why: authored PRs with no
 worktree, and PRs removed in steps 3 and 5 with their stderr line.
 
 Ask with `AskUserQuestion`: "Watch these PRs?" with options "Watch them"
-and "Change the set". On "Change the set", take the changes in plain text,
-apply them to `watch.json`, and ask again.
+and "Change the set". On "Change the set", take the changes in plain
+text. Run each PR added through §3's explicit-number handling (the live
+role read and, for an authored PR with no worktree, creating one), §4's
+starting keys, and §5's baseline, removing it again and listing it among
+the excluded PRs with the command's stderr line when the baseline fails.
+Apply the changes to `watch.json` and ask again.
 
 ## 7. Initialise the library state for authored PRs
 

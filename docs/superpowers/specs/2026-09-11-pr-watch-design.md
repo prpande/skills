@@ -180,7 +180,8 @@ allowlist. Deterministic: no LLM in it.
      saved prints nothing; at the fifth failed save in a row the poller
      prints one `poller-error` event with the error, and the count starts
      again after a successful save. The session posts it in every PR
-     thread that has a root, since events may repeat until it is fixed.
+     thread that has a root, since no events are handled until it is
+     fixed.
 - `--report`: the three-section report on demand (`/pr-watch status`). The
   sections are ATTENTION, NEW, and STANDING. ATTENTION is every pending
   tail and top-level item on an `authored` PR, every `reviewed` PR whose
@@ -236,8 +237,9 @@ one stderr line `pr-watch: <error>` and exit 1; `--assert-author` keeps
 exit 3 for a refusal. While an event is handled, a session command that exits non-zero ends
 the event with nothing posted on GitHub, and the PR, of either role, gets
 `retry_after` (3.4) so the poller re-emits ten minutes later. The exceptions are the guard's refusal (section 9), which
-escalates, the CI log read, which retries once and then escalates, and a
-failed rerun, which escalates (4.6). During discovery a failing command
+escalates, the CI log read, which retries once and then escalates, or at
+once for a missing PAT or a refused link, and a failed rerun, which
+escalates (4.6). During discovery, a failing command in steps 3 and 5
 leaves its PR out of the watch, and the confirmation lists it with the
 error line.
 
@@ -675,7 +677,7 @@ there only as commits.
    collect it: that link fails before any request, as does every Azure
    link when `ado_orgs` is missing or is not a list of strings, and every
    link whose org is not `^[A-Za-z0-9._-]+$` or whose project is not
-   `^[A-Za-z0-9._ %-]+$`. Without the PAT, or for a refused
+   `^[A-Za-z0-9._ %!&()@~-]+$`. Without the PAT, or for a refused
    link, an Azure check is escalated at once with its link and
    the error line.
 6. Caps. At most three CI fix pushes per PR; the counter resets when a

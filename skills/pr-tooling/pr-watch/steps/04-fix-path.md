@@ -282,7 +282,12 @@ On a `tick` event, take the first PR `N` in `push_queue`:
    `POLL --ci-rerun "<link>" --repo <SLUG> --state-dir <STATE_DIR>` and
    post the "CI rerun" line (`pr-watch/steps/06-notify.md`) with its
    output; a non-zero exit escalates ("CI needs you") with its stderr
-   line instead, and the drain continues. Under `dry_run`, write that
+   line, then removes from `ci_reruns` and from `ci_handled`, using a
+   fresh `POLL --checks <N> --state-dir <STATE_DIR>`, every other check's
+   key whose `run_id` (GitHub Actions) or `build_id` (Azure Pipelines) is
+   this entry's, this entry's own keys excluded, so section 2 of
+   `pr-watch/steps/07-ci.md` handles them on their own next occurrence;
+   the drain continues. Under `dry_run`, write that
    exact `POLL --ci-rerun` command to
    `<scratchpad>/pr-watch-dry-run/<N>.md` instead of running it. Every
    other entry's head has been replaced: post "Rerun of <check> dropped:
