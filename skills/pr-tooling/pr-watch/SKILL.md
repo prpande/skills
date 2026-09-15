@@ -107,13 +107,29 @@ cycle, and the monitor is its cadence.
 
 Owned by `pr-watch`:
 
-- Commit, push, and resolve only on PRs whose live author is the acting
-  login. `POLL --assert-author <N> --repo <SLUG>` runs immediately before
-  every `git push`, before the first reply or resolve of each pass of
-  `pr-watch/steps/04-fix-path.md` section 7, and before the acknowledge
-  resolve in `pr-watch/steps/03-route-event.md` A.7; any non-zero exit
-  aborts that push, reply, or resolve. It reads no state file.
-- A `reviewed` PR never gets a worktree, a commit, or a push.
+- On an `authored` PR, commit, push, reply, and resolve only while its
+  live author is the acting login. `POLL --assert-author <N> --repo <SLUG>`
+  runs immediately before every `git push`, before the first reply or
+  resolve of each pass of `pr-watch/steps/04-fix-path.md` section 7, and
+  before the acknowledge resolve in `pr-watch/steps/03-route-event.md`
+  A.7; any non-zero exit aborts that push, reply, or resolve. It reads no
+  state file.
+- A `reviewed` PR never gets a worktree, a commit, or a push. Its
+  re-review replies on and resolves only threads the user opened
+  (`pr-watch/steps/05-rereview.md`); a reviewer resolving their own
+  thread is not author-guarded.
+- Any `POLL` command that exits non-zero ends handling of the current
+  event, with nothing posted on GitHub. For an `authored` PR set its
+  `retry_after` to now + 600 (epoch seconds) and write `watch.json`; the
+  poller re-emits. For a `reviewed` PR change nothing; its next change
+  re-emits. Print the command's stderr line to the conversation. A step
+  that names its own branch for a failing `POLL` command follows that
+  branch instead: `--assert-author` (any non-zero exit), `--ci-log` in
+  `pr-watch/steps/07-ci.md` rule 3, and `--ci-rerun` in
+  `pr-watch/steps/07-ci.md` section 3 step 3 and
+  `pr-watch/steps/04-fix-path.md` section 8 step 4. Outside an event
+  (step 01, `/pr-watch status`), stop and show the output and the stderr
+  line.
 - CI is acted on only for required checks on `authored` PRs
   (`pr-watch/steps/07-ci.md`). The Azure DevOps PAT is read only inside
   `POLL`; never print it or pass it anywhere.
@@ -125,8 +141,9 @@ Owned by `pr-watch`:
   `pr-watch/references/reply-voice.md`.
 - One automatic reply per human exchange; the next turn goes to the user.
 - At most three fix pushes per PR from bot-only feedback, and three from
-  CI. Either counter resets when a human comments or a head the watch did
-  not push arrives; at the cap the work is escalated instead.
+  CI. Both counters reset when a head the watch did not push arrives;
+  only `review_fix_pushes` also resets when a human comments. At the cap
+  the work is escalated instead.
 - Never post to Slack outside the configured channel. Never post to
   Notion.
 

@@ -17,6 +17,7 @@ state and refetches before acting.
 | `ci-red` | `pr-watch/steps/07-ci.md` |
 | `tick` | "Drain the push queue" in `pr-watch/steps/04-fix-path.md` |
 | `closed` | section C |
+| `settled` | section D |
 | `reconciled` | post "The daily check picked up work the event stream missed." in each listed PR's thread (`pr-watch/steps/06-notify.md`) |
 
 Write `watch.json` after every numbered action below that changes it.
@@ -47,7 +48,11 @@ Write `watch.json` after every numbered action below that changes it.
    - a thread whose tail holds an id in `escalated_ids` and no `me`
      comment after that id: drop the thread; it waits for the user;
    - a thread whose tail holds such an id with a `me` comment after it:
-     remove the thread's ids from `escalated_ids` and keep the thread,
+     drop from the tail every comment up to and including the last tail
+     comment whose id is in `escalated_ids`, so only the comments after
+     it (the user's
+     instruction and anything later) remain for Filter C and dispatch.
+     Remove the thread's ids from `escalated_ids` and keep the thread,
      with the user's comment as the instruction. This clears the
      one-round limit for this thread.
 6. Filter C. Run Filter C from `pr-loop-lib/steps/03-triage.md` (its regex list is in
@@ -85,3 +90,11 @@ Write `watch.json` after every numbered action below that changes it.
 
 Post the closing line in the PR's thread, then remove the PR from `prs`
 and from `push_queue`.
+
+## D. Settled reviewed PR
+
+Every thread the user opened on the PR is resolved and nobody has
+commented after the user on any of them. Post "All your findings on this
+PR are resolved; no longer watching it." in the PR's thread
+(`pr-watch/steps/06-notify.md`, "settled"), remove the PR from `prs`, and
+write `watch.json`.

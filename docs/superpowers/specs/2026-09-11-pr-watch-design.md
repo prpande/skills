@@ -21,8 +21,8 @@ Goals:
 - Re-review PRs the user has reviewed when their authors push, and post the
   verdicts on the user's own threads.
 - Never let anything reach a colleague that reads as automation.
-- Never commit to, push to, or resolve threads on a PR the user did not
-  author.
+- Never commit or push to a PR the user did not author, and never resolve
+  a thread there that the user did not open.
 - Survive context compaction and `--resume`. The watch set and watermarks
   live on disk, keyed to the repo, and step 01 re-arms from them when a
   session starts in a repo that has a saved watch.
@@ -180,10 +180,14 @@ allowlist. Deterministic: no LLM in it.
 - `--report`: the three-section report on demand (`/pr-watch status`). The
   sections are ATTENTION, NEW, and STANDING. ATTENTION is every pending
   tail and top-level item on an `authored` PR, every `reviewed` PR whose
-  head moved past the user's review, and every standing human
+  head moved past its last re-review, or past the user's review when none
+  has run (3.4), and every standing human
   `CHANGES_REQUESTED` review, recomputed from GitHub on every run. NEW is
   every id not in `watch-seen.json`, which `--report` then advances. When
   nothing is new and nothing needs attention the report is one line.
+  The report is printed before `watch-seen.json` is saved; a failed save
+  prints `pr-watch: could not save watch-seen.json: <error>` on stderr
+  and exits 1.
 - `--reseed`: accept every current id into `watch-seen.json` without
   reporting it.
 - `--baseline <pr>`: print the first-arm baseline (3.3) as JSON. Writes
@@ -192,8 +196,9 @@ allowlist. Deterministic: no LLM in it.
   top-level items as the library's `CommentRecord` objects, plus the PR's
   title, body, head, and base. Writes nothing.
 - `--findings <pr>`: for a `reviewed` PR, print the user's threads with
-  every comment, the old and new head, and the files changed between
-  them. Writes nothing.
+  every comment, the old and new head (the old head as in 3.4), the files
+  changed between them, and `compare_capped`, true when that list holds
+  300 or more files and so may be incomplete. Writes nothing.
 - `--checks <pr>`: print the head sha and every required check on it as
   JSON: name, state, bucket, link, workflow, `completedAt`, the platform
   read from the link (`github-actions` with `run_id` and `job_id` from
@@ -206,14 +211,24 @@ allowlist. Deterministic: no LLM in it.
   unique: on `Mindbody.BizApp.Bff` the same job name runs in two
   workflows, so a check is identified by workflow and name together.
   Writes nothing.
-- `--ci-log <link> --repo <o>/<r>`: print the log behind a check link,
-  cut to a window anchored on the first failure marker (4.6). Reads no
-  state file.
-- `--ci-rerun <link> --repo <o>/<r>`: rerun the failed jobs behind a
-  check link (4.6). Reads no state file.
+- `--ci-log <link> --repo <o>/<r> --state-dir <dir>`: print the log
+  behind a check link, cut to a window that keeps the first and the last
+  failure marker (4.6). Reads `ado_orgs` from `watch.json`.
+- `--ci-rerun <link> --repo <o>/<r> --state-dir <dir>`: rerun the failed
+  jobs behind a check link (4.6). Reads `ado_orgs` from `watch.json`.
 - `--assert-author <pr>`: the push guard (section 9). Reads the PR author
   and the acting login live from GitHub; exits 0 on a match and 3 on a
   mismatch. Reads no state file.
+
+Every mode except `--monitor` reports a failure (a `gh` error, an
+unreadable or corrupt state file, a refused Azure DevOps organisation) as
+one stderr line `pr-watch: <error>` and exit 1; `--assert-author` keeps
+exit 3 for a refusal. A session command that exits non-zero ends the
+event with nothing posted on GitHub: an `authored` PR gets `retry_after`
+(3.4) so the poller re-emits, a `reviewed` PR waits for its next change.
+The exceptions are the guard's refusal (section 9), which escalates, the
+CI log read, which retries once and then escalates, and a failed rerun,
+which escalates (4.6).
 
 ### 3.2 Classification
 
@@ -315,8 +330,11 @@ One JSON line per PR with actionable change:
 ```
 
 Plus `reply` (a non-`me` comment landed on one of the user's threads on a
-`reviewed` PR with no head move), `tick` (push queue non-empty), `reconciled`
-(daily sweep found something), and `closed` (PR merged or closed).
+`reviewed` PR with no head move), `settled` (every thread the user opened
+on a `reviewed` PR is resolved and nobody commented after the user on
+any of them; emitted once, and the session stops watching the PR),
+`tick` (push queue non-empty), `reconciled` (daily sweep found
+something), and `closed` (PR merged or closed).
 
 A `ci-red` signature is the head plus each red check's workflow, name,
 and `completedAt`, stored apart from the comment signature. A rerun that fails
@@ -327,11 +345,14 @@ A head move on an `authored` PR emits nothing. The gate in 4.1 compares
 the worktree against the live `headRefOid` at fix time, which covers both
 the watch's own pushes and anyone else's.
 
-For a `reviewed` PR the old head is the commit of the user's newest
-review on the PR (`reviews.nodes.commit.oid`), not whatever the poller saw
-last. That makes the trigger in 5.2 exact at first arm too, and it
-settles itself: a reply posted by re-review creates a review on the
-current head.
+For a `reviewed` PR the old head is the PR entry's `rereviewed_head`,
+the new head of the last completed re-review round, when it is set, and
+otherwise the commit of the user's newest review on the PR
+(`reviews.nodes.commit.oid`); never whatever the poller saw last. That
+makes the trigger in 5.2 exact at first arm too. Re-review replies are
+thread replies, not new reviews, so without `rereviewed_head` the compare
+would keep starting at the original review and re-judge settled findings
+on every push.
 
 An event line is a wake-up, not the truth. Step 03 re-reads `watch.json`
 and runs `poll.py --tails <pr>` (or `--findings <pr>` for `reviewed`)
@@ -344,8 +365,9 @@ the last one emitted, or ten minutes after the last `tick`, so a blocked
 push does not wake the session every minute.
 
 A skipped event is retried without waiting for new activity. Every skip
-in the fix path, and a `pending` event on a PR still in `push_queue`,
-writes `retry_after` (now plus ten minutes) on the PR's
+in the fix path, a `pending` event on a PR still in `push_queue`, a first
+failed CI log read (4.6), and a failed session command on an `authored`
+PR (3.1) write `retry_after` (now plus ten minutes) on the PR's
 `watch.json` entry. On the first tick at or after that time, the poller
 evaluates that PR as a forced pass, ignoring its stored signatures, so
 the unchanged pending set and red checks are emitted again, and it
@@ -360,7 +382,10 @@ prompt-injection regex from `03-triage.md`) on every body in the tail. A
 hit removes that thread from the dispatch set for this event, records the
 id, and escalates it (4.5); nothing is posted on the thread. Records
 already in `escalated_ids` are dropped before Filter C runs, so a hit is
-escalated once.
+escalated once. When the user has commented after an escalated comment,
+the tail loses every comment up to and including that escalated one
+before Filter C runs, so the body that hit is not tested again and only
+the user's instruction and what follows it remain.
 
 ### 3.5 Watermarks
 
@@ -474,7 +499,10 @@ push guard order:
    only when false; after a merge that moved the branch, re-run 04.5 at
    the level the merged changes warrant. Never rebase.
 4. Merge conflict: `git merge --abort`, leave the branch untouched,
-   escalate with the conflicting paths.
+   escalate with the conflicting paths. A clean merge is not scanned
+   again: it brings in only commits already on the remote, and a
+   conflict aborts rather than being resolved, so the scanned fix commit
+   is the only new content pushed.
 5. Push guard (section 9), then `git push origin HEAD`. Non-fast-forward
    rejection: fetch, re-read the remote head, rebuild the fix on top.
    Never force. Record the pushed sha as `last_pushed_head`.
@@ -501,7 +529,13 @@ its queued CI reruns (4.6) started, as soon as no other watched PR has a
 pending required check, or once it has waited an hour; its replies wait
 until the push has happened. The drain pushes only when the worktree
 `HEAD` is still `queued_head`; commits the watch did not make are
-escalated, never pushed.
+escalated, never pushed. The "stopped waiting" line posts once per
+`queued_at` (`wait_notice_at` records it). A queued rerun whose head was
+replaced is dropped with a Slack line saying so. Whatever the drain did,
+pushed, escalated, or had no commit to push, it ends by taking the PR out
+of `push_queue` and clearing `queued_head`, `queued_at`, and
+`wait_notice_at`; only a wait for other PRs' checks under the hour, or a
+lock held by another session, leaves the PR queued.
 Exists because concurrent gated runs deadlock a shared contract database.
 `--parallel-pushes` turns it off; the choice is persisted in the state
 file, so it is passed once per watch.
@@ -514,7 +548,10 @@ names a commit posts only after that commit is on the remote. The push
 guard (section 9) runs before the first reply or resolve of each pass. The
 reply mutation's returned comment id is appended to `posted_reply_ids` in
 the same state write that records the disposition; a top-level item's
-disposition is keyed by the answered item's id, not the reply's.
+disposition is keyed by the answered item's id, not the reply's. A reply
+mutation that fails or returns no id records nothing and escalates that
+return; a resolve that fails is noted in the PR's Slack thread. Either
+way the pass continues with the next return.
 
 Resolve the thread when any of:
 
@@ -538,14 +575,18 @@ Each `needs-human` item is one reply in the PR's Slack thread: who, file
 and line, the comment quoted in full inside a code block, what the code
 says, the stop reason, and the commit sha if a partial fix exists.
 Before relay the quoted body passes the library's `secret-scan-rules.md`
-with matches replaced by `[redacted]`, and Slack mention syntax
-(`<!channel>`, `<!here>`, `<@U…>`, `<#C…>`) has its leading `<` escaped so
-a code block cannot page anyone.
+with matches replaced by `[redacted]`; then every backtick becomes `ˋ`
+(U+02CB), so the body cannot close its code block, and every `<` becomes
+`‹`, so Slack mention syntax (`<!channel>`, `<!here>`, `<@U…>`, `<#C…>`)
+cannot page anyone. The lines of a CI log quoted in a "CI needs you"
+message, already redacted when the log was read, get the same two
+replacements.
 
 The user answers by replying on the GitHub thread. A `me` comment newer
 than the escalated comment clears the stop: the thread's id leaves
 `escalated_ids`, the one-round counter resets, and the fix path runs the
-tail again with the user's reply as the instruction. Without that, the
+part of the tail after the escalated comment, with the user's reply as
+the instruction. Without that, the
 user's answer would re-trip the same hard stop and go nowhere. Escalated
 ids are otherwise recorded so an item is sent once.
 
@@ -565,24 +606,38 @@ there only as commits.
      agent lost, package feed or network fetch, provisioning timeout)
      rather than a compiler error or a failed test, or the same check
      passed on an earlier attempt at this head. Rerun it once per check
-     per head.
-   - Lint or format: run the repo's formatter, then 4.3.
+     per head, and once per GitHub run or Azure build: every red check in
+     a run shares its one rerun.
+   - Lint or format: run the repo's formatter, then roll back every
+     changed or new file outside the PR's own changed-file list
+     (`git diff --name-only origin/<base>...HEAD`), then 4.3. A
+     formatter that rewrites the whole tree never reaches the commit
+     with files the PR did not touch.
    - Build or test: fetch the failed log, dispatch the fixer with it as
      the feedback body, then 4.2 and 4.3.
    - `other` platform, or none of the above: Slack escalation with the
      check name and link. SonarQube's quality gate reaches the fix path
      through its PR comment (3.2), not here.
-3. Logs, through `poll.py --ci-log <link>`. GitHub Actions:
+3. Logs, through `poll.py --ci-log <link> --repo <o>/<r> --state-dir <dir>`. GitHub Actions:
    `gh api repos/<o>/<r>/actions/jobs/<job_id>/logs`, the job's full
    timestamped log, available once that job has finished even while
    other jobs in the run still run. Azure Pipelines: the build
    timeline (`_apis/build/builds/<id>/timeline?api-version=7.1`) names
    the failed tasks and their log ids, then
-   `_apis/build/builds/<id>/logs/<log id>?api-version=7.1`. A window of
-   the log anchored on the first failure marker, through
-   `secret-scan-rules.md` and the untrusted wrapper (3.4), before any
-   agent reads them.
-4. Reruns, through `poll.py --ci-rerun <link>`. GitHub Actions:
+   `_apis/build/builds/<id>/logs/<log id>?api-version=7.1`; when no
+   record failed, the canceled records that finished (a job timeout)
+   stand in for them. A log longer than 2,000 lines is cut to two
+   1,000-line windows, one starting 250 lines before the first failure
+   marker and one ending 20 lines after the last, merged into one when
+   they overlap or touch and otherwise separated by one
+   `... <k> lines omitted ...` line; a log with no marker keeps its last
+   2,000 lines. The first marker is often an early, non-fatal error and
+   the last is usually the one that failed the job. The window goes
+   through `secret-scan-rules.md` and the untrusted wrapper (3.4) before
+   any agent reads it. A failed read is retried once, ten minutes later
+   through `retry_after`; a second failure for the same check occurrence
+   escalates.
+4. Reruns, through `poll.py --ci-rerun <link> --repo <o>/<r> --state-dir <dir>`. GitHub Actions:
    `gh run rerun <run_id> --failed`. Azure Pipelines:
    `PATCH _apis/build/builds/<id>/stages/<stage identifier>?api-version=7.1-preview.1`
    with `{"state": "retry", "forceRetryAllJobs": false}` for each failed
@@ -592,12 +647,18 @@ there only as commits.
    into the PR's `ci_rerun_queued`, the PR joins `push_queue`, and the
    drain in 4.3 performs whatever the PR has waiting, a push, its reruns,
    or both. A queued rerun whose head is no longer the PR head is
-   dropped.
+   dropped, and the PR's Slack thread says so. A rerun that fails is
+   escalated with its error.
 5. Azure credentials: the PAT in `AZURE_DEVOPS_EXT_PAT`, read only by
    `poll.py` to build the Authorization header inside its own process.
    It is never echoed, logged, written to a file, passed to a subagent,
-   or sent to Slack. Without it, an Azure check is escalated with its
-   link.
+   or sent to Slack. `poll.py` sends it only to an organisation listed in
+   `watch.json`'s `ado_orgs` (matched without case; step 01 seeds
+   `["mindbody"]`), so a check link naming another organisation cannot
+   collect it: that link fails before any request, as does every Azure
+   link when `ado_orgs` is missing. Without the PAT, or for a refused
+   organisation, an Azure check is escalated with its link after the
+   read's one retry.
 6. Caps. At most three CI fix pushes per PR; the counter resets when a
    `ci-red` arrives on a head the watch did not push. At the cap, every
    further red is escalated. Flake reruns do not count.
@@ -616,12 +677,19 @@ from conversation would not survive compaction.
 ### 5.2 Trigger and filter
 
 Trigger: a PR where the user has review threads and whose head has moved
-since the user's newest comment on those threads. Re-review only when the
-head moved and either the diff since the user's review touches a file one
+since the old head in 3.4. Re-review only when the
+head moved and either that diff touches a file one
 of the user's threads names, or the author replied on one of those
 threads. Otherwise record the head move and stay quiet. GitHub's compare
 lists at most 300 files, so a diff listing 300 or more counts as touching
-the user's findings.
+the user's findings, and re-review then judges every finding rather than
+only those whose file is in the list.
+
+The diff starts at the old head in 3.4: the last completed re-review
+round's new head, or the user's review commit before any round has run.
+Each completed round records its new head as `rereviewed_head`, so a
+later push is compared from there and findings already judged are not
+re-judged for changes they have already seen.
 
 ### 5.3 Judgement
 
@@ -638,10 +706,19 @@ other than where it was flagged.
 
 ### 5.4 Posting
 
-- One reply per finding on the user's own thread, through the voice guide.
-- Resolve only threads judged `addressed`.
+- One reply per finding on the user's own thread, through the voice
+  guide, only when its verdict differs from the one last posted there
+  (`finding_verdicts`).
+- Resolve only threads whose verdict this round is `addressed` and
+  differs from the last posted one. The push guard does not apply: the
+  user is resolving a thread they opened, on a PR they did not author.
+- A reply that fails records nothing and escalates; the round's new head
+  is recorded as `rereviewed_head` only when no reply failed.
 - Never approve, never request changes, never touch another reviewer's
   threads.
+- Once every thread the user opened is resolved with nobody commenting
+  after the user, the poller emits `settled`, the PR's Slack thread says
+  so, and the PR leaves the watch.
 - If the author disputes a verdict, escalate to the PR's Slack thread; no
   second automatic reply.
 
@@ -695,9 +772,10 @@ Channel `C0C15VC8Y0Z`, one thread per PR, all replies in-thread.
 - First event on a PR posts the root: number, title, link, one standing
   line. Its `ts` is recorded in the state file.
 - Every later notification is a reply in that thread: escalations, pushed
-  fixes (commit and what changed), a CI rerun, a posted re-review, a skipped PR
-  (dirty worktree), a merge conflict, a monitor re-arm, the closing line
-  on stop.
+  fixes (commit and what changed), a CI rerun, a dropped queued rerun, a
+  posted re-review, a skipped PR (dirty worktree), a merge conflict, a
+  failed resolve, a monitor re-arm, a reviewed PR leaving the watch once
+  settled, the closing line on stop.
 - Nothing posts when nothing happened.
 - The MCP cannot edit a posted message; the root stays as posted. The
   MCP appends a "Sent using @Claude" footer to agent messages; acceptable
@@ -723,6 +801,7 @@ primitive, and each has exactly one writer.
   "serialize_pushes": true,
   "bot_allowlist": ["sonarqube-mbodevme", "mindbody-ado-pipelines",
                     "mergewatch-playlist"],
+  "ado_orgs": ["mindbody"],
   "prs": {
     "1411": {
       "role": "authored",
@@ -736,12 +815,27 @@ primitive, and each has exactly one writer.
       "last_pushed_head": "...",
       "review_fix_pushes": 0,
       "ci_fix_pushes": 0,
-      "ci_reruns": ["<head sha>|<workflow>|<check name>"],
-      "ci_rerun_queued": [{"link": "<check link>", "head": "<head sha>"}],
+      "ci_reruns": ["<head sha>|<workflow>|<check name>", "run:<run id>"],
+      "ci_rerun_queued": [{"link": "<check link>", "head": "<head sha>",
+                           "name": "<check name>"}],
+      "ci_handled": ["<head sha>|<workflow>|<check name>|<completed at>"],
+      "ci_log_retries": [],
       "queued_head": null,
       "queued_at": null,
+      "wait_notice_at": null,
       "retry_after": null,
       "skip_reason": null
+    },
+    "1420": {
+      "role": "reviewed",
+      "branch": "...",
+      "slack_ts": null,
+      "posted_reply_ids": [...],
+      "settled_ids": [],
+      "escalated_ids": [],
+      "handled_top_level_ids": {},
+      "finding_verdicts": {"<thread id>": "addressed"},
+      "rereviewed_head": "..."
     }
   },
   "push_queue": [1413]
@@ -773,16 +867,19 @@ stopped one.
 `{"<pr>": [<every id seen>]}`. It is the NEW watermark and nothing else.
 
 The poller reads `watch.json` for the set, roles, allowlist, push queue,
-`posted_reply_ids`, `settled_ids`, and `handled_top_level_ids`, and never
-writes it. The session never writes either poller file. Resume merges
+`posted_reply_ids`, `settled_ids`, `handled_top_level_ids`,
+`retry_after`, `rereviewed_head`, and `ado_orgs`, and never writes it.
+Every key a PR entry uses is written when the PR joins the watch, with
+its starting value (empty, zero, or null); a resume adds any key an
+older entry lacks. The session never writes either poller file. Resume merges
 discovery into the existing `watch.json`; a PR no longer open is dropped
 from `watch.json` by the session on the `closed` event, and the poller
 stops polling it as soon as it is in `closed`. The poller drops a number
 from `closed` once it is no longer in `watch.json`.
 
-`queued_head` and `queued_at` describe a fix waiting in `push_queue`
-(4.3); `retry_after` and `skip_reason` belong to a skip (4.1, 3.4). All
-four are written by the session; `retried_at` is the poller's own record
+`queued_head`, `queued_at`, and `wait_notice_at` describe a fix waiting
+in `push_queue` (4.3); `retry_after` and `skip_reason` belong to a skip
+(4.1, 3.4). All five are written by the session; `retried_at` is the poller's own record
 of the last `retry_after` it acted on.
 
 Bridge to the library. Steps 04, 04.5, and the fixer and verifier prompts

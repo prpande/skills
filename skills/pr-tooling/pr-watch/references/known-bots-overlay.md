@@ -44,12 +44,15 @@ library's worked example skips the pointer because `pr-autopilot`
 re-reads every comment each cycle; `pr-watch` tracks top-level items by
 id and would never see the edited summary again. When
 either the summary or a pointer review surfaces, read the summary's
-current body:
+current body, with `<SLUG>` and `<N>` replaced by their recorded values:
 
-```bash
-gh api "repos/$REPO/issues/$PR/comments" --paginate \
-  --jq '[.[] | select(.body | startswith("<!-- mergewatch-review -->"))] | last | {id: .node_id, body}'
 ```
+gh api "repos/<SLUG>/issues/<N>/comments" --paginate --jq '.[] | select(.body | startswith("<!-- mergewatch-review -->")) | {id: .node_id, body}'
+```
+
+It prints one JSON object per matching comment, oldest first; take the
+last output line. `--jq` runs once per page, so a reducing filter such as
+`last` would pick from one page, not the whole list.
 
 - The score line reads `> 🟢 **5/5 — …**` when there is nothing to act on;
   classify the item Skip.

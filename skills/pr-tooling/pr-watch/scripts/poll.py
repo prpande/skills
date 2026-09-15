@@ -572,7 +572,7 @@ def attention_lines(watch, pr, watch_pr):
             login, kind = classify(item["author"], me, allow)
             lines.append(f"PR {n}  {surface} by {login} ({kind}): {snip(item['body'])}")
     else:
-        old = my_review_head(pr, me, allow)
+        old = review_start(watch, pr)
         if my_threads(pr, me, allow) and old and old != pr["headRefOid"]:
             lines.append(f"PR {n}  head moved past your review: "
                          f"{old[:9]}..{pr['headRefOid'][:9]}")

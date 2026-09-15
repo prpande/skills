@@ -6,7 +6,7 @@ import tempfile
 import unittest
 import unittest.mock
 
-from fakes import SELF, T0, T1, T2, FakeGh, comment, poll, pull, thread, watch
+from fakes import SELF, T0, T1, T2, FakeGh, comment, poll, pull, review, thread, watch
 
 
 class ReportTests(unittest.TestCase):
@@ -81,6 +81,24 @@ class ReportTests(unittest.TestCase):
         attention = text.split("NEW")[0]
         self.assertIn("[resolved]", attention)
         self.assertIn("reviewer-a (human)", attention)
+
+    def reviewed_report(self, head, rereviewed_head):
+        self.watch = watch({1420: "reviewed"})
+        self.watch["prs"]["1420"]["rereviewed_head"] = rereviewed_head
+        self.save_watch()
+        self.gh.prs[1420] = pull(1420, author_login="author-b", head=head,
+                                 threads=[thread("T9", [comment("m1", SELF, T0)])],
+                                 reviews=[review("r1", SELF, T0, oid="h1")])
+        _, text = self.run_report()
+        return text.split("NEW")[0]
+
+    def test_head_moved_past_your_review_starts_at_the_re_reviewed_head(self):
+        attention = self.reviewed_report(head="h3", rereviewed_head="h2")
+        self.assertIn("head moved past your review: h2..h3", attention)
+
+    def test_a_head_already_re_reviewed_needs_no_attention(self):
+        attention = self.reviewed_report(head="h2", rereviewed_head="h2")
+        self.assertNotIn("head moved past your review", attention)
 
     def test_quiet_report_is_one_line(self):
         self.watch["prs"]["1411"]["settled_ids"] = ["c1"]

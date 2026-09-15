@@ -25,6 +25,7 @@ written by the session.
 | `origin_worktree` | string (absolute path) | Where the session returns after every fix |
 | `serialize_pushes` | boolean | `false` only with `--parallel-pushes` |
 | `bot_allowlist` | array of logins | Logins always classified as bots, whatever type GitHub reports |
+| `ado_orgs` | array of strings | Azure DevOps organisations `POLL --ci-log` and `--ci-rerun` may send the PAT to, matched without case; a link to any other organisation, or a missing key, fails without a request. Written by `pr-watch/steps/01-discover.md` section 4: `["mindbody"]` for a new watch, and on resume only when the key is missing |
 | `dry_run` | boolean | `true` for a `--dry-run` watch; a saved watch with `dry_run: true` is never resumed by a non-dry-run invocation (`pr-watch/steps/01-discover.md` section 2 deletes it and the poller and seen files, starting fresh) |
 | `prs` | object keyed by PR number | See below |
 | `push_queue` | array of PR numbers | Authored PRs with a local fix commit or a CI rerun waiting for other PRs' checks |
@@ -42,16 +43,19 @@ Per PR:
 | `settled_ids` | array of node ids | Comments that close a tail with no reply: first-arm baseline, Filter B skips, acknowledged threads |
 | `escalated_ids` | array of node ids | Comments sent to Slack as needing the user |
 | `handled_top_level_ids` | object id to disposition | `baseline`, `skipped`, `escalated`, `parsed`, or the fixer verdict. Findings parsed out of an anchor comment are keyed `<anchor id>\|<path>\|<title>` (`pr-watch/references/known-bots-overlay.md`) |
-| `last_pushed_head` | string or null | Sha of the last push this watch made |
-| `ci_fix_pushes` | integer | CI fix commits since the last head the watch did not push, queued ones included; reset to 0 when a `ci-red` arrives on such a head; cap 3 |
-| `review_fix_pushes` | integer | Fix commits for dispatch sets with no human record since the last head the watch did not push, queued ones included; reset to 0 when a fix arrives on such a head or any dispatch set holds a human record; cap 3 |
-| `ci_reruns` | array of strings | `<head>\|<workflow>\|<check name>` for every check rerun once; a check is rerun at most once per head |
-| `ci_rerun_queued` | array of `{link, head}` | Reruns waiting for the push-queue drain; entries whose `head` is no longer the PR head are dropped there |
-| `ci_handled` | array of strings | `<head>\|<workflow>\|<check name>\|<completed_at>` for every check occurrence step 07 has already escalated, reported pre-existing, or dispatched a fixer for; a re-emit of the same occurrence is skipped |
+| `last_pushed_head` | string or null | `authored` only. Sha of the last push this watch made |
+| `ci_fix_pushes` | integer | `authored` only. CI fix commits since the last head the watch did not push, queued ones included; reset to 0 when a `ci-red` arrives on such a head; cap 3 |
+| `review_fix_pushes` | integer | `authored` only. Fix commits for dispatch sets with no human record since the last head the watch did not push, queued ones included; reset to 0 when a fix arrives on such a head or any dispatch set holds a human record; cap 3 |
+| `ci_reruns` | array of strings | `authored` only. For every rerun, the check's key `<head>\|<workflow>\|<check name>` and its run key `run:<run_id>` (GitHub Actions) or `build:<build_id>` (Azure Pipelines); written by `pr-watch/steps/07-ci.md` section 3 step 1. A check, and a run or build, is rerun at most once |
+| `ci_rerun_queued` | array of `{link, head, name}` | `authored` only. Reruns waiting for the push-queue drain, `name` being the check name; entries whose `head` is no longer the PR head are dropped there with a "CI rerun dropped" line |
+| `ci_handled` | array of strings | `authored` only. `<head>\|<workflow>\|<check name>\|<completed_at>` for every check occurrence step 07 has already escalated, reported pre-existing, or dispatched a fixer for; a re-emit of the same occurrence is skipped. Step 07 removes a key again after a first failed log read (rule 3) and after a gate or lock skip (sections 4 and 5) |
+| `ci_log_retries` | array of strings | `authored` only. `ci_handled` keys whose log read failed once; written by `pr-watch/steps/07-ci.md` rule 3. A second failed read of the same occurrence escalates |
 | `finding_verdicts` | object thread id to verdict | `reviewed` only; the last re-review verdict posted on that thread (`pr-watch/steps/05-rereview.md`); a judge return that matches it is not replied or resolved again |
-| `queued_head` | string or null | `authored` only. Sha of the fix commit queued behind another PR's checks; set by `pr-watch/steps/04-fix-path.md` section 6 step 1, cleared by the drain (section 8 step 5). The drain pushes only when the worktree `HEAD` still equals it |
+| `rereviewed_head` | string or null | `reviewed` only. The `new_head` of the last completed re-review round; written by `pr-watch/steps/05-rereview.md` step 8. The poller compares from it instead of the user's review commit when it is set |
+| `queued_head` | string or null | `authored` only. Sha of the fix commit queued behind another PR's checks; set by `pr-watch/steps/04-fix-path.md` section 6 step 1, cleared by the drain (section 8 step 5) on every path. The drain pushes only when the worktree `HEAD` still equals it |
 | `queued_at` | integer or null | `authored` only. Epoch seconds the PR joined `push_queue`; set by step 04 section 6 step 1, or by `pr-watch/steps/07-ci.md` section 3 step 2 when not already set; cleared by the drain. The drain stops waiting for other PRs' checks an hour after it |
-| `retry_after` | integer or null | `authored` only. Epoch seconds after which the poller re-emits the PR's pending set and red checks once; set to now + 600 by every skip in step 04 sections 1 and 2 and by `pr-watch/steps/03-route-event.md` A.1 |
+| `wait_notice_at` | integer or null | `authored` only. The `queued_at` value the "Stopped waiting" line was posted for, so it posts once per wait; set by step 04 section 8 step 1, cleared by section 8 step 5 |
+| `retry_after` | integer or null | `authored` only. Epoch seconds after which the poller re-emits the PR's pending set and red checks once; set to now + 600 by every skip in step 04 sections 1 and 2, by `pr-watch/steps/03-route-event.md` A.1, by a first failed log read in `pr-watch/steps/07-ci.md` rule 3, and by a failing `POLL` command that no step gives its own branch (`SKILL.md` hard rules) |
 | `skip_reason` | string or null | `authored` only. The reason of the last "Skipped" line posted; set by step 04's skips, cleared when step 04 section 2 acquires the lock. A skip with the same reason posts no line |
 
 ## `watch-poller.json` — written only by `POLL --monitor`

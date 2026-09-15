@@ -100,10 +100,22 @@ Write it per `pr-watch/references/watch-state-schema.md` "Writing", with
 `false` only under `--parallel-pushes`, `dry_run` from `--dry-run`,
 `origin_worktree` = `ORIGIN`, `bot_allowlist`
 `["sonarqube-mbodevme", "mindbody-ado-pipelines", "mergewatch-playlist"]`
-(kept as is on resume), and each new PR with empty id lists and objects
-(including `ci_reruns`, `ci_rerun_queued`, `ci_handled`, and
-`finding_verdicts`), and with `slack_ts`, `queued_head`, `queued_at`,
-`retry_after`, and `skip_reason` all `null`.
+(kept as is on resume), and `ado_orgs` `["mindbody"]`. On resume,
+`ado_orgs` is written as `["mindbody"]` only when the key is missing; any
+other existing value is kept as is.
+
+Each new PR starts with `posted_reply_ids`, `settled_ids`, and
+`escalated_ids` as `[]`, `handled_top_level_ids` as `{}`, and `slack_ts`
+as `null`. A new `authored` PR also starts with:
+
+- `ci_reruns`, `ci_rerun_queued`, `ci_handled`, and `ci_log_retries` as `[]`;
+- `ci_fix_pushes` and `review_fix_pushes` as `0`;
+- `last_pushed_head`, `queued_head`, `queued_at`, `wait_notice_at`,
+  `retry_after`, and `skip_reason` as `null`.
+
+A new `reviewed` PR also starts with `finding_verdicts` as `{}` and
+`rereviewed_head` as `null`. On resume, a PR entry missing any of these
+keys gets it with that starting value; every key it already has is kept.
 
 ## 5. Baseline new authored PRs
 

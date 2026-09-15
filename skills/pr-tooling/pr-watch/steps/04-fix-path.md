@@ -143,7 +143,10 @@ No returns in section 5: go to section 7, then section 9.
    the branch, run `pr-loop-lib/steps/04.5-local-verify.md` again. If
    that changes any file or fails, do not push: escalate ("needs you,
    no comment", reason "merge with origin/<base> breaks the build; fix
-   <sha7> is local and unpushed"), then section 9.
+   <sha7> is local and unpushed"), then section 9. The merge needs no
+   second secret scan: it brings in only commits already on the remote,
+   and a conflict aborts rather than being resolved, so the fixer's
+   commit, scanned in step 2, is the only new content pushed.
 
 ## 6. Push or queue
 
@@ -165,11 +168,14 @@ No returns in section 5: go to section 7, then section 9.
 3. `git push origin HEAD:refs/heads/<branch>`. On a non-fast-forward
    rejection: `git fetch origin`, `git merge --no-edit origin/<branch>`,
    then rerun `pr-loop-lib/steps/04.5-local-verify.md`, run the guard
-   again, and push once more the same way. Never force. A conflict, a
-   04.5 failure, a guard refusal, or a second rejection: escalate
-   ("needs you, no comment", with the conflicting paths for a conflict,
-   or otherwise the specific reason), then section 9; sections 6.4 to 7
-   do not run.
+   again, and push once more the same way. Never force. A conflict
+   (after `git merge --abort`), a 04.5 failure, a guard refusal, or a
+   second rejection: escalate ("needs you, no comment", with the
+   conflicting paths for a conflict, or otherwise the specific reason),
+   then section 9; sections 6.4 to 7 do not run. The merge needs no second secret scan: it brings in only
+   commits already on the remote, and a conflict aborts rather than being
+   resolved, so the fixer's commit, scanned in section 5 step 2, is the
+   only new content pushed.
 4. Record `last_pushed_head` (`git rev-parse HEAD`) in `watch.json`, and
    `last_push_sha` and `last_push_timestamp` in `pr-<N>.json`.
 5. Post "Pushed <sha7>: <what changed>." in the PR thread.
@@ -197,6 +203,10 @@ to section 9.
    Top-level reply: the PR's node id from
    `gh pr view <N> --repo <SLUG> --json id --jq .id`, then the same with
    `mutation($s: ID!, $b: String!) { addComment(input: {subjectId: $s, body: $b}) { commentEdge { node { id } } } }`.
+   A reply mutation that exits non-zero or returns no `id`: append
+   nothing, escalate ("needs you, no comment", reason "reply failed on
+   <thread path:line, or the top-level item's id>"), and continue with
+   the next return; steps 3 and 4 do not run for this one.
 3. Append the posted reply's returned `id` to `posted_reply_ids` and
    write `watch.json` at once. For a top-level item also set
    `handled_top_level_ids[<record id>]` to the verdict, where
@@ -211,7 +221,10 @@ to section 9.
    - a human opened or joined it, asked for something concrete (not a
      question), and the fix was verified.
    Leave it open when the human's latest comment asks a question or sets
-   a condition. Never resolve to tidy up.
+   a condition. Never resolve to tidy up. A resolve that exits non-zero
+   or does not return `isResolved: true`: post the "resolve failed" line
+   (`pr-watch/steps/06-notify.md`) in the PR thread and continue with the
+   next return.
 
 ## 8. Drain the push queue
 
@@ -220,10 +233,12 @@ On a `tick` event, take the first PR `N` in `push_queue`:
 1. The pending-check scan of section 6 step 1 (the command, with a
    non-zero exit counted as 0 and nothing posted) for every other
    authored PR. Any pending check on PR `M`: when now - `queued_at` is
-   below 3600, stop; the next `tick` retries. At 3600 or more, post "Stopped waiting for #<M>'s checks
-   after an hour." and continue with step 2. A stop here and a lock held
-   by another session (step 3.3) are the only exits that leave `N` in
-   `push_queue`; every other exit below, whatever section it happens
+   below 3600, stop; the next `tick` retries. At 3600 or more: when the
+   PR's `wait_notice_at` is not `queued_at`, post "Stopped waiting for
+   #<M>'s checks after an hour.", set `wait_notice_at` to `queued_at`, and
+   write `watch.json`; then continue with step 2. A stop here and a lock
+   held by another session (step 3.3) are the only exits that leave `N`
+   in `push_queue`; every other exit below, whatever section it happens
    in, ends at step 5.
 2. Read the live head:
    `gh pr view <N> --repo <SLUG> --json headRefOid --jq .headRefOid` →
@@ -255,19 +270,27 @@ On a `tick` event, take the first PR `N` in `push_queue`:
    send to section 9 comes back here: skip the rest of step 3, run steps
    4 and 5, then section 9. After step 3.6, likewise steps 4 and 5, then
    section 9.
-4. For each entry in the PR's `ci_rerun_queued` whose `head` is `<head>`,
-   run `POLL --ci-rerun "<link>" --repo <SLUG> --state-dir <STATE_DIR>` and post the "rerun"
-   line (`pr-watch/steps/06-notify.md`). Under `dry_run`, write that
+4. In the entries below, `<check>` is the entry's `name`, or its `link`
+   when it has no `name`. For each entry in the PR's `ci_rerun_queued`
+   whose `head` is `<head>`, run
+   `POLL --ci-rerun "<link>" --repo <SLUG> --state-dir <STATE_DIR>` and
+   post the "CI rerun" line (`pr-watch/steps/06-notify.md`) with its
+   output; a non-zero exit escalates ("CI needs you") with its stderr
+   line instead, and the drain continues. Under `dry_run`, write that
    exact `POLL --ci-rerun` command to
-   `<scratchpad>/pr-watch-dry-run/<N>.md` instead of running it. Drop the
-   other entries, their head has been replaced. Set `ci_rerun_queued` to
-   `[]`.
-5. When step 3 got past step 3.1 and did not reach a completed push (the
-   gate skipped, a merge conflicted, the push guard refused, or a second
-   push rejection was not resolved), escalate ("needs you, no comment",
-   reason "queued fix <sha7> could not be pushed", `<sha7>` from
-   `queued_head`). Then remove `N` from `push_queue`, set `queued_head`
-   and `queued_at` to null, and write `watch.json`.
+   `<scratchpad>/pr-watch-dry-run/<N>.md` instead of running it. Every
+   other entry's head has been replaced: post "Rerun of <check> dropped:
+   the PR head moved before it ran." (the "CI rerun dropped" line) for
+   each. Set `ci_rerun_queued` to `[]`.
+5. Finish the drain:
+   1. Only when step 3 got past step 3.1 and did not reach a completed
+      push (the gate skipped, a merge conflicted, the push guard refused,
+      or a second push rejection was not resolved): escalate ("needs you,
+      no comment", reason "queued fix <sha7> could not be pushed",
+      `<sha7>` from `queued_head`).
+   2. Always, whether step 3 pushed, escalated, or did not run: remove
+      `N` from `push_queue`, set `queued_head`, `queued_at`, and
+      `wait_notice_at` to null, and write `watch.json`.
 
 One drained PR per `tick`. Section 9 runs only when step 3.3 took the
 lock.

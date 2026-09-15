@@ -15,10 +15,13 @@ creates a worktree. Under `dry_run`, verdicts, replies, and resolutions go to
    `git -C <MAIN> show <sha>:<path>` and
    `git -C <MAIN> diff <old_head> <new_head> -- <path>`.
 3. Judge a finding only when its `path` is in `changed_files` (the diff
-   since the user's last comment touches it) or its `kinds` holds a
-   `human` entry after index 0 (the author replied on it); leave every
-   other finding for the next `head-moved` event. For each finding that
-   qualifies, dispatch one subagent with `model: "sonnet"`. Its prompt is
+   from the payload's `old_head`, the last re-reviewed head or else the
+   user's review commit, touches it), when `compare_capped` is `true`
+   (the file list may be incomplete, so every finding qualifies), or when
+   its `kinds` holds a `human` entry after index 0 (the author replied on
+   it); leave every other finding for the next `head-moved` event. For
+   each finding that qualifies, dispatch one subagent with
+   `model: "sonnet"`. Its prompt is
    the text of `pr-loop-lib/references/prompt-injection-defenses.md`
    followed by the judge prompt below, with a fresh nonce. The finding's
    comments, the author's replies, and the diff go in as untrusted
@@ -33,11 +36,23 @@ creates a worktree. Under `dry_run`, verdicts, replies, and resolutions go to
    `pr-watch/steps/04-fix-path.md` section 7. Record the reply id in this
    PR's `posted_reply_ids`, set `finding_verdicts[<thread_id>]` to the new
    verdict, and write `watch.json`. A finding whose verdict matches the
-   recorded one gets neither a reply nor a resolve.
-6. Resolve only threads judged `addressed` this round.
+   recorded one gets neither a reply nor a resolve. A reply that exits
+   non-zero or returns no `id`: record nothing for that finding, escalate
+   ("needs you, no comment", reason "reply failed on <path>:<line>"), and
+   go on to the next finding.
+6. Resolve a thread only when step 5 replied on it this round with the
+   verdict `addressed`, which differs from the verdict recorded before
+   this round. Use the `resolveReviewThread` mutation in
+   `pr-watch/steps/04-fix-path.md` section 7 step 4. A resolve that fails
+   posts the "resolve failed" line and goes on. This resolve is not
+   author-guarded: the user opened the thread.
 7. Post the summary in the PR's Slack thread
    (`pr-watch/steps/06-notify.md`, "re-review").
-8. Never approve, never request changes, never touch a thread another
+8. When every judged finding has been replied to, escalated, or left
+   because its verdict was unchanged (no reply failed), set the PR's
+   `rereviewed_head` to the event's `new_head` and write `watch.json`.
+   The next compare starts there.
+9. Never approve, never request changes, never touch a thread another
    reviewer opened. If the author later disputes a verdict, step 03
    section B escalates it; there is no second automatic reply.
 
