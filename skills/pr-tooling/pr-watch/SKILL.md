@@ -118,8 +118,8 @@ Owned by `pr-watch`:
   re-review replies on and resolves only threads the user opened
   (`pr-watch/steps/05-rereview.md`); a reviewer resolving their own
   thread is not author-guarded.
-- Any `POLL` command that exits non-zero ends handling of the current
-  event, with nothing posted on GitHub. For an `authored` PR set its
+- While an event is handled, any `POLL` command that exits non-zero ends
+  handling of that event, with nothing posted on GitHub. For an `authored` PR set its
   `retry_after` to now + 600 (epoch seconds) and write `watch.json`; the
   poller re-emits. For a `reviewed` PR change nothing; its next change
   re-emits. Print the command's stderr line to the conversation. A step
@@ -127,9 +127,10 @@ Owned by `pr-watch`:
   branch instead: `--assert-author` (any non-zero exit), `--ci-log` in
   `pr-watch/steps/07-ci.md` rule 3, and `--ci-rerun` in
   `pr-watch/steps/07-ci.md` section 3 step 3 and
-  `pr-watch/steps/04-fix-path.md` section 8 step 4. Outside an event
-  (step 01, `/pr-watch status`), stop and show the output and the stderr
-  line.
+  `pr-watch/steps/04-fix-path.md` section 8 step 4. Step 01 is not event
+  handling and follows its own branches for each `POLL` command
+  (`pr-watch/steps/01-discover.md` sections 3, 5, and 6). `/pr-watch
+  status` stops and shows the output and the stderr line.
 - CI is acted on only for required checks on `authored` PRs
   (`pr-watch/steps/07-ci.md`). The Azure DevOps PAT is read only inside
   `POLL`; never print it or pass it anywhere.

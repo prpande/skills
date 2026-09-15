@@ -52,8 +52,8 @@ With no PR numbers, step 01 discovers the set within the current repo:
 
 - open PRs authored by `self_login` whose head branch is checked out in a
   worktree registered by `git worktree list` for this repo, and
-- open PRs in this repo on which `self_login` has posted at least one
-  review-thread comment, resolved or not.
+- open PRs in this repo where at least one review thread `self_login`
+  opened is still unresolved.
 
 Discovery uses `gh pr list` scoped to the repo, never org-wide search, so
 SAML partial results cannot silently drop a PR. The proposed set is shown
@@ -223,12 +223,14 @@ allowlist. Deterministic: no LLM in it.
 Every mode except `--monitor` reports a failure (a `gh` error, an
 unreadable or corrupt state file, a refused Azure DevOps organisation) as
 one stderr line `pr-watch: <error>` and exit 1; `--assert-author` keeps
-exit 3 for a refusal. A session command that exits non-zero ends the
-event with nothing posted on GitHub: an `authored` PR gets `retry_after`
-(3.4) so the poller re-emits, a `reviewed` PR waits for its next change.
-The exceptions are the guard's refusal (section 9), which escalates, the
-CI log read, which retries once and then escalates, and a failed rerun,
-which escalates (4.6).
+exit 3 for a refusal. While an event is handled, a session command that exits non-zero ends
+the event with nothing posted on GitHub: an `authored` PR gets
+`retry_after` (3.4) so the poller re-emits, a `reviewed` PR waits for its
+next change. The exceptions are the guard's refusal (section 9), which
+escalates, the CI log read, which retries once and then escalates, and a
+failed rerun, which escalates (4.6). During discovery a failing command
+leaves its PR out of the watch, and the confirmation lists it with the
+error line.
 
 ### 3.2 Classification
 
@@ -606,8 +608,9 @@ there only as commits.
      agent lost, package feed or network fetch, provisioning timeout)
      rather than a compiler error or a failed test, or the same check
      passed on an earlier attempt at this head. Rerun it once per check
-     per head, and once per GitHub run or Azure build: every red check in
-     a run shares its one rerun.
+     per head. A rerun covers every red check with the same GitHub run
+     or Azure build: each of them is recorded as rerun and handled, with
+     nothing posted, so none gets a second rerun or reaches the fixer.
    - Lint or format: run the repo's formatter, then roll back every
      changed or new file outside the PR's own changed-file list
      (`git diff --name-only origin/<base>...HEAD`), then 4.3. A
@@ -636,7 +639,8 @@ there only as commits.
    through `secret-scan-rules.md` and the untrusted wrapper (3.4) before
    any agent reads it. A failed read is retried once, ten minutes later
    through `retry_after`; a second failure for the same check occurrence
-   escalates.
+   escalates with `poll.py`'s error line. A missing PAT or a refused
+   organisation escalates at once, since a retry cannot fix either.
 4. Reruns, through `poll.py --ci-rerun <link> --repo <o>/<r> --state-dir <dir>`. GitHub Actions:
    `gh run rerun <run_id> --failed`. Azure Pipelines:
    `PATCH _apis/build/builds/<id>/stages/<stage identifier>?api-version=7.1-preview.1`
@@ -657,8 +661,8 @@ there only as commits.
    `["mindbody"]`), so a check link naming another organisation cannot
    collect it: that link fails before any request, as does every Azure
    link when `ado_orgs` is missing. Without the PAT, or for a refused
-   organisation, an Azure check is escalated with its link after the
-   read's one retry.
+   organisation, an Azure check is escalated at once with its link and
+   the error line.
 6. Caps. At most three CI fix pushes per PR; the counter resets when a
    `ci-red` arrives on a head the watch did not push. At the cap, every
    further red is escalated. Flake reruns do not count.
@@ -717,8 +721,11 @@ other than where it was flagged.
 - Never approve, never request changes, never touch another reviewer's
   threads.
 - Once every thread the user opened is resolved with nobody commenting
-  after the user, the poller emits `settled`, the PR's Slack thread says
-  so, and the PR leaves the watch.
+  after the user, the poller emits `settled`. The session refetches the
+  findings, and when they still say so the PR's Slack thread says so and
+  the PR leaves the watch. Discovery adds a reviewed PR only while at
+  least one of the user's threads is unresolved, so a settled PR is not
+  re-added.
 - If the author disputes a verdict, escalate to the PR's Slack thread; no
   second automatic reply.
 
@@ -815,7 +822,7 @@ primitive, and each has exactly one writer.
       "last_pushed_head": "...",
       "review_fix_pushes": 0,
       "ci_fix_pushes": 0,
-      "ci_reruns": ["<head sha>|<workflow>|<check name>", "run:<run id>"],
+      "ci_reruns": ["<head sha>|<workflow>|<check name>"],
       "ci_rerun_queued": [{"link": "<check link>", "head": "<head sha>",
                            "name": "<check name>"}],
       "ci_handled": ["<head sha>|<workflow>|<check name>|<completed at>"],

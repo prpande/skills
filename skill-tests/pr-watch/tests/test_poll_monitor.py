@@ -249,6 +249,26 @@ class RetryAfterTests(unittest.TestCase):
         self.assertEqual(self.poller["prs"]["1411"]["retried_at"], NOW + 600)
         self.assertEqual(self.tick(NOW + 720), [])
 
+    def test_a_checks_error_on_the_retry_tick_retries_again_on_the_next_tick(self):
+        self.watch["prs"]["1411"]["retry_after"] = NOW + 600
+        self.gh.fail_checks.add(1411)
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual([e["kind"] for e in self.tick(NOW + 600)], ["pending"])
+        self.assertNotIn("retried_at", self.poller["prs"]["1411"])
+        self.gh.fail_checks.clear()
+        self.assertEqual([e["kind"] for e in self.tick(NOW + 660)], ["pending", "ci-red"])
+        self.assertEqual(self.poller["prs"]["1411"]["retried_at"], NOW + 600)
+
+    def test_a_thread_fetch_error_on_the_retry_tick_retries_again_on_the_next_tick(self):
+        self.watch["prs"]["1411"]["retry_after"] = NOW + 600
+        self.gh.fail = {1411}
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual([e["kind"] for e in self.tick(NOW + 600)], ["ci-red"])
+        self.assertNotIn("retried_at", self.poller["prs"]["1411"])
+        self.gh.fail = set()
+        self.assertEqual([e["kind"] for e in self.tick(NOW + 660)], ["pending", "ci-red"])
+        self.assertEqual(self.poller["prs"]["1411"]["retried_at"], NOW + 600)
+
     def test_a_retry_after_that_is_not_an_integer_is_ignored(self):
         self.watch["prs"]["1411"]["retry_after"] = str(NOW + 600)
         self.assertEqual(self.tick(NOW + 600), [])

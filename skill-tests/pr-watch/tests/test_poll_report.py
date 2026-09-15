@@ -135,6 +135,15 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(err.getvalue(),
                          "pr-watch: could not save watch-seen.json: watch-seen.json is open\n")
 
+    def test_a_failed_reseed_save_does_not_claim_the_ids_were_accepted(self):
+        self.gh.prs[1411] = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
+        with unittest.mock.patch.object(poll, "write_json_atomic",
+                                        side_effect=PermissionError("watch-seen.json is open")), \
+                contextlib.redirect_stderr(io.StringIO()):
+            code, text = self.run_report(reseed=True)
+        self.assertEqual(code, 1)
+        self.assertNotIn("reseeded", text)
+
     def test_a_failed_pr_does_not_hold_back_the_others(self):
         self.watch = watch({1411: "authored", 1413: "authored"})
         self.save_watch()

@@ -108,11 +108,11 @@ class FakeGh:
             variables = dict(pairs[i + 1].split("=", 1) for i in range(0, len(pairs), 2))
             if "node(id:" in query:
                 page = self.thread_comment_pages[(variables["id"], variables["after"])]
-                return json.dumps({"data": {"node": {"comments": page}}})
+                return json.dumps({"data": {"node": page and {"comments": page}}})
             if "before: $before" in query:
                 field = "comments" if "comments(last" in query else "reviews"
                 page = self.earlier[(int(variables["n"]), field, variables["before"])]
-                return json.dumps({"data": {"repository": {"pullRequest": {field: page}}}})
+                return json.dumps({"data": {"repository": {"pullRequest": page and {field: page}}}})
             if "$n" in query:
                 n = int(variables["n"])
                 if n in self.fail:

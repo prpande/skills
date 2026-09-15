@@ -115,6 +115,25 @@ class FetchTests(unittest.TestCase):
         self.assertEqual([r["id"] for r in payload["top_level"]], ["i1", "i2", "i3", "r2", "r3"])
         self.assertNotIn("truncated", payload)
 
+    def test_a_thread_deleted_between_comment_pages_is_a_gh_error(self):
+        gh = FakeGh()
+        pr = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
+        pr["reviewThreads"]["nodes"][0]["comments"]["pageInfo"] = {"hasNextPage": True,
+                                                                    "endCursor": "k2"}
+        gh.prs[1411] = pr
+        gh.thread_comment_pages[("T1", "k2")] = None
+        with self.assertRaises(poll.GhError):
+            poll.fetch_pr(gh, "o", "r", 1411)
+
+    def test_a_pr_gone_between_earlier_pages_is_a_gh_error(self):
+        gh = FakeGh()
+        pr = pull(comments=[comment("i2", "reviewer-a", T1)])
+        pr["comments"]["pageInfo"] = {"hasPreviousPage": True, "startCursor": "i2"}
+        gh.prs[1411] = pr
+        gh.earlier[(1411, "comments", "i2")] = None
+        with self.assertRaises(poll.GhError):
+            poll.fetch_pr(gh, "o", "r", 1411)
+
     def test_missing_pr_raises(self):
         gh = FakeGh()
         gh.prs[1411] = None

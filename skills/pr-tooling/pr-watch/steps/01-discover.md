@@ -76,7 +76,11 @@ Reviewed PRs:
   incomplete. Tell the user to authorise it.
 - Each result joins the set as `reviewed` if, after step 5 writes
   `watch.json`, `POLL --findings <N> --state-dir <STATE_DIR>` shows at
-  least one thread. Otherwise drop it.
+  least one thread with `is_resolved: false`. Otherwise remove it from
+  `watch.json`: a PR whose threads are all resolved has nothing left to
+  watch. When that command exits non-zero, remove the PR from
+  `watch.json` too and list it among the excluded PRs in step 6 with the
+  command's stderr line.
 
 Explicit numbers from the invocation join the set. For each, read the
 live author with `gh pr view <N> --repo <SLUG> --json author,title,url,headRefName`;
@@ -114,14 +118,19 @@ as `null`. A new `authored` PR also starts with:
   `retry_after`, and `skip_reason` as `null`.
 
 A new `reviewed` PR also starts with `finding_verdicts` as `{}` and
-`rereviewed_head` as `null`. On resume, a PR entry missing any of these
-keys gets it with that starting value; every key it already has is kept.
+`rereviewed_head` as `null`. On resume, a PR entry missing any key this
+section lists for its role gets it with that starting value; every key
+it already has is kept.
 
 ## 5. Baseline new authored PRs
 
 For every `authored` PR added in this run (not resumed ones):
 `POLL --baseline <N> --state-dir <STATE_DIR>`. Merge its `settled_ids` and
 `handled_top_level_ids` into the PR's entry and rewrite `watch.json`.
+When it exits non-zero, remove the PR from `watch.json`, list it among
+the excluded PRs in step 6 with the command's stderr line, and go on
+with the other PRs. A PR left in without its baseline would be resumed
+next run with every old thread pending.
 
 ## 6. Confirm
 
@@ -133,7 +142,10 @@ For each PR run `POLL --tails <N>` (authored) or `POLL --findings <N>`
 
 For authored PRs the last column is the pending thread and top-level
 counts. For reviewed PRs it is "head moved past your review" or "waiting
-for a push". Under the table list the excluded authored PRs and why.
+for a push". When the command exits non-zero, the last column is its
+stderr line and the PR stays in the set; the first event refetches it.
+Under the table list the excluded PRs and why: authored PRs with no
+worktree, and PRs removed in steps 3 and 5 with their stderr line.
 
 Ask with `AskUserQuestion`: "Watch these PRs?" with options "Watch them"
 and "Change the set". On "Change the set", take the changes in plain text,

@@ -203,14 +203,20 @@ def graphql(gh, query, variables, allow_partial=False):
     return data["data"]
 
 
+def found(value, what):
+    if value is None:
+        raise GhError(f"{what} not found")
+    return value
+
+
 def fetch_pr(gh, owner, repo, number):
     query = (SCRIPT_DIR / "threads.graphql").read_text(encoding="utf-8")
+    missing = f"PR #{number} in {owner}/{repo}"
     pr, threads, after = None, [], None
     while True:
-        page = graphql(gh, query, {"owner": owner, "repo": repo, "n": number,
-                                   "after": after})["repository"]["pullRequest"]
-        if page is None:
-            raise GhError(f"PR #{number} not found in {owner}/{repo}")
+        page = found((graphql(gh, query, {"owner": owner, "repo": repo, "n": number,
+                                          "after": after})["repository"] or {})
+                     .get("pullRequest"), missing)
         pr = pr or page
         threads += page["reviewThreads"]["nodes"]
         info = page["reviewThreads"]["pageInfo"]
@@ -220,8 +226,9 @@ def fetch_pr(gh, owner, repo, number):
     for t in threads:
         comments = t["comments"]
         while comments["pageInfo"]["hasNextPage"]:
-            page = graphql(gh, THREAD_COMMENTS_QUERY, {
-                "id": t["id"], "after": comments["pageInfo"]["endCursor"]})["node"]["comments"]
+            page = found(graphql(gh, THREAD_COMMENTS_QUERY, {
+                "id": t["id"], "after": comments["pageInfo"]["endCursor"]})["node"],
+                f"review thread {t['id']}")["comments"]
             comments = {"pageInfo": page["pageInfo"], "nodes": comments["nodes"] + page["nodes"]}
         t["comments"] = comments
     pr = dict(pr, reviewThreads={"pageInfo": {"hasNextPage": False, "endCursor": None},
@@ -229,9 +236,10 @@ def fetch_pr(gh, owner, repo, number):
     for field, query in EARLIER_QUERY.items():
         items = pr[field]
         while items["pageInfo"]["hasPreviousPage"]:
-            page = graphql(gh, query, {
+            page = found((graphql(gh, query, {
                 "owner": owner, "repo": repo, "n": number,
-                "before": items["pageInfo"]["startCursor"]})["repository"]["pullRequest"][field]
+                "before": items["pageInfo"]["startCursor"]})["repository"] or {})
+                .get("pullRequest"), missing)[field]
             items = {"pageInfo": page["pageInfo"], "nodes": page["nodes"] + items["nodes"]}
         pr[field] = items
     return pr
@@ -431,7 +439,7 @@ def tick_once(gh, watch, poller, now, force=False):
         signature = prev.get("last_signature", "")
         ci_signature = prev.get("last_ci_signature", "")
         review_event = ci_event = None
-        review_failed = False
+        review_failed = ci_failed = False
         if moved or forced:
             try:
                 pr = fetch_pr(gh, watch["owner"], watch["repo"], n)
@@ -447,6 +455,7 @@ def tick_once(gh, watch, poller, now, force=False):
                 ci_event, ci_signature = evaluate_ci(gh, watch, n, node, seen, ci_signature)
             except GhError as exc:
                 warn(f"PR #{n}: {exc}")
+                ci_failed = True
         events += [e for e in (review_event, ci_event) if e]
         if review_failed:
             if ci_event:
@@ -455,7 +464,8 @@ def tick_once(gh, watch, poller, now, force=False):
         entry = {"updated_at": node["updatedAt"], "last_head": node["headRefOid"],
                  "last_signature": signature, "last_rollup": rollup,
                  "last_ci_signature": ci_signature}
-        retried_at = retry_after if retry else prev.get("retried_at")
+        # A retry that hit an error is not spent, so the next tick forces it again.
+        retried_at = retry_after if retry and not ci_failed else prev.get("retried_at")
         if retried_at is not None:
             entry["retried_at"] = retried_at
         prs[str(n)] = entry
@@ -643,11 +653,9 @@ def report(gh, state_dir, reseed=False):
         fresh[key] = all_ids(pr)
     for line in errors:
         print(f"ERROR  {line}")
-    if reseed:
-        print(f"pr-watch: reseeded; {sum(len(v) for v in fresh.values())} ids accepted as seen")
-    elif not (errors or attention or new) and not first_run:
+    if not reseed and not (errors or attention or new or first_run):
         print(f"pr-watch: nothing new across {len(standing)} PRs; nothing needs attention")
-    else:
+    elif not reseed:
         print_sections(attention, new, standing, first_run)
     if fresh != seen:
         try:
@@ -655,6 +663,8 @@ def report(gh, state_dir, reseed=False):
         except OSError as exc:
             print(f"pr-watch: could not save watch-seen.json: {exc}", file=sys.stderr)
             return 1
+    if reseed:
+        print(f"pr-watch: reseeded; {sum(len(v) for v in fresh.values())} ids accepted as seen")
     return 1 if errors else 0
 
 

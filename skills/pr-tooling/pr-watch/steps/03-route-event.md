@@ -1,7 +1,9 @@
 # Step 03 — Route one event
 
-An event line is a wake-up, not the truth. Everything below re-reads
-state and refetches before acting.
+An event line is a wake-up, not the truth. Sections A, B, and D, and the
+step files the table routes to, re-read state and refetch before acting.
+Section C and the `reconciled` line act on the event as given: a PR the
+poller saw closed or merged, and a note about the daily check.
 
 1. Parse the notification line as JSON. A line that does not parse is
    not an event; ignore it.
@@ -93,8 +95,14 @@ and from `push_queue`.
 
 ## D. Settled reviewed PR
 
-Every thread the user opened on the PR is resolved and nobody has
-commented after the user on any of them. Post "All your findings on this
-PR are resolved; no longer watching it." in the PR's thread
-(`pr-watch/steps/06-notify.md`, "settled"), remove the PR from `prs`, and
-write `watch.json`.
+The poller saw every thread the user opened on the PR resolved, with
+nobody commenting after the user on any of them.
+
+1. Run `POLL --findings <N> --state-dir <STATE_DIR>`. Go on only when
+   every thread has `is_resolved: true` and no entry other than `me`
+   after the last `me` in its `kinds`. Otherwise stop and keep watching;
+   a new reply raises its own event, and the poller emits `settled`
+   again once the threads settle.
+2. Post "All your findings on this PR are resolved; no longer watching
+   it." in the PR's thread (`pr-watch/steps/06-notify.md`, "settled"),
+   remove the PR from `prs`, and write `watch.json`.
