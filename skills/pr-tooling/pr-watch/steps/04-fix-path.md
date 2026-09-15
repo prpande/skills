@@ -261,9 +261,11 @@ On a `tick` event, take the first PR `N` in `push_queue`:
    4. Run section 1's branch checks and its `status --porcelain` check
       before either branch below. Then
       `git -C <worktree> merge-base --is-ancestor <head> HEAD`. On
-      success (the remote is simply behind the queued commit): section
-      1's gate, accepting that `HEAD` is ahead of the PR head by the
-      queued commit; a skip there posts no "Skipped" line, step 5
+      success (the remote is simply behind the queued commit): go
+      straight to step 3.5. Section 1's `HEAD`-versus-`head` check does
+      not run here: step 3.1 already proved `HEAD` is `queued_head`, so
+      `HEAD` being ahead of `<head>` is the expected state. A branch or
+      `status --porcelain` failure above posts no "Skipped" line; step 5
       escalates instead. On failure (the remote moved to a commit the
       queued fix does not contain): section 6.3's merge-and-reverify
       with `origin/<branch>`.
