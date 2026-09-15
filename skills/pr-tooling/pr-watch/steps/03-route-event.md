@@ -65,7 +65,8 @@ Write `watch.json` after every numbered action below that changes it.
      refused"), and stop. Otherwise resolve the thread with the
      `resolveReviewThread` mutation (see `pr-watch/steps/04-fix-path.md`
      section 7), append the tail's last id to `settled_ids`, post
-     nothing;
+     nothing. Under `dry_run`, write that mutation to
+     `<scratchpad>/pr-watch-dry-run/<N>.md` instead of running it;
    - anything else: escalate with reason "reply to our reply", add the
      tail's ids to `escalated_ids`, post nothing on GitHub.
 8. What remains is the dispatch set. Empty: stop. Otherwise go to

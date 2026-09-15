@@ -69,7 +69,8 @@ back in `origin_worktree`.
 ## State
 
 `pr-watch/references/watch-state-schema.md` defines `watch.json`,
-`watch-poller.json`, and `watch-seen.json`, and who writes each. The
+`watch-poller.json`, `watch-heartbeat`, and `watch-seen.json`, and who
+writes each. The
 library's `pr-<N>.json`, `pr-<N>.lock`, and `pr-<N>.log` live in the PR
 worktree's own `.pr-autopilot/`, where `pr-followup` would put them, so
 the two skills share one lock.
@@ -93,7 +94,8 @@ Adapted from `pr-autopilot`'s hard rules:
 - Rollback (`pr-watch/steps/04-fix-path.md` section 10) uses
   `git checkout -- <file>` for tracked files and deletes untracked ones,
   scoped to the current event's modified files only, and must leave
-  `git status --porcelain` empty.
+  `git status --porcelain` empty for those paths. Ignored files are never
+  deleted.
 - Never hard-code `--no-paginate` behavior on `gh api` for list
   endpoints. When fetching PR comments, reviews, or issue comments,
   always use `--paginate` (or the equivalent for the platform).

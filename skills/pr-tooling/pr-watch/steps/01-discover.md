@@ -28,11 +28,19 @@ exists here; a dry run needs it stopped (`/pr-watch stop`) and its state
 files (`watch.json`, `watch-poller.json`, `watch-seen.json`) moved aside
 first. Write nothing.
 
+The heartbeat check, used twice below: run
+`python -c "import sys, time; print(int(time.time()) - int(open(sys.argv[1]).read()))" "<STATE_DIR>/watch-heartbeat"`.
+The heartbeat is fresh when it prints a number below 300. A larger
+number, or a non-zero exit (no heartbeat file), is not fresh.
+
 If `<STATE_DIR>/watch.json` exists and its `dry_run` is `true` and this
 invocation is not `--dry-run`: a dry run is never resumed by a real one.
-Delete `watch.json`, `watch-poller.json`, and `watch-seen.json`, and
-start from an empty set exactly as a first run (its baseline applies to
-every PR added below).
+If this session has no running monitor for that watch and the heartbeat
+is fresh, stop and tell the user a dry-run watch is still running here
+and must be stopped (`/pr-watch stop` in its session) first; delete
+nothing. Otherwise delete `watch.json`, `watch-poller.json`, and
+`watch-seen.json`, and start from an empty set exactly as a first run
+(its baseline applies to every PR added below).
 
 Otherwise, if `<STATE_DIR>/watch.json` exists, read it. Its PRs are the
 starting set, their id lists are kept, and discovery below only adds to
@@ -40,12 +48,11 @@ it. Then:
 
 - This session already has a running monitor for this watch: keep the
   existing `session_id`.
-- This session has no running monitor for this watch: run
-  `python -c "import os, sys, time; print(int(time.time() - os.path.getmtime(sys.argv[1])))" "<STATE_DIR>/watch-poller.json"`.
-  If it prints a number below 180, another session is watching this
-  repo: stop and tell the user to run `/pr-watch stop` there and then
-  wait three minutes. Otherwise (a larger number, or a non-zero exit
-  because the file does not exist) set `session_id` to a fresh UUID
+- This session has no running monitor for this watch and the heartbeat
+  is fresh: stop and tell the user a watch was active in this repo in
+  the last five minutes; if it runs in another session, run
+  `/pr-watch stop` there; either way, wait five minutes and retry.
+- Otherwise set `session_id` to a fresh UUID
   (`python -c "import uuid; print(uuid.uuid4())"`); the library lock
   protocol reclaims stale locks from the old session.
 

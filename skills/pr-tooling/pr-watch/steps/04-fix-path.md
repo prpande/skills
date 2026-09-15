@@ -76,8 +76,10 @@ To skip with a reason:
 
 The fix path from step 03 and `pr-watch/steps/07-ci.md` section 5 run
 steps 1, 2, 3a, 3b, and 4. The formatter (`pr-watch/steps/07-ci.md`
-section 4) and the drain (section 8) run steps 1, 2, and 3a only; 3b
-would erase the `agent_returns` the drain replies from.
+section 4) runs steps 1, 2, 3a, and 3b with an empty dispatch set, so
+`all_comments`, `actionable`, and `agent_returns` are `[]` and a drain of
+its commit replies to nothing. Only the drain (section 8) runs steps 1,
+2, and 3a without 3b; 3b would erase the `agent_returns` it replies from.
 
 ## 3. Dispatch and verify
 
@@ -215,10 +217,10 @@ to section 9.
 
 On a `tick` event, take the first PR `N` in `push_queue`:
 
-1. The pending-check scan of section 6 step 1 (the command and its exit
-   handling only) for every other authored PR. Any pending check on PR
-   `M`: when now - `queued_at` is below 3600, stop; the next `tick`
-   retries. At 3600 or more, post "Stopped waiting for #<M>'s checks
+1. The pending-check scan of section 6 step 1 (the command, with a
+   non-zero exit counted as 0 and nothing posted) for every other
+   authored PR. Any pending check on PR `M`: when now - `queued_at` is
+   below 3600, stop; the next `tick` retries. At 3600 or more, post "Stopped waiting for #<M>'s checks
    after an hour." and continue with step 2. A stop here and a lock held
    by another session (step 3.3) are the only exits that leave `N` in
    `push_queue`; every other exit below, whatever section it happens
@@ -237,7 +239,9 @@ On a `tick` event, take the first PR `N` in `push_queue`:
    3. Section 2 steps 1, 2, and 3a. If another session holds the lock,
       return as section 2.2 says, without its skip; `N` stays queued and
       the next `tick` retries.
-   4. `git -C <worktree> merge-base --is-ancestor <head> HEAD`. On
+   4. Run section 1's branch checks and its `status --porcelain` check
+      before either branch below. Then
+      `git -C <worktree> merge-base --is-ancestor <head> HEAD`. On
       success (the remote is simply behind the queued commit): section
       1's gate, accepting that `HEAD` is ahead of the PR head by the
       queued commit; a skip there posts no "Skipped" line, step 5
@@ -279,9 +283,14 @@ lock.
 The caller names the files to roll back.
 
 1. For each path, `git -C <worktree> ls-files --error-unmatch -- <path>`.
-   Exit 0: the path is tracked. Any other exit: delete the file.
+   Exit 0: the path is tracked. Any other exit: when
+   `git -C <worktree> check-ignore -q -- <path>` exits non-zero, delete
+   the file; when it exits 0 (an ignored file git cannot restore), leave
+   it and escalate ("needs you, no comment", reason "rollback cannot
+   restore ignored file <path>").
 2. When any path is tracked, `git -C <worktree> checkout -- <tracked paths>`
    as one command.
-3. `git -C <worktree> status --porcelain` must print nothing. If it
-   prints anything, escalate ("needs you, no comment", reason "rollback
-   left changes in the worktree") and go to section 9.
+3. `git -C <worktree> status --porcelain -- <the rolled-back paths>` must
+   print nothing. If it prints anything, escalate ("needs you, no
+   comment", reason "rollback left changes in the worktree") and go to
+   section 9. Changes to other paths are not this rollback's.

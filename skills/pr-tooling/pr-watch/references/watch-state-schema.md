@@ -1,6 +1,6 @@
 # Watch state schema
 
-Three files in `<STATE_DIR>` (`<MAIN>/.pr-autopilot/`). Each has exactly
+Four files in `<STATE_DIR>` (`<MAIN>/.pr-autopilot/`). Each has exactly
 one writer. `.pr-autopilot/` must be ignored by git; step 01 adds it to
 `<git common dir>/info/exclude` when it is not, and never edits
 `.gitignore`.
@@ -65,6 +65,15 @@ longer in `watch.json` `prs` is dropped at the start of each tick), and
 poller last acted on, so each `retry_after` forces one re-emit; kept
 across later writes of the entry). Deleting the file makes the next tick
 a full reconciliation.
+
+## `watch-heartbeat` — written only by `POLL --monitor`
+
+The epoch seconds of the monitor's last sign of life, as a bare integer.
+Written at the start of every tick, before every `gh` call, and after
+every sleep, so the longest gap on a live monitor is one 120-second `gh`
+timeout plus the 60-second sleep. A failed write is logged and never
+stops the loop. `pr-watch/steps/01-discover.md` section 2 treats a
+heartbeat under 300 seconds old as a live watch.
 
 ## `watch-seen.json` — written only by `POLL --report` and `--reseed`
 

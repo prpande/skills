@@ -67,11 +67,14 @@ If the repo already holds a watch state file (section 8), step 01 offers
 to resume it, merged with whatever discovery finds. This is how the watch
 survives `--resume` and a new session in the same repo. A resume in the
 session that already runs the monitor keeps the watch's session id; a
-resume with no live monitor in the session refuses while
-`watch-poller.json` was written in the last 180 seconds (another session
-is watching the repo) and otherwise takes a fresh session id. A
-`--dry-run` invocation never touches a saved real watch: it stops and
-asks for that watch to be stopped and its state files moved aside.
+resume with no live monitor in the session refuses while the poller's
+`watch-heartbeat` is under 300 seconds old (a watch is live in another
+session or has just stopped) and otherwise takes a fresh session id. The
+same check guards a real invocation's deletion of a saved dry-run watch:
+a fresh heartbeat with no monitor in this session stops it and nothing is
+deleted. A `--dry-run` invocation never touches a saved real watch: it
+stops and asks for that watch to be stopped and its state files moved
+aside.
 
 `--dry-run` runs every path up to its first mutation and writes what it
 would have committed, pushed, replied, or resolved to the scratchpad
@@ -166,7 +169,11 @@ allowlist. Deterministic: no LLM in it.
      a fetch error. A heads response that carries both `data` and
      `errors` (gh exits 1 and still prints the body) is used for the PRs
      that resolved; a null alias is logged and skipped. The loop never
-     exits on its own. A PR that reaches `MERGED` or `CLOSED` emits one
+     exits on its own. It writes `watch-heartbeat` (section 8) at the
+     start of every tick, before every `gh` call, and after every sleep,
+     so a live monitor's heartbeat is never older than one 120-second
+     timeout plus the 60-second sleep, however slow or failing GitHub
+     is. A PR that reaches `MERGED` or `CLOSED` emits one
      `closed` event and leaves the set; once the session removes it from
      `watch.json`, the poller forgets it was closed, so a PR added again
      later is polled again.
@@ -392,8 +399,10 @@ path, release the lock, and `EnterWorktree(path=<origin worktree>)` to
 return.
 
 A rollback restores tracked files with `git checkout --`, deletes files
-the fixer created, and must leave `git status --porcelain` empty; when it
-does not, the PR is escalated instead of left dirty.
+the fixer created (never an ignored file, which escalates instead), and
+must leave `git status --porcelain` empty for the rolled-back paths; when
+it does not, the PR is escalated instead of left dirty. Other fixers'
+uncommitted edits in the same pass are not the rollback's concern.
 
 Subagents cannot switch worktrees (measured 2026-09-11: a subagent's
 `EnterWorktree(path=B)` reports success and its next Write into B is
@@ -754,6 +763,11 @@ primitive, and each has exactly one writer.
   }
 }
 ```
+
+`watch-heartbeat`, written only by the poller: the epoch seconds of the
+monitor's last tick start, `gh` call, or sleep end, as a bare integer.
+Step 01 reads it to tell a live watch (under 300 seconds old) from a
+stopped one.
 
 `watch-seen.json`, written only by `poll.py --report` and `--reseed`:
 `{"<pr>": [<every id seen>]}`. It is the NEW watermark and nothing else.

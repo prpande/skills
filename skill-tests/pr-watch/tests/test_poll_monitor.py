@@ -218,6 +218,10 @@ class RetryAfterTests(unittest.TestCase):
         self.assertEqual(self.poller["prs"]["1411"]["retried_at"], NOW + 600)
         self.assertEqual(self.tick(NOW + 720), [])
 
+    def test_a_retry_after_that_is_not_an_integer_is_ignored(self):
+        self.watch["prs"]["1411"]["retry_after"] = str(NOW + 600)
+        self.assertEqual(self.tick(NOW + 600), [])
+
     def test_a_new_retry_time_retries_again(self):
         self.watch["prs"]["1411"]["retry_after"] = NOW + 600
         self.tick(NOW + 600)
@@ -281,6 +285,81 @@ class MonitorLoopTests(unittest.TestCase):
         self.run_monitor(1)
         events, _ = self.run_monitor(1, clock=NOW + poll.RECONCILE_SECONDS)
         self.assertEqual([e["kind"] for e in events], ["pending"])
+
+
+class Clock:
+    def __init__(self):
+        self.now = NOW
+
+    def __call__(self):
+        self.now += 1
+        return self.now
+
+
+class HeartbeatTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.state = pathlib.Path(self.tmp.name)
+        self.heartbeat = self.state / "watch-heartbeat"
+        (self.state / "watch.json").write_text(json.dumps(watch({1411: "authored"})),
+                                               encoding="utf-8")
+        self.clock = Clock()
+        self.seen = []
+
+    def run_monitor(self, gh, ticks=1):
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            poll.monitor(gh, self.state, sleep=lambda s: None, clock=self.clock,
+                         max_ticks=ticks)
+        return err.getvalue()
+
+    def record_heartbeat(self):
+        self.seen.append((int(self.heartbeat.read_text(encoding="utf-8")), self.clock.now))
+
+    def test_the_heartbeat_is_written_before_a_gh_call_that_then_raises(self):
+        fake = FakeGh()
+        fake.fail_heads = True
+
+        def gh(args):
+            self.record_heartbeat()
+            return fake(args)
+        err = self.run_monitor(gh, ticks=2)
+        self.assertIn("heads query failed", err)
+        self.assertEqual(len(self.seen), 2)
+        for beat, latest in self.seen:
+            self.assertEqual(beat, latest)
+
+    def test_the_heartbeat_is_written_before_a_heads_query_that_times_out(self):
+        def hung(*args, **kwargs):
+            self.record_heartbeat()
+            raise poll.subprocess.TimeoutExpired(args[0], poll.GH_TIMEOUT_SECONDS)
+        with unittest.mock.patch.object(poll.subprocess, "run", side_effect=hung):
+            err = self.run_monitor(poll.run_gh)
+        self.assertIn("gh timed out after 120s", err)
+        self.assertEqual(len(self.seen), 1)
+        self.assertEqual(self.seen[0][0], self.seen[0][1])
+
+    def test_the_heartbeat_is_refreshed_after_the_sleep(self):
+        gh = FakeGh()
+        gh.prs[1411] = authored_pr()
+        stamps = []
+
+        def sleep(_):
+            stamps.append(int(self.heartbeat.read_text(encoding="utf-8")))
+        with contextlib.redirect_stdout(io.StringIO()):
+            poll.monitor(gh, self.state, sleep=sleep, clock=self.clock, max_ticks=2)
+        self.assertLess(stamps[0], int(self.heartbeat.read_text(encoding="utf-8")))
+
+    def test_a_failed_heartbeat_write_does_not_stop_the_loop(self):
+        gh = FakeGh()
+        gh.prs[1411] = authored_pr()
+        self.heartbeat.mkdir()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            poll.monitor(gh, self.state, sleep=lambda s: None, clock=self.clock, max_ticks=2)
+        self.assertEqual([json.loads(line)["kind"] for line in out.getvalue().splitlines()],
+                         ["pending"])
 
 
 class AtomicWriteTests(unittest.TestCase):

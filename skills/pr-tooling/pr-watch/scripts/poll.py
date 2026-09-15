@@ -1,7 +1,7 @@
 """pr-watch poller.
 
 Deterministic; no model runs here. Reads the session-owned watch.json and
-never writes it. The monitor writes watch-poller.json; --report and
+never writes it. The monitor writes watch-poller.json and watch-heartbeat; --report and
 --reseed write watch-seen.json. Modes are listed in main().
 """
 from __future__ import annotations
@@ -386,7 +386,7 @@ def tick_once(gh, watch, poller, now, force=False):
         watch_pr = watch["prs"][str(n)]
         rollup = rollup_state(node)
         retry_after = watch_pr.get("retry_after")
-        retry = (retry_after is not None and retry_after <= now
+        retry = (isinstance(retry_after, int) and retry_after <= now
                  and retry_after != prev.get("retried_at"))
         forced = force or retry
         moved = (node["updatedAt"] != prev.get("updated_at")
@@ -466,9 +466,21 @@ def missed_prs(before, after, events):
 
 
 def monitor(gh, state_dir, sleep=time.sleep, clock=time.time, max_ticks=None):
+    def beat():
+        try:
+            write_json_atomic(state_dir / "watch-heartbeat", int(clock()), sleep=sleep)
+        except Exception as exc:  # a heartbeat is advisory; the watch must keep running
+            print(f"pr-watch poller: heartbeat: {type(exc).__name__}: {exc}",
+                  file=sys.stderr, flush=True)
+
+    def beating_gh(args):
+        beat()
+        return gh(args)
+
     ticks = 0
     while max_ticks is None or ticks < max_ticks:
         ticks += 1
+        beat()
         try:
             watch = read_json(state_dir / "watch.json")
             poller = read_json(state_dir / "watch-poller.json", default={})
@@ -478,7 +490,7 @@ def monitor(gh, state_dir, sleep=time.sleep, clock=time.time, max_ticks=None):
             # forced first tick covers a resume; only the timed pass may claim a "reconciled" miss
             before = {n: (p.get("last_signature"), p.get("last_ci_signature"))
                       for n, p in poller.get("prs", {}).items()}
-            events = tick_once(gh, watch, poller, now, force=ticks == 1 or due)
+            events = tick_once(beating_gh, watch, poller, now, force=ticks == 1 or due)
             if ticks == 1 or due:
                 poller["last_reconciliation"] = now
             if due and last:
@@ -492,6 +504,7 @@ def monitor(gh, state_dir, sleep=time.sleep, clock=time.time, max_ticks=None):
             print(f"pr-watch poller: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
         if max_ticks is None or ticks < max_ticks:
             sleep(TICK_SECONDS)
+            beat()
 
 
 def all_ids(pr):
