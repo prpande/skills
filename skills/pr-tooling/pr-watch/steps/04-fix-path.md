@@ -256,7 +256,7 @@ On a `tick` event, take the first PR `N` in `push_queue`:
    4 and 5, then section 9. After step 3.6, likewise steps 4 and 5, then
    section 9.
 4. For each entry in the PR's `ci_rerun_queued` whose `head` is `<head>`,
-   run `POLL --ci-rerun "<link>" --repo <SLUG>` and post the "rerun"
+   run `POLL --ci-rerun "<link>" --repo <SLUG> --state-dir <STATE_DIR>` and post the "rerun"
    line (`pr-watch/steps/06-notify.md`). Under `dry_run`, write that
    exact `POLL --ci-rerun` command to
    `<scratchpad>/pr-watch-dry-run/<N>.md` instead of running it. Drop the

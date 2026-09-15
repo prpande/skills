@@ -182,6 +182,37 @@ class ReviewedTickTests(unittest.TestCase):
         self.assertEqual([e["kind"] for e in events], ["head-moved"])
         self.assertTrue(events[0]["touches_my_findings"])
 
+    def test_a_re_reviewed_head_is_the_start_of_the_compare(self):
+        self.watch["prs"]["1420"]["rereviewed_head"] = "h2"
+        self.gh.prs[1420] = reviewed_pr(head="h3")
+        self.gh.compare["h2...h3"] = ["src/B.cs"]
+        events = self.tick()
+        self.assertEqual((events[0]["old_head"], events[0]["new_head"]), ("h2", "h3"))
+        self.assertTrue(any(c[1] == "repos/o/r/compare/h2...h3" for c in self.gh.calls))
+        self.assertFalse(any("h1...h3" in c[1] for c in self.gh.calls))
+
+    def test_all_my_threads_resolved_with_no_later_reply_settles_once(self):
+        pr = reviewed_pr(head="h2")
+        pr["reviewThreads"]["nodes"][0]["isResolved"] = True
+        self.gh.prs[1420] = pr
+        self.gh.compare["h1...h2"] = ["src/B.cs"]
+        self.assertEqual(self.tick(), [{"pr": 1420, "role": "reviewed", "kind": "settled"}])
+        pr["updatedAt"] = "2026-09-11T11:00:00Z"
+        self.assertEqual(self.tick(), [])
+
+    def test_a_resolved_thread_with_a_reply_after_mine_is_not_settled(self):
+        pr = reviewed_pr(head="h1", replies=[comment("a1", "author-b", T1)])
+        pr["reviewThreads"]["nodes"][0]["isResolved"] = True
+        self.gh.prs[1420] = pr
+        self.assertEqual([e["kind"] for e in self.tick()], ["reply"])
+
+    def test_one_unresolved_thread_is_not_settled(self):
+        pr = reviewed_pr(head="h1")
+        pr["reviewThreads"]["nodes"].append(
+            thread("T10", [comment("m2", SELF, T0)], resolved=True, path="src/C.cs"))
+        self.gh.prs[1420] = pr
+        self.assertEqual(self.tick(), [])
+
     def test_pr_without_my_threads_is_ignored(self):
         self.gh.prs[1420] = pull(1420, author_login="author-b", head="h2",
                                  threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
@@ -284,6 +315,40 @@ class MonitorLoopTests(unittest.TestCase):
     def test_daily_reconciliation_stays_silent_when_nothing_actually_changed(self):
         self.run_monitor(1)
         events, _ = self.run_monitor(1, clock=NOW + poll.RECONCILE_SECONDS)
+        self.assertEqual([e["kind"] for e in events], ["pending"])
+
+    def test_daily_reconciliation_after_ci_went_green_reports_no_miss(self):
+        self.gh.rollup[1411] = "FAILURE"
+        self.gh.checks[1411] = [{"name": "Gated / Unit Tests", "state": "FAILURE",
+                                 "bucket": "fail", "link": ACTIONS, "workflow": "App Gated",
+                                 "completedAt": "2026-09-10T05:16:39Z"}]
+        now = [NOW]
+
+        def next_day(_):
+            now[0] = NOW + poll.RECONCILE_SECONDS
+            self.gh.rollup[1411] = "SUCCESS"
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            poll.monitor(self.gh, self.state, sleep=next_day, clock=lambda: now[0], max_ticks=2)
+        kinds = [json.loads(line)["kind"] for line in out.getvalue().splitlines()]
+        self.assertEqual(kinds, ["pending", "ci-red", "pending"])
+        poller = json.loads((self.state / "watch-poller.json").read_text(encoding="utf-8"))
+        self.assertTrue(poller["prs"]["1411"]["last_ci_signature"].startswith("ci:h2:"))
+
+    def test_events_are_printed_only_after_the_poller_file_is_saved(self):
+        real = poll.write_json_atomic
+        failures = []
+
+        def write(path, data, **kwargs):
+            if path.name == "watch-poller.json" and not failures:
+                failures.append(path)
+                raise PermissionError("watch-poller.json is open")
+            return real(path, data, **kwargs)
+        with unittest.mock.patch.object(poll, "write_json_atomic", write):
+            events, err = self.run_monitor(1)
+            self.assertEqual(events, [])
+            self.assertIn("watch-poller.json is open", err)
+            events, _ = self.run_monitor(2)
         self.assertEqual([e["kind"] for e in events], ["pending"])
 
 

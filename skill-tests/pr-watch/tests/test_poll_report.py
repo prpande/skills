@@ -4,6 +4,7 @@ import json
 import pathlib
 import tempfile
 import unittest
+import unittest.mock
 
 from fakes import SELF, T0, T1, T2, FakeGh, comment, poll, pull, thread, watch
 
@@ -102,6 +103,19 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("ERROR", text)
         self.assertFalse((self.state / "watch-seen.json").exists())
+
+    def test_a_failed_seen_write_still_prints_the_report_and_exits_one(self):
+        self.gh.prs[1411] = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
+        err = io.StringIO()
+        with unittest.mock.patch.object(poll, "write_json_atomic",
+                                        side_effect=PermissionError("watch-seen.json is open")), \
+                contextlib.redirect_stderr(err):
+            code, text = self.run_report()
+        self.assertEqual(code, 1)
+        for header in ("ATTENTION", "NEW", "STANDING"):
+            self.assertIn(header, text)
+        self.assertEqual(err.getvalue(),
+                         "pr-watch: could not save watch-seen.json: watch-seen.json is open\n")
 
     def test_a_failed_pr_does_not_hold_back_the_others(self):
         self.watch = watch({1411: "authored", 1413: "authored"})

@@ -62,7 +62,7 @@ def watch(prs, push_queue=(), owner="o", repo="r"):
     return {
         "session_id": "s-1", "owner": owner, "repo": repo, "self_login": SELF,
         "channel_id": "C0C15VC8Y0Z", "origin_worktree": "D:/src/r",
-        "serialize_pushes": True, "bot_allowlist": list(ALLOW),
+        "serialize_pushes": True, "bot_allowlist": list(ALLOW), "ado_orgs": ["mindbody"],
         "prs": {str(n): {"role": role, "posted_reply_ids": [], "settled_ids": [],
                          "escalated_ids": [], "handled_top_level_ids": {}}
                 for n, role in prs.items()},
@@ -88,9 +88,14 @@ class FakeGh:
         self.base_runs = {}
         self.base_statuses = {}
         self.job_logs = {}
+        self.thread_comment_pages = {}
+        self.earlier = {}
+        self.fail_checks = set()
+        self.fail_user = False
 
     def thread_fetches(self):
-        return sum(1 for a in self.calls if a[:2] == ["api", "graphql"] and "$n" in a[3])
+        return sum(1 for a in self.calls
+                   if a[:2] == ["api", "graphql"] and "reviewThreads" in a[3])
 
     def checks_calls(self):
         return sum(1 for a in self.calls if a[:2] == ["pr", "checks"])
@@ -101,6 +106,13 @@ class FakeGh:
             query = args[3][len("query="):]
             pairs = args[4:]
             variables = dict(pairs[i + 1].split("=", 1) for i in range(0, len(pairs), 2))
+            if "node(id:" in query:
+                page = self.thread_comment_pages[(variables["id"], variables["after"])]
+                return json.dumps({"data": {"node": {"comments": page}}})
+            if "before: $before" in query:
+                field = "comments" if "comments(last" in query else "reviews"
+                page = self.earlier[(int(variables["n"]), field, variables["before"])]
+                return json.dumps({"data": {"repository": {"pullRequest": {field: page}}}})
             if "$n" in query:
                 n = int(variables["n"])
                 if n in self.fail:
@@ -130,6 +142,8 @@ class FakeGh:
             return json.dumps({"data": {"repository": nodes}})
         if args[:2] == ["pr", "checks"]:
             n = int(args[2])
+            if n in self.fail_checks:
+                raise poll.GhError("HTTP 502: checks unavailable")
             if n in self.no_checks:
                 raise poll.GhError("no required checks reported on the 'main' branch")
             return json.dumps(self.checks.get(n, []))
@@ -144,11 +158,16 @@ class FakeGh:
                 raise poll.GhError("jq: error: Cannot iterate over null")
             return "".join(f"{f}\n" for f in files or [])
         if path == "user":
+            if self.fail_user:
+                raise poll.GhError("HTTP 401: Bad credentials")
             return self.user + "\n"
         if "/commits/" in path:
             ref = urllib.parse.unquote(path.split("/commits/")[1].rsplit("/", 1)[0])
-            rows = self.base_runs if path.endswith("/check-runs") else self.base_statuses
-            return "".join(f"{name}\t{value}\n" for name, value in rows.get(ref, []))
+            if path.endswith("/check-runs"):
+                return "".join("\t".join((*row, "1")[:3]) + "\n"
+                               for row in self.base_runs.get(ref, []))
+            return "".join(f"{name}\t{value}\n"
+                           for name, value in self.base_statuses.get(ref, []))
         if "/pulls/" in path:
             p = self.prs[int(path.rsplit("/", 1)[1])]
             if any(".base.ref" in a for a in args):

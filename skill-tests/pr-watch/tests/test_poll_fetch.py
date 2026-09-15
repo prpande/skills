@@ -3,7 +3,7 @@ import subprocess
 import unittest
 from unittest import mock
 
-from fakes import T0, FakeGh, comment, poll, pull, thread
+from fakes import SELF, T0, T1, T2, T3, FakeGh, comment, poll, pull, review, thread
 
 
 class RunGhTests(unittest.TestCase):
@@ -77,13 +77,43 @@ class FetchTests(unittest.TestCase):
         self.assertEqual([t["id"] for t in pr["reviewThreads"]["nodes"]], ["T1", "T2"])
         self.assertEqual(gh.thread_fetches(), 2)
 
-    def test_truncation_is_reported_not_hidden(self):
+    def test_a_thread_with_a_second_comment_page_yields_every_comment_in_order(self):
         gh = FakeGh()
-        pr = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
-        pr["reviewThreads"]["nodes"][0]["comments"]["pageInfo"]["hasNextPage"] = True
-        pr["comments"]["pageInfo"]["hasPreviousPage"] = True
+        pr = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0),
+                                         comment("c2", "reviewer-a", T1)])])
+        pr["reviewThreads"]["nodes"][0]["comments"]["pageInfo"] = {"hasNextPage": True,
+                                                                    "endCursor": "k2"}
         gh.prs[1411] = pr
-        self.assertEqual(len(poll.fetch_pr(gh, "o", "r", 1411)["truncated"]), 2)
+        gh.thread_comment_pages[("T1", "k2")] = {
+            "pageInfo": {"hasNextPage": False, "endCursor": None},
+            "nodes": [comment("c3", "reviewer-a", T2), comment("c4", "reviewer-a", T3)]}
+        fetched = poll.fetch_pr(gh, "o", "r", 1411)
+        self.assertEqual([c["id"] for c in fetched["reviewThreads"]["nodes"][0]["comments"]["nodes"]],
+                         ["c1", "c2", "c3", "c4"])
+        self.assertNotIn("truncated", fetched)
+
+    def test_earlier_issue_comment_and_review_pages_are_read_oldest_first(self):
+        gh = FakeGh()
+        pr = pull(comments=[comment("i3", "reviewer-a", T2)],
+                  reviews=[review("r3", "reviewer-a", T2, body="x")])
+        pr["comments"]["pageInfo"] = {"hasPreviousPage": True, "startCursor": "i3"}
+        pr["reviews"]["pageInfo"] = {"hasPreviousPage": True, "startCursor": "r3"}
+        gh.prs[1411] = pr
+        gh.earlier[(1411, "comments", "i3")] = {
+            "pageInfo": {"hasPreviousPage": True, "startCursor": "i2"},
+            "nodes": [comment("i2", "reviewer-a", T1)]}
+        gh.earlier[(1411, "comments", "i2")] = {
+            "pageInfo": {"hasPreviousPage": False, "startCursor": "i1"},
+            "nodes": [comment("i1", "reviewer-a", T0)]}
+        gh.earlier[(1411, "reviews", "r3")] = {
+            "pageInfo": {"hasPreviousPage": False, "startCursor": "r1"},
+            "nodes": [review("r1", SELF, T0), review("r2", "reviewer-a", T1, body="y")]}
+        fetched = poll.fetch_pr(gh, "o", "r", 1411)
+        self.assertEqual([c["id"] for c in fetched["comments"]["nodes"]], ["i1", "i2", "i3"])
+        self.assertEqual([r["id"] for r in fetched["reviews"]["nodes"]], ["r1", "r2", "r3"])
+        payload = poll.tails_payload(fetched, {}, SELF, [])
+        self.assertEqual([r["id"] for r in payload["top_level"]], ["i1", "i2", "i3", "r2", "r3"])
+        self.assertNotIn("truncated", payload)
 
     def test_missing_pr_raises(self):
         gh = FakeGh()

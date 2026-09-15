@@ -5,7 +5,7 @@ import pathlib
 import tempfile
 import unittest
 
-from fakes import ACTIONS, AZURE, NOW, SONAR, FakeGh, poll, pull, watch
+from fakes import ACTIONS, AZURE, NOW, SONAR, T0, FakeGh, comment, poll, pull, thread, watch
 
 
 def check(name, bucket="fail", workflow="App Gated", done="2026-09-10T05:16:39Z", link=ACTIONS):
@@ -148,6 +148,61 @@ class CiTickTests(unittest.TestCase):
         self.tick()
         self.assertEqual([e["kind"] for e in self.tick(force=True)], ["ci-red"])
 
+    def ci_signature(self):
+        return self.poller["prs"]["1411"]["last_ci_signature"]
+
+    def test_a_forced_pass_over_a_green_rollup_keeps_the_stored_ci_signature(self):
+        self.red()
+        self.tick()
+        stored = self.ci_signature()
+        self.gh.rollup[1411] = "SUCCESS"
+        self.tick()
+        self.assertEqual(self.tick(force=True), [])
+        self.assertEqual(self.ci_signature(), stored)
+
+    def test_a_forced_pass_with_no_required_failure_keeps_the_stored_ci_signature(self):
+        self.red()
+        self.tick()
+        stored = self.ci_signature()
+        self.gh.checks[1411] = [check("Gated / Unit Tests", bucket="pass")]
+        self.assertEqual(self.tick(force=True), [])
+        self.assertEqual(self.ci_signature(), stored)
+
+    def test_a_checks_error_keeps_the_pending_event_and_its_signature(self):
+        self.gh.prs[1411] = pull(1411, threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
+        self.red()
+        self.gh.fail_checks.add(1411)
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            events = self.tick()
+        self.assertEqual([e["kind"] for e in events], ["pending"])
+        self.assertEqual(self.poller["prs"]["1411"]["last_signature"], "pending:c1")
+        self.assertEqual(self.ci_signature(), "")
+        self.assertIn("checks unavailable", err.getvalue())
+
+    def test_a_checks_error_keeps_the_previous_ci_signature(self):
+        self.red()
+        self.tick()
+        stored = self.ci_signature()
+        self.red(done="2026-09-10T06:02:11Z")
+        self.gh.fail_checks.add(1411)
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(self.tick(), [])
+        self.assertEqual(self.ci_signature(), stored)
+        self.gh.fail_checks.clear()
+        self.assertEqual([e["kind"] for e in self.tick()], ["ci-red"])
+
+    def test_a_thread_fetch_error_still_emits_and_stores_the_ci_event(self):
+        self.red()
+        self.gh.fail = {1411}
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            events = self.tick()
+        self.assertEqual([e["kind"] for e in events], ["ci-red"])
+        self.assertTrue(self.ci_signature().startswith("ci:h2:"))
+        self.assertNotIn("updated_at", self.poller["prs"]["1411"])
+        self.assertIn("fetch of 1411 failed", err.getvalue())
+        self.gh.fail = set()
+        self.assertEqual(self.tick(), [])
+
 
 class ChecksPayloadTests(unittest.TestCase):
     def setUp(self):
@@ -186,6 +241,22 @@ class ChecksPayloadTests(unittest.TestCase):
                                      ("Gated / Unit Tests", "success")]
         by_name = {c["name"]: c for c in self.payload()["checks"]}
         self.assertEqual(by_name["Gated / Unit Tests"]["on_base"], "failure")
+
+    def test_one_name_failing_in_one_suite_and_passing_in_another_is_unknown(self):
+        self.gh.base_runs["main"] = [("Gated / Unit Tests", "failure", "901"),
+                                     ("Gated / Unit Tests", "success", "902")]
+        by_name = {c["name"]: c for c in self.payload()["checks"]}
+        self.assertIsNone(by_name["Gated / Unit Tests"]["on_base"])
+
+    def test_one_name_failing_in_a_single_suite_is_a_failure(self):
+        self.gh.base_runs["main"] = [("Gated / Unit Tests", "failure", "901")]
+        by_name = {c["name"]: c for c in self.payload()["checks"]}
+        self.assertEqual(by_name["Gated / Unit Tests"]["on_base"], "failure")
+
+    def test_base_check_runs_are_read_with_their_suite(self):
+        self.payload()
+        jq = next(c[c.index("--jq") + 1] for c in self.gh.calls if c[1].endswith("/check-runs"))
+        self.assertIn(".check_suite.id", jq)
 
     def test_base_branch_with_a_slash_is_encoded(self):
         self.gh.prs[1411]["baseRefName"] = "release/2026"

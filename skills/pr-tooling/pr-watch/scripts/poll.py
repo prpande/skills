@@ -36,8 +36,21 @@ LOG_LINES = 2000
 FAILURE_MARK = re.compile(
     r"##\[error\]|\berror [A-Z]{2,5}\d{3,5}\b|\bFailed [\w.]+ \[|\bTest Run Failed\b|npm ERR!")
 CONTEXT_BEFORE = 500
+CONTEXT_AFTER = 20
 GH_TIMEOUT_SECONDS = 120
 COMPARE_FILE_CAP = 300
+COMMENT_FIELDS = "id author { login __typename } createdAt updatedAt body"
+REVIEW_FIELDS = "id author { login __typename } state submittedAt body commit { oid }"
+THREAD_COMMENTS_QUERY = (
+    "query($id: ID!, $after: String) { node(id: $id) { ... on PullRequestReviewThread { "
+    "comments(first: 100, after: $after) { pageInfo { hasNextPage endCursor } "
+    "nodes { " + COMMENT_FIELDS + " } } } } }")
+EARLIER_QUERY = {
+    field: ("query($owner: String!, $repo: String!, $n: Int!, $before: String) { "
+            "repository(owner: $owner, name: $repo) { pullRequest(number: $n) { "
+            + field + "(last: 100, before: $before) { pageInfo { hasPreviousPage startCursor } "
+            "nodes { " + fields + " } } } } }")
+    for field, fields in (("comments", COMMENT_FIELDS), ("reviews", REVIEW_FIELDS))}
 
 
 class GhError(RuntimeError):
@@ -82,12 +95,9 @@ def pending(pr, watch_pr, self_login, allowlist):
         tail = thread_tail(t["comments"]["nodes"], cut)
         if tail:
             threads.append((t, tail))
-    top = []
-    for surface, item, _ in top_level_items(pr):
-        if classify(item["author"], self_login, allowlist)[1] == "me":
-            continue
-        if item["id"] not in handled:
-            top.append((surface, item))
+    top = [(surface, item) for surface, item, _ in top_level_items(pr)
+           if item["id"] not in handled
+           and classify(item["author"], self_login, allowlist)[1] != "me"]
     return threads, top
 
 
@@ -154,7 +164,6 @@ def tails_payload(pr, watch_pr, self_login, allowlist):
         "branch": pr["headRefName"],
         "threads": out,
         "top_level": [comment_record(i, s, self_login, allowlist) for s, i in top],
-        "truncated": pr.get("truncated", []),
     }
 
 
@@ -208,21 +217,24 @@ def fetch_pr(gh, owner, repo, number):
         if not info["hasNextPage"]:
             break
         after = info["endCursor"]
+    for t in threads:
+        comments = t["comments"]
+        while comments["pageInfo"]["hasNextPage"]:
+            page = graphql(gh, THREAD_COMMENTS_QUERY, {
+                "id": t["id"], "after": comments["pageInfo"]["endCursor"]})["node"]["comments"]
+            comments = {"pageInfo": page["pageInfo"], "nodes": comments["nodes"] + page["nodes"]}
+        t["comments"] = comments
     pr = dict(pr, reviewThreads={"pageInfo": {"hasNextPage": False, "endCursor": None},
                                  "nodes": threads})
-    pr["truncated"] = truncation(pr)
+    for field, query in EARLIER_QUERY.items():
+        items = pr[field]
+        while items["pageInfo"]["hasPreviousPage"]:
+            page = graphql(gh, query, {
+                "owner": owner, "repo": repo, "n": number,
+                "before": items["pageInfo"]["startCursor"]})["repository"]["pullRequest"][field]
+            items = {"pageInfo": page["pageInfo"], "nodes": page["nodes"] + items["nodes"]}
+        pr[field] = items
     return pr
-
-
-def truncation(pr):
-    notes = [f"thread {t['id']} has more than 100 comments"
-             for t in pr["reviewThreads"]["nodes"]
-             if t["comments"]["pageInfo"]["hasNextPage"]]
-    if pr["comments"]["pageInfo"]["hasPreviousPage"]:
-        notes.append("more than 100 issue comments; the oldest are not read")
-    if pr["reviews"]["pageInfo"]["hasPreviousPage"]:
-        notes.append("more than 100 reviews; the oldest are not read")
-    return notes
 
 
 def tick_query(owner, repo, numbers):
@@ -298,18 +310,19 @@ def check_key(check):
     return f"{check.get('workflow') or ''}|{check['name']}"
 
 
-def evaluate_ci(gh, watch, number, node, prev):
+def evaluate_ci(gh, watch, number, node, seen, stored):
+    """`seen` dedupes (empty on a forced pass); `stored` is kept when nothing is red."""
     if rollup_state(node) not in FAILED_ROLLUP:
-        return None, prev.get("last_ci_signature", "")
+        return None, stored
     slug = f"{watch['owner']}/{watch['repo']}"
     red = sorted((c for c in required_checks(gh, slug, number) if c.get("bucket") == "fail"),
                  key=check_key)
     if not red:
-        return None, prev.get("last_ci_signature", "")
+        return None, stored
     head = node["headRefOid"]
     signature = f"ci:{head}:" + ",".join(
         f"{check_key(c)}|{c.get('completedAt') or ''}" for c in red)
-    if signature == prev.get("last_ci_signature"):
+    if signature == seen.get("last_ci_signature"):
         return None, signature
     return {"pr": number, "role": "authored", "kind": "ci-red", "head": head,
             "checks": [{"name": c["name"], "workflow": c.get("workflow") or "",
@@ -330,14 +343,31 @@ def evaluate_authored(watch, pr, watch_pr, prev):
             "reviews": [i["id"] for s, i in top if s == "review"]}, signature
 
 
+def review_start(watch, pr):
+    """The head the user last judged the PR at: the last re-review, else their review."""
+    watch_pr = watch["prs"].get(str(pr["number"]), {})
+    return watch_pr.get("rereviewed_head") or my_review_head(
+        pr, watch["self_login"], watch["bot_allowlist"])
+
+
+def compare_capped(files):
+    # GitHub's compare lists at most 300 files, so a full list may omit a flagged file.
+    return len(files) >= COMPARE_FILE_CAP
+
+
 def evaluate_reviewed(gh, watch, pr, prev):
     me, allow = watch["self_login"], watch["bot_allowlist"]
     threads = my_threads(pr, me, allow)
     if not threads:
         return None, ""
-    old, new = my_review_head(pr, me, allow), pr["headRefOid"]
+    replied = {t["id"]: replies_after_me(t, me, allow) for t in threads}
+    replies = [c for thread_replies in replied.values() for c in thread_replies]
+    if not replies and all(t["isResolved"] for t in threads):
+        if prev.get("last_signature") == "settled":
+            return None, "settled"
+        return {"pr": pr["number"], "role": "reviewed", "kind": "settled"}, "settled"
+    old, new = review_start(watch, pr), pr["headRefOid"]
     author = (pr.get("author") or {}).get("login")
-    replies = [c for t in threads for c in replies_after_me(t, me, allow)]
     reply_ids = sorted(c["id"] for c in replies)
     author_replied = any((c["author"] or {}).get("login") == author for c in replies)
     if old and old != new:
@@ -345,20 +375,23 @@ def evaluate_reviewed(gh, watch, pr, prev):
         if signature == prev.get("last_signature"):
             return None, signature
         files = set(changed_files(gh, watch["owner"], watch["repo"], old, new))
-        # GitHub's compare lists at most 300 files, so a full list may omit a flagged file.
-        touches = len(files) >= COMPARE_FILE_CAP or any(t["path"] in files for t in threads)
+        touches = compare_capped(files) or any(t["path"] in files for t in threads)
         if not (touches or author_replied):
             return None, signature
         return {"pr": pr["number"], "role": "reviewed", "kind": "head-moved",
                 "old_head": old, "new_head": new, "touches_my_findings": touches,
                 "author_replied": author_replied}, signature
-    if not reply_ids:
+    if not replies:
         return None, ""
     signature = "reply:" + ",".join(reply_ids)
     if signature == prev.get("last_signature"):
         return None, signature
     return {"pr": pr["number"], "role": "reviewed", "kind": "reply",
-            "threads": [t["id"] for t in threads if replies_after_me(t, me, allow)]}, signature
+            "threads": [tid for tid, thread_replies in replied.items() if thread_replies]}, signature
+
+
+def warn(message):
+    print(f"pr-watch poller: {message}", file=sys.stderr, flush=True)
 
 
 def tick_once(gh, watch, poller, now, force=False):
@@ -374,8 +407,7 @@ def tick_once(gh, watch, poller, now, force=False):
     for n in numbers:
         node = heads.get(f"p{n}")
         if node is None:
-            print(f"pr-watch poller: PR #{n}: null alias in the heads query; "
-                  "skipping this tick", file=sys.stderr, flush=True)
+            warn(f"PR #{n}: null alias in the heads query; skipping this tick")
             continue
         if node["state"] != "OPEN":
             events.append({"pr": n, "kind": "closed", "state": node["state"]})
@@ -396,22 +428,29 @@ def tick_once(gh, watch, poller, now, force=False):
         if not (moved or ci_moved or forced):
             continue
         seen = {} if forced else prev
-        found = []
         signature = prev.get("last_signature", "")
         ci_signature = prev.get("last_ci_signature", "")
-        try:
-            if moved or forced:
+        review_event = ci_event = None
+        review_failed = False
+        if moved or forced:
+            try:
                 pr = fetch_pr(gh, watch["owner"], watch["repo"], n)
                 if watch_pr["role"] == "authored":
-                    event, signature = evaluate_authored(watch, pr, watch_pr, seen)
+                    review_event, signature = evaluate_authored(watch, pr, watch_pr, seen)
                 else:
-                    event, signature = evaluate_reviewed(gh, watch, pr, seen)
-                found.append(event)
-            if watch_pr["role"] == "authored" and (ci_moved or forced):
-                event, ci_signature = evaluate_ci(gh, watch, n, node, seen)
-                found.append(event)
-        except GhError as exc:
-            print(f"pr-watch poller: PR #{n}: {exc}", file=sys.stderr, flush=True)
+                    review_event, signature = evaluate_reviewed(gh, watch, pr, seen)
+            except GhError as exc:
+                warn(f"PR #{n}: {exc}")
+                review_failed = True
+        if watch_pr["role"] == "authored" and (ci_moved or forced):
+            try:
+                ci_event, ci_signature = evaluate_ci(gh, watch, n, node, seen, ci_signature)
+            except GhError as exc:
+                warn(f"PR #{n}: {exc}")
+        events += [e for e in (review_event, ci_event) if e]
+        if review_failed:
+            if ci_event:
+                prs[str(n)] = dict(prev, last_ci_signature=ci_signature)
             continue
         entry = {"updated_at": node["updatedAt"], "last_head": node["headRefOid"],
                  "last_signature": signature, "last_rollup": rollup,
@@ -420,7 +459,6 @@ def tick_once(gh, watch, poller, now, force=False):
         if retried_at is not None:
             entry["retried_at"] = retried_at
         prs[str(n)] = entry
-        events += [e for e in found if e]
     queue = list(watch.get("push_queue", []))
     if not queue:
         poller["last_tick_queue"] = []
@@ -470,8 +508,7 @@ def monitor(gh, state_dir, sleep=time.sleep, clock=time.time, max_ticks=None):
         try:
             write_json_atomic(state_dir / "watch-heartbeat", int(clock()), sleep=sleep)
         except Exception as exc:  # a heartbeat is advisory; the watch must keep running
-            print(f"pr-watch poller: heartbeat: {type(exc).__name__}: {exc}",
-                  file=sys.stderr, flush=True)
+            warn(f"heartbeat: {type(exc).__name__}: {exc}")
 
     def beating_gh(args):
         beat()
@@ -497,11 +534,12 @@ def monitor(gh, state_dir, sleep=time.sleep, clock=time.time, max_ticks=None):
                 missed = missed_prs(before, poller.get("prs", {}), events)
                 if missed:
                     events.append({"kind": "reconciled", "prs": missed})
+            # an unsaved tick prints nothing; the next tick recomputes it from the old file
+            write_json_atomic(state_dir / "watch-poller.json", poller)
             for event in events:
                 print(json.dumps(event), flush=True)
-            write_json_atomic(state_dir / "watch-poller.json", poller)
         except Exception as exc:  # a standing watch must outlive any single failure
-            print(f"pr-watch poller: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+            warn(f"{type(exc).__name__}: {exc}")
         if max_ticks is None or ticks < max_ticks:
             sleep(TICK_SECONDS)
             beat()
@@ -590,7 +628,7 @@ def report(gh, state_dir, reseed=False):
     seen = read_json(seen_path, default={})
     me, allow = watch["self_login"], watch["bot_allowlist"]
     first_run = not seen
-    attention, new, standing, errors, notes = [], [], [], [], []
+    attention, new, standing, errors = [], [], [], []
     fresh = dict(seen)
     for key in sorted(watch["prs"], key=int):
         watch_pr = watch["prs"][key]
@@ -599,21 +637,28 @@ def report(gh, state_dir, reseed=False):
         except GhError as exc:
             errors.append(f"PR {key}: {exc}")
             continue
-        notes += [f"PR {key}: {note}" for note in pr["truncated"]]
         attention += attention_lines(watch, pr, watch_pr)
         new += new_lines(pr, set(seen.get(key, [])), me, allow)
         standing.append(standing_line(pr, watch_pr, me, allow))
         fresh[key] = all_ids(pr)
-    if fresh != seen:
-        write_json_atomic(seen_path, fresh)
     for line in errors:
         print(f"ERROR  {line}")
     if reseed:
         print(f"pr-watch: reseeded; {sum(len(v) for v in fresh.values())} ids accepted as seen")
-        return 1 if errors else 0
-    if not (errors or attention or notes or new) and not first_run:
+    elif not (errors or attention or new) and not first_run:
         print(f"pr-watch: nothing new across {len(standing)} PRs; nothing needs attention")
-        return 0
+    else:
+        print_sections(attention, new, standing, first_run)
+    if fresh != seen:
+        try:
+            write_json_atomic(seen_path, fresh)
+        except OSError as exc:
+            print(f"pr-watch: could not save watch-seen.json: {exc}", file=sys.stderr)
+            return 1
+    return 1 if errors else 0
+
+
+def print_sections(attention, new, standing, first_run):
     print("ATTENTION")
     for line in attention or ["none"]:
         print(f"  {line}")
@@ -626,19 +671,17 @@ def report(gh, state_dir, reseed=False):
     print("STANDING")
     for line in standing:
         print(f"  {line}")
-    for line in notes:
-        print(f"  note: {line}")
-    return 1 if errors else 0
 
 
 def findings_payload(gh, watch, pr):
     me, allow = watch["self_login"], watch["bot_allowlist"]
-    old, new = my_review_head(pr, me, allow), pr["headRefOid"]
+    old, new = review_start(watch, pr), pr["headRefOid"]
     files = changed_files(gh, watch["owner"], watch["repo"], old, new) if old and old != new else []
     return {
         "pr": pr["number"], "title": pr["title"], "url": pr["url"],
         "author": (pr.get("author") or {}).get("login"),
         "old_head": old, "new_head": new, "changed_files": files,
+        "compare_capped": compare_capped(files),
         "threads": [{
             "thread_id": t["id"], "path": t["path"], "line": t["line"],
             "is_resolved": t["isResolved"], "is_outdated": t["isOutdated"],
@@ -646,21 +689,33 @@ def findings_payload(gh, watch, pr):
             "comments": [comment_record(c, "inline", me, allow, thread=t)
                          for c in t["comments"]["nodes"]],
         } for t in my_threads(pr, me, allow)],
-        "truncated": pr.get("truncated", []),
     }
 
 
+def keep_failing(conclusions, key, value):
+    if key not in conclusions or value in FAILED_BASE:
+        conclusions[key] = value
+
+
 def base_conclusions(gh, repo_slug, ref):
+    """name -> conclusion on `ref`; None when check suites disagree about one name."""
     commit = f"repos/{repo_slug}/commits/{urllib.parse.quote(ref, safe='')}"
-    rows = gh(["api", f"{commit}/check-runs", "--paginate",
-               "--jq", ".check_runs[] | [.name, (.conclusion // .status)] | @tsv"]).splitlines()
-    rows += gh(["api", f"{commit}/status",
-                "--jq", ".statuses[] | [.context, .state] | @tsv"]).splitlines()
+    runs = gh(["api", f"{commit}/check-runs", "--paginate", "--jq",
+               ".check_runs[] | [.name, (.conclusion // .status), .check_suite.id] | @tsv"])
+    suites = {}
+    for row in runs.splitlines():
+        name, value, suite = (row.split("\t") + ["", ""])[:3]
+        if name:
+            keep_failing(suites.setdefault(name, {}), suite, value)
     out = {}
-    for row in rows:
+    for name, by_suite in suites.items():
+        values = set(by_suite.values())
+        out[name] = values.pop() if len(values) == 1 else None
+    statuses = gh(["api", f"{commit}/status", "--jq", ".statuses[] | [.context, .state] | @tsv"])
+    for row in statuses.splitlines():
         name, _, value = row.partition("\t")
-        if name and (name not in out or value in FAILED_BASE):
-            out[name] = value
+        if name and out.get(name, "") is not None:
+            keep_failing(out, name, value)
     return out
 
 
@@ -699,31 +754,52 @@ def ado_request(url, method="GET", body=None, opener=None):
         with (opener or _NO_REDIRECT_OPENER)(request, timeout=60) as response:
             return response.read().decode("utf-8", errors="replace")
     except urllib.error.URLError as exc:
+        if isinstance(exc, urllib.error.HTTPError):
+            exc.close()
         raise GhError(f"{method} {url.split('?')[0]}: {exc}") from None
 
 
 def failed_records(timeline, kind):
-    return [r for r in timeline.get("records") or []
-            if r.get("type") == kind and r.get("result") == "failed"]
+    """Failed records of `kind`; without any, the finished canceled ones (an Azure timeout)."""
+    records = [r for r in timeline.get("records") or [] if r.get("type") == kind]
+    return ([r for r in records if r.get("result") == "failed"]
+            or [r for r in records if r.get("result") == "canceled" and r.get("finishTime")])
 
 
 def failure_window(text, count=LOG_LINES):
+    """At most `count` lines: around the first and the last failure marker, else the tail."""
     lines = text.splitlines()
     if len(lines) <= count:
         return text
-    first = next((i for i, line in enumerate(lines) if FAILURE_MARK.search(line)), None)
-    start = (len(lines) - count if first is None
-              else min(max(0, first - CONTEXT_BEFORE), len(lines) - count))
-    return "\n".join(lines[start:start + count])
+    marks = [i for i, line in enumerate(lines) if FAILURE_MARK.search(line)]
+    if not marks:
+        return "\n".join(lines[-count:])
+    half = count // 2
+    first_start = max(0, marks[0] - CONTEXT_BEFORE // 2)
+    first_end = min(len(lines), first_start + half)
+    last_end = min(len(lines), marks[-1] + 1 + CONTEXT_AFTER)
+    last_start = max(0, last_end - half)
+    if first_end >= last_start:
+        return "\n".join(lines[min(first_start, last_start):max(first_end, last_end)])
+    return "\n".join([*lines[first_start:first_end],
+                      f"... {last_start - first_end} lines omitted ...",
+                      *lines[last_start:last_end]])
 
 
-def ci_log(gh, repo_slug, link, ado=ado_request):
+def ado_timeline(target, ado_orgs, ado):
+    """The build URL and its timeline; refuses an org outside `ado_orgs` before any request."""
+    if target["org"].lower() not in {org.lower() for org in ado_orgs}:
+        raise GhError(f"Azure DevOps org {target['org']} is not in ado_orgs")
+    build = ADO_BUILD.format(**target)
+    return build, json.loads(ado(f"{build}/timeline?api-version=7.1"))
+
+
+def ci_log(gh, repo_slug, link, ado_orgs, ado=ado_request):
     target = check_platform(link)
     if target["platform"] == "github-actions":
         return failure_window(gh(["api", f"repos/{repo_slug}/actions/jobs/{target['job_id']}/logs"]))
     if target["platform"] == "azure-pipelines":
-        build = ADO_BUILD.format(**target)
-        timeline = json.loads(ado(f"{build}/timeline?api-version=7.1"))
+        build, timeline = ado_timeline(target, ado_orgs, ado)
         parts = [f"== {r.get('name')} ==\n" + ado(f"{build}/logs/{r['log']['id']}?api-version=7.1")
                  for r in failed_records(timeline, "Task") if (r.get("log") or {}).get("id")]
         if not parts:
@@ -732,14 +808,13 @@ def ci_log(gh, repo_slug, link, ado=ado_request):
     raise GhError(f"no CI source for {link}")
 
 
-def ci_rerun(gh, repo_slug, link, ado=ado_request):
+def ci_rerun(gh, repo_slug, link, ado_orgs, ado=ado_request):
     target = check_platform(link)
     if target["platform"] == "github-actions":
         gh(["run", "rerun", target["run_id"], "--failed", "--repo", repo_slug])
         return [f"run {target['run_id']}"]
     if target["platform"] == "azure-pipelines":
-        build = ADO_BUILD.format(**target)
-        timeline = json.loads(ado(f"{build}/timeline?api-version=7.1"))
+        build, timeline = ado_timeline(target, ado_orgs, ado)
         stages = [r["identifier"] for r in failed_records(timeline, "Stage") if r.get("identifier")]
         if not stages:
             raise GhError(f"no failed stage to retry in build {target['build_id']}")
@@ -777,8 +852,8 @@ def main(argv=None, gh=run_gh):
     mode.add_argument("--assert-author", type=int, metavar="PR",
                       help="exit 0 only if the acting login authored the PR")
     mode.add_argument("--ci-log", metavar="LINK",
-                      help="print the log behind a check link, anchored on the first "
-                           "failure marker")
+                      help="print the log behind a check link, windowed on its first and "
+                           "last failure markers")
     mode.add_argument("--ci-rerun", metavar="LINK",
                       help="rerun the failed jobs behind a check link")
     parser.add_argument("--state-dir", type=pathlib.Path, help="<main checkout>/.pr-autopilot")
@@ -786,31 +861,35 @@ def main(argv=None, gh=run_gh):
     args = parser.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    if args.assert_author is not None:
-        if not args.repo:
-            parser.error("--assert-author needs --repo owner/name")
-        return assert_author(gh, args.repo, args.assert_author)
-    if args.ci_log or args.ci_rerun:
-        if not args.repo:
-            parser.error("--ci-log and --ci-rerun need --repo owner/name")
-        try:
-            if args.ci_log:
-                print(ci_log(gh, args.repo, args.ci_log))
-            else:
-                for line in ci_rerun(gh, args.repo, args.ci_rerun):
-                    print(f"rerun started: {line}")
-        except (GhError, OSError, ValueError, http.client.HTTPException) as exc:
-            print(f"pr-watch: {exc}", file=sys.stderr)
-            return 1
-        return 0
-    if args.state_dir is None:
+    if args.assert_author is not None and not args.repo:
+        parser.error("--assert-author needs --repo owner/name")
+    if (args.ci_log or args.ci_rerun) and not (args.repo and args.state_dir):
+        parser.error("--ci-log and --ci-rerun need --repo owner/name and --state-dir")
+    if args.assert_author is None and args.state_dir is None:
         parser.error("--state-dir is required for this mode")
+    try:
+        return run_mode(args, gh)
+    except (GhError, OSError, ValueError, http.client.HTTPException) as exc:
+        print(f"pr-watch: {exc}", file=sys.stderr)
+        return 1
+
+
+def run_mode(args, gh):
+    if args.assert_author is not None:
+        return assert_author(gh, args.repo, args.assert_author)
     if args.monitor:
         monitor(gh, args.state_dir)
         return 0
     if args.report or args.reseed:
         return report(gh, args.state_dir, reseed=args.reseed)
     watch = read_json(args.state_dir / "watch.json")
+    if args.ci_log:
+        print(ci_log(gh, args.repo, args.ci_log, watch.get("ado_orgs") or []))
+        return 0
+    if args.ci_rerun:
+        for line in ci_rerun(gh, args.repo, args.ci_rerun, watch.get("ado_orgs") or []):
+            print(f"rerun started: {line}")
+        return 0
     if args.checks:
         print(json.dumps(checks_payload(gh, watch, args.checks), indent=2))
         return 0

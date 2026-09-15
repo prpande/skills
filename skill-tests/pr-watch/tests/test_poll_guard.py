@@ -27,6 +27,14 @@ class GuardTests(unittest.TestCase):
         self.assertIn("push refused", err.getvalue())
         self.assertEqual([c[1] for c in gh.calls], ["repos/o/r/pulls/1420", "user"])
 
+    def test_a_gh_failure_is_exit_one_not_a_refusal(self):
+        gh = FakeGh()
+        gh.prs[1411] = pull(1411)
+        gh.fail_user = True
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            code = poll.main(["--assert-author", "1411", "--repo", "o/r"], gh=gh)
+        self.assertEqual((code, err.getvalue()), (1, "pr-watch: HTTP 401: Bad credentials\n"))
+
 
 class CliTests(unittest.TestCase):
     def setUp(self):
@@ -80,6 +88,53 @@ class CliTests(unittest.TestCase):
         _, text = self.run_main("--findings", "1420")
         payload = json.loads(text)
         self.assertEqual([t["thread_id"] for t in payload["threads"]], ["T9"])
+
+    def test_findings_flags_a_compare_at_the_file_cap(self):
+        self.gh.prs[1420] = pull(1420, author_login="author-b", head="h2",
+                                 threads=[thread("T9", [comment("m1", SELF, T0)], path="src/B.cs")],
+                                 reviews=[review("r1", SELF, T0, oid="h1")])
+        for count, capped in ((poll.COMPARE_FILE_CAP - 1, False), (poll.COMPARE_FILE_CAP, True)):
+            with self.subTest(count=count):
+                self.gh.compare["h1...h2"] = [f"src/F{i}.cs" for i in range(count)]
+                _, text = self.run_main("--findings", "1420")
+                self.assertIs(json.loads(text)["compare_capped"], capped)
+
+    def test_findings_compares_from_the_re_reviewed_head(self):
+        watch_state = watch({1420: "reviewed"})
+        watch_state["prs"]["1420"]["rereviewed_head"] = "h2"
+        (self.state / "watch.json").write_text(json.dumps(watch_state), encoding="utf-8")
+        self.gh.prs[1420] = pull(1420, author_login="author-b", head="h3",
+                                 threads=[thread("T9", [comment("m1", SELF, T0)], path="src/B.cs")],
+                                 reviews=[review("r1", SELF, T0, oid="h1")])
+        self.gh.compare["h2...h3"] = ["src/B.cs"]
+        _, text = self.run_main("--findings", "1420")
+        payload = json.loads(text)
+        self.assertEqual((payload["old_head"], payload["changed_files"]), ("h2", ["src/B.cs"]))
+
+    def run_failing(self, *args):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code, out = self.run_main(*args)
+        return code, out, err.getvalue()
+
+    def test_a_gh_error_is_one_stderr_line_and_exit_one(self):
+        self.gh.fail = {1420}
+        self.assertEqual(self.run_failing("--findings", "1420"),
+                         (1, "", "pr-watch: fetch of 1420 failed\n"))
+
+    def test_a_missing_state_file_is_one_stderr_line_and_exit_one(self):
+        (self.state / "watch.json").unlink()
+        code, out, err = self.run_failing("--report")
+        self.assertEqual((code, out), (1, ""))
+        self.assertTrue(err.startswith("pr-watch: ") and "watch.json" in err)
+        self.assertEqual(len(err.splitlines()), 1)
+
+    def test_a_corrupt_state_file_is_one_stderr_line_and_exit_one(self):
+        (self.state / "watch.json").write_text("{not json", encoding="utf-8")
+        code, out, err = self.run_failing("--checks", "1411")
+        self.assertEqual((code, out), (1, ""))
+        self.assertTrue(err.startswith("pr-watch: "))
+        self.assertEqual(len(err.splitlines()), 1)
 
     def test_state_dir_is_required_outside_the_guard(self):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):

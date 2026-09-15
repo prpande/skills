@@ -20,17 +20,17 @@ query($owner: String!, $repo: String!, $n: Int!, $after: String) {
           path
           line
           comments(first: 100) {
-            pageInfo { hasNextPage }
+            pageInfo { hasNextPage endCursor }
             nodes { id author { login __typename } createdAt updatedAt body }
           }
         }
       }
       comments(last: 100) {
-        pageInfo { hasPreviousPage }
+        pageInfo { hasPreviousPage startCursor }
         nodes { id author { login __typename } createdAt updatedAt body }
       }
       reviews(last: 100) {
-        pageInfo { hasPreviousPage }
+        pageInfo { hasPreviousPage startCursor }
         nodes { id author { login __typename } state submittedAt body commit { oid } }
       }
     }
