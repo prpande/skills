@@ -108,8 +108,7 @@ class CiLogTests(unittest.TestCase):
         gh.job_logs["102752575845"] = "\n".join(f"line {i}" for i in range(6000))
         lines = poll.ci_log(gh, "o/r", ACTIONS).splitlines()
         self.assertEqual((len(lines), lines[0], lines[-1]), (2000, "line 4000", "line 5999"))
-        self.assertIn(["run", "view", "--job", "102752575845", "--repo", "o/r", "--log-failed"],
-                      gh.calls)
+        self.assertIn(["api", "repos/o/r/actions/jobs/102752575845/logs"], gh.calls)
 
     def test_actions_log_anchors_on_the_first_failure_marker(self):
         gh = FakeGh()

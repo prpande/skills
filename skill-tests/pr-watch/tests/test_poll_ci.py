@@ -84,13 +84,28 @@ class CiTickTests(unittest.TestCase):
         self.gh.checks[1411] = [check("Gated / Unit Tests", bucket="pass")]
         self.assertEqual(self.tick(), [])
 
-    def test_same_failure_is_neither_emitted_nor_rechecked(self):
+    def test_same_failure_is_not_emitted_twice(self):
         self.red()
         self.tick()
         self.assertEqual(self.tick(), [])
         self.gh.prs[1411] = pull(1411, updated="2026-09-11T11:00:00Z")
         self.assertEqual(self.tick(), [])
-        self.assertEqual(self.gh.checks_calls(), 1)
+
+    def test_a_green_rollup_is_not_rechecked(self):
+        self.gh.rollup[1411] = "SUCCESS"
+        self.tick()
+        self.tick()
+        self.assertEqual(self.gh.checks_calls(), 0)
+
+    def test_a_later_required_failure_on_the_same_red_head_emits_again(self):
+        self.red()
+        self.assertEqual(len(self.tick()[0]["checks"]), 1)
+        self.gh.checks[1411].append(check("Gated / Integration Tests",
+                                          done="2026-09-10T05:40:02Z"))
+        events = self.tick()
+        self.assertEqual([c["name"] for c in events[0]["checks"]],
+                         ["Gated / Integration Tests", "Gated / Unit Tests"])
+        self.assertEqual(self.tick(), [])
 
     def test_a_rerun_that_fails_again_emits_again(self):
         self.red()

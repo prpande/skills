@@ -36,10 +36,14 @@ LOG_LINES = 2000
 FAILURE_MARK = re.compile(
     r"##\[error\]|\berror [A-Z]{2,5}\d{3,5}\b|\bFailed [\w.]+ \[|\bTest Run Failed\b|npm ERR!")
 CONTEXT_BEFORE = 500
+GH_TIMEOUT_SECONDS = 120
+COMPARE_FILE_CAP = 300
 
 
 class GhError(RuntimeError):
-    pass
+    def __init__(self, message, stdout=None):
+        super().__init__(message)
+        self.stdout = stdout
 
 
 def classify(author, self_login, allowlist):
@@ -155,10 +159,22 @@ def tails_payload(pr, watch_pr, self_login, allowlist):
 
 
 def run_gh(args):
-    out = subprocess.run(["gh", *args], capture_output=True, text=True, encoding="utf-8")
+    try:
+        out = subprocess.run(["gh", *args], capture_output=True, text=True, encoding="utf-8",
+                             timeout=GH_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        raise GhError(f"gh timed out after {GH_TIMEOUT_SECONDS}s: gh {' '.join(args[:2])}") from None
     if out.returncode != 0:
-        raise GhError(out.stderr.strip()[:400] or f"gh exited {out.returncode}")
+        raise GhError(out.stderr.strip()[:400] or f"gh exited {out.returncode}", stdout=out.stdout)
     return out.stdout
+
+
+def partial_body(exc):
+    try:
+        body = json.loads(exc.stdout or "")
+    except ValueError:
+        return None
+    return body if isinstance(body, dict) and body.get("data") is not None else None
 
 
 def graphql(gh, query, variables, allow_partial=False):
@@ -167,7 +183,12 @@ def graphql(gh, query, variables, allow_partial=False):
         if value is None:
             continue
         args += ["-F" if isinstance(value, int) else "-f", f"{key}={value}"]
-    data = json.loads(gh(args))
+    try:
+        data = json.loads(gh(args))
+    except GhError as exc:
+        data = partial_body(exc) if allow_partial else None
+        if data is None:
+            raise
     if data.get("errors") and not (allow_partial and data.get("data")):
         raise GhError(json.dumps(data["errors"])[:400])
     return data["data"]
@@ -239,7 +260,7 @@ def replies_after_me(thread, self_login, allowlist):
 
 def changed_files(gh, owner, repo, old, new):
     out = gh(["api", f"repos/{owner}/{repo}/compare/{old}...{new}", "--paginate",
-              "--jq", ".files[].filename"])
+              "--jq", "(.files // [])[].filename"])
     return sorted({line.strip() for line in out.splitlines() if line.strip()})
 
 
@@ -324,7 +345,8 @@ def evaluate_reviewed(gh, watch, pr, prev):
         if signature == prev.get("last_signature"):
             return None, signature
         files = set(changed_files(gh, watch["owner"], watch["repo"], old, new))
-        touches = any(t["path"] in files for t in threads)
+        # GitHub's compare lists at most 300 files, so a full list may omit a flagged file.
+        touches = len(files) >= COMPARE_FILE_CAP or any(t["path"] in files for t in threads)
         if not (touches or author_replied):
             return None, signature
         return {"pr": pr["number"], "role": "reviewed", "kind": "head-moved",
@@ -343,6 +365,7 @@ def tick_once(gh, watch, poller, now, force=False):
     events = []
     prs = poller.setdefault("prs", {})
     closed = poller.setdefault("closed", [])
+    closed[:] = [n for n in closed if str(n) in watch["prs"]]
     numbers = sorted(int(n) for n in watch["prs"] if int(n) not in closed)
     heads = {}
     if numbers:
@@ -360,35 +383,43 @@ def tick_once(gh, watch, poller, now, force=False):
             prs.pop(str(n), None)
             continue
         prev = prs.get(str(n), {})
+        watch_pr = watch["prs"][str(n)]
         rollup = rollup_state(node)
+        retry_after = watch_pr.get("retry_after")
+        retry = (retry_after is not None and retry_after <= now
+                 and retry_after != prev.get("retried_at"))
+        forced = force or retry
         moved = (node["updatedAt"] != prev.get("updated_at")
                  or node["headRefOid"] != prev.get("last_head"))
         ci_moved = (node["headRefOid"] != prev.get("last_head")
-                    or rollup != prev.get("last_rollup"))
-        if not (moved or ci_moved or force):
+                    or rollup != prev.get("last_rollup") or rollup in FAILED_ROLLUP)
+        if not (moved or ci_moved or forced):
             continue
-        watch_pr = watch["prs"][str(n)]
-        seen = {} if force else prev
+        seen = {} if forced else prev
         found = []
         signature = prev.get("last_signature", "")
         ci_signature = prev.get("last_ci_signature", "")
         try:
-            if moved or force:
+            if moved or forced:
                 pr = fetch_pr(gh, watch["owner"], watch["repo"], n)
                 if watch_pr["role"] == "authored":
                     event, signature = evaluate_authored(watch, pr, watch_pr, seen)
                 else:
                     event, signature = evaluate_reviewed(gh, watch, pr, seen)
                 found.append(event)
-            if watch_pr["role"] == "authored" and (ci_moved or force):
+            if watch_pr["role"] == "authored" and (ci_moved or forced):
                 event, ci_signature = evaluate_ci(gh, watch, n, node, seen)
                 found.append(event)
         except GhError as exc:
             print(f"pr-watch poller: PR #{n}: {exc}", file=sys.stderr, flush=True)
             continue
-        prs[str(n)] = {"updated_at": node["updatedAt"], "last_head": node["headRefOid"],
-                       "last_signature": signature, "last_rollup": rollup,
-                       "last_ci_signature": ci_signature}
+        entry = {"updated_at": node["updatedAt"], "last_head": node["headRefOid"],
+                 "last_signature": signature, "last_rollup": rollup,
+                 "last_ci_signature": ci_signature}
+        retried_at = retry_after if retry else prev.get("retried_at")
+        if retried_at is not None:
+            entry["retried_at"] = retried_at
+        prs[str(n)] = entry
         events += [e for e in found if e]
     queue = list(watch.get("push_queue", []))
     if not queue:
@@ -676,8 +707,7 @@ def failure_window(text, count=LOG_LINES):
 def ci_log(gh, repo_slug, link, ado=ado_request):
     target = check_platform(link)
     if target["platform"] == "github-actions":
-        return failure_window(gh(["run", "view", "--job", target["job_id"], "--repo", repo_slug,
-                                  "--log-failed"]))
+        return failure_window(gh(["api", f"repos/{repo_slug}/actions/jobs/{target['job_id']}/logs"]))
     if target["platform"] == "azure-pipelines":
         build = ADO_BUILD.format(**target)
         timeline = json.loads(ado(f"{build}/timeline?api-version=7.1"))
@@ -734,8 +764,8 @@ def main(argv=None, gh=run_gh):
     mode.add_argument("--assert-author", type=int, metavar="PR",
                       help="exit 0 only if the acting login authored the PR")
     mode.add_argument("--ci-log", metavar="LINK",
-                      help="print the failed steps behind a check link, anchored on the "
-                           "first failure marker")
+                      help="print the log behind a check link, anchored on the first "
+                           "failure marker")
     mode.add_argument("--ci-rerun", metavar="LINK",
                       help="rerun the failed jobs behind a check link")
     parser.add_argument("--state-dir", type=pathlib.Path, help="<main checkout>/.pr-autopilot")

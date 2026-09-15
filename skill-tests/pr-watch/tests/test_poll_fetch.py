@@ -1,7 +1,27 @@
 import json
+import subprocess
 import unittest
+from unittest import mock
 
 from fakes import T0, FakeGh, comment, poll, pull, thread
+
+
+class RunGhTests(unittest.TestCase):
+    def test_a_hung_gh_is_a_gh_error_naming_the_command(self):
+        hung = subprocess.TimeoutExpired(["gh", "api", "graphql"], 120)
+        with mock.patch.object(poll.subprocess, "run", side_effect=hung) as run:
+            with self.assertRaises(poll.GhError) as caught:
+                poll.run_gh(["api", "graphql", "-f", "query=q"])
+        self.assertEqual(str(caught.exception), "gh timed out after 120s: gh api graphql")
+        self.assertEqual(run.call_args.kwargs["timeout"], 120)
+
+    def test_a_failed_call_keeps_its_stdout(self):
+        done = subprocess.CompletedProcess(["gh"], 1, stdout='{"data": {}}', stderr="GraphQL: x")
+        with mock.patch.object(poll.subprocess, "run", return_value=done):
+            with self.assertRaises(poll.GhError) as caught:
+                poll.run_gh(["api", "graphql"])
+        self.assertEqual((str(caught.exception), caught.exception.stdout),
+                         ("GraphQL: x", '{"data": {}}'))
 
 
 class GraphqlTests(unittest.TestCase):
@@ -22,6 +42,28 @@ class GraphqlTests(unittest.TestCase):
                            "data": {"repository": {"p1": None}}})
         self.assertEqual(poll.graphql(lambda a: body, "q", {}, allow_partial=True),
                          {"repository": {"p1": None}})
+
+    @staticmethod
+    def failing(stdout):
+        def gh(args):
+            raise poll.GhError("GraphQL: one alias failed", stdout=stdout)
+        return gh
+
+    def test_partial_data_on_a_failed_exit_is_accepted_when_allowed(self):
+        body = json.dumps({"errors": [{"message": "one alias failed"}],
+                           "data": {"repository": {"p1": {"number": 1}, "p2": None}}})
+        self.assertEqual(poll.graphql(self.failing(body), "q", {}, allow_partial=True),
+                         {"repository": {"p1": {"number": 1}, "p2": None}})
+
+    def test_a_failed_exit_without_data_still_raises(self):
+        for stdout in (None, "", "not json", json.dumps({"errors": [], "data": None})):
+            with self.subTest(stdout=stdout), self.assertRaises(poll.GhError):
+                poll.graphql(self.failing(stdout), "q", {}, allow_partial=True)
+
+    def test_a_failed_exit_raises_when_partial_is_not_allowed(self):
+        body = json.dumps({"errors": [{"message": "x"}], "data": {"repository": {}}})
+        with self.assertRaises(poll.GhError):
+            poll.graphql(self.failing(body), "q", {})
 
 
 class FetchTests(unittest.TestCase):

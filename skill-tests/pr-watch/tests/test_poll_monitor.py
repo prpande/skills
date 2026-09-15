@@ -6,7 +6,8 @@ import tempfile
 import unittest
 import unittest.mock
 
-from fakes import NOW, SELF, T0, T1, FakeGh, comment, poll, pull, review, thread, watch
+from fakes import (ACTIONS, NOW, SELF, T0, T1, FakeGh, comment, poll, pull, review, thread,
+                   watch)
 
 
 def authored_pr(updated="2026-09-11T10:00:00Z", extra=()):
@@ -77,6 +78,28 @@ class AuthoredTickTests(unittest.TestCase):
         self.assertEqual(self.tick(), [])
         self.assertEqual(self.poller["closed"], [1411])
 
+    def test_a_closed_pr_removed_then_re_added_and_reopened_is_polled_again(self):
+        pr = authored_pr()
+        pr["state"] = "CLOSED"
+        self.gh.prs[1411] = pr
+        self.assertEqual([e["kind"] for e in self.tick()], ["closed"])
+        entry = self.watch["prs"].pop("1411")
+        self.assertEqual(self.tick(), [])
+        self.assertEqual(self.poller["closed"], [])
+        self.watch["prs"]["1411"] = entry
+        self.gh.prs[1411] = authored_pr()
+        self.assertEqual([e["kind"] for e in self.tick()], ["pending"])
+
+    def test_partial_heads_response_still_serves_the_prs_that_resolved(self):
+        self.watch = watch({1411: "authored", 1413: "authored"})
+        self.gh.prs[1411] = authored_pr()
+        self.gh.prs[1413] = pull(1413, threads=[thread("T3", [comment("c9", "reviewer-a", T0)])])
+        self.gh.partial_heads = {1413}
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            events = self.tick()
+        self.assertEqual([e["pr"] for e in events], [1411])
+        self.assertIn("PR #1413: null alias", err.getvalue())
+
     def test_fetch_error_on_one_pr_does_not_stop_the_others(self):
         self.watch = watch({1411: "authored", 1413: "authored"})
         self.gh.prs[1411] = authored_pr()
@@ -145,10 +168,62 @@ class ReviewedTickTests(unittest.TestCase):
         self.assertEqual(self.tick(), [{"pr": 1420, "role": "reviewed", "kind": "reply",
                                         "threads": ["T9"]}])
 
+    def test_a_compare_with_no_files_list_does_not_raise(self):
+        self.gh.prs[1420] = reviewed_pr(head="h2")
+        self.gh.compare["h1...h2"] = None
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(self.tick(), [])
+        self.assertEqual(err.getvalue(), "")
+
+    def test_a_compare_at_the_file_cap_counts_as_touching_my_findings(self):
+        self.gh.prs[1420] = reviewed_pr(head="h2")
+        self.gh.compare["h1...h2"] = [f"src/F{i}.cs" for i in range(300)]
+        events = self.tick()
+        self.assertEqual([e["kind"] for e in events], ["head-moved"])
+        self.assertTrue(events[0]["touches_my_findings"])
+
     def test_pr_without_my_threads_is_ignored(self):
         self.gh.prs[1420] = pull(1420, author_login="author-b", head="h2",
                                  threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
         self.assertEqual(self.tick(), [])
+
+
+class RetryAfterTests(unittest.TestCase):
+    def setUp(self):
+        self.gh = FakeGh()
+        self.gh.prs[1411] = authored_pr()
+        self.gh.rollup[1411] = "FAILURE"
+        self.gh.checks[1411] = [{"name": "Gated / Unit Tests", "state": "FAILURE",
+                                 "bucket": "fail", "link": ACTIONS, "workflow": "App Gated",
+                                 "completedAt": "2026-09-10T05:16:39Z"}]
+        self.watch = watch({1411: "authored"})
+        self.poller = {}
+        self.assertEqual([e["kind"] for e in self.tick(NOW)], ["pending", "ci-red"])
+
+    def tick(self, now):
+        return poll.tick_once(self.gh, self.watch, self.poller, now)
+
+    def test_a_skip_is_re_emitted_once_when_its_retry_time_passes(self):
+        self.watch["prs"]["1411"]["retry_after"] = NOW + 600
+        self.assertEqual(self.tick(NOW + 60), [])
+        self.assertEqual([e["kind"] for e in self.tick(NOW + 600)], ["pending", "ci-red"])
+        self.assertEqual(self.tick(NOW + 660), [])
+        self.assertEqual(self.poller["prs"]["1411"]["retried_at"], NOW + 600)
+
+    def test_retried_at_survives_later_writes_of_the_entry(self):
+        self.watch["prs"]["1411"]["retry_after"] = NOW + 600
+        self.tick(NOW + 600)
+        self.gh.prs[1411] = authored_pr(updated="2026-09-11T11:00:00Z")
+        self.tick(NOW + 660)
+        self.assertEqual(self.poller["prs"]["1411"]["retried_at"], NOW + 600)
+        self.assertEqual(self.tick(NOW + 720), [])
+
+    def test_a_new_retry_time_retries_again(self):
+        self.watch["prs"]["1411"]["retry_after"] = NOW + 600
+        self.tick(NOW + 600)
+        self.watch["prs"]["1411"]["retry_after"] = NOW + 1200
+        self.assertEqual(self.tick(NOW + 900), [])
+        self.assertEqual(len(self.tick(NOW + 1200)), 2)
 
 
 class MonitorLoopTests(unittest.TestCase):

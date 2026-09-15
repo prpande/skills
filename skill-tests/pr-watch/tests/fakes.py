@@ -80,6 +80,7 @@ class FakeGh:
         self.user = SELF
         self.fail = set()
         self.fail_heads = False
+        self.partial_heads = set()
         self.calls = []
         self.rollup = {}
         self.checks = {}
@@ -114,26 +115,34 @@ class FakeGh:
             nodes = {}
             for n, p in self.prs.items():
                 if f"p{n}:" in query:
-                    node = None if p is None else {
+                    node = None if p is None or n in self.partial_heads else {
                         "number": n, "updatedAt": p["updatedAt"],
                         "headRefOid": p["headRefOid"], "state": p["state"]}
                     if node is not None and n in self.rollup:
                         node["commits"] = {"nodes": [{"commit": {
                             "statusCheckRollup": {"state": self.rollup[n]}}}]}
                     nodes[f"p{n}"] = node
+            if self.partial_heads:
+                body = {"data": {"repository": nodes},
+                        "errors": [{"path": ["repository", f"p{n}"], "message": "not found"}
+                                   for n in sorted(self.partial_heads)]}
+                raise poll.GhError("GraphQL: not found", stdout=json.dumps(body))
             return json.dumps({"data": {"repository": nodes}})
         if args[:2] == ["pr", "checks"]:
             n = int(args[2])
             if n in self.no_checks:
                 raise poll.GhError("no required checks reported on the 'main' branch")
             return json.dumps(self.checks.get(n, []))
-        if args[:2] == ["run", "view"]:
-            return self.job_logs[args[args.index("--job") + 1]]
         if args[:2] == ["run", "rerun"]:
             return ""
         path = args[1]
+        if "/actions/jobs/" in path and path.endswith("/logs"):
+            return self.job_logs[path.split("/actions/jobs/")[1].split("/")[0]]
         if "/compare/" in path:
-            return "".join(f"{f}\n" for f in self.compare.get(path.split("/compare/")[1], []))
+            files = self.compare.get(path.split("/compare/")[1], [])
+            if files is None and not args[args.index("--jq") + 1].startswith("(.files // [])"):
+                raise poll.GhError("jq: error: Cannot iterate over null")
+            return "".join(f"{f}\n" for f in files or [])
         if path == "user":
             return self.user + "\n"
         if "/commits/" in path:
