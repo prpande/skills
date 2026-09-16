@@ -11,7 +11,7 @@ import math
 import re
 import sys
 
-from corpus import is_pre_cutoff, load_surfaces, read_jsonl, record_id, word_count
+from corpus import cutoff_arg, is_pre_cutoff, load_surfaces, read_jsonl, record_id, word_count
 
 LONG_MESSAGE_WORDS = 60
 VERY_LONG_WORDS = 150
@@ -105,7 +105,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--corpus", required=True)
     parser.add_argument("--module", required=True)
-    parser.add_argument("--cutoff", required=True, help="YYYY-MM, or never")
+    parser.add_argument("--cutoff", required=True, type=cutoff_arg, help="YYYY-MM, or never")
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
     records = read_jsonl(args.corpus)

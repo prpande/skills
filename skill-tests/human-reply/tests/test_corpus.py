@@ -39,6 +39,13 @@ class SurfaceTests(unittest.TestCase):
                     self.assertGreater(limits["minimum"], 0)
                     self.assertLessEqual(limits["minimum"], limits["default"])
 
+    def test_a_byte_order_mark_is_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "slack.jsonl"
+            line = json.dumps(record("D1/1", "2026-03-04T10:12:00Z")) + "\n"
+            path.write_bytes(line.encode("utf-8-sig"))
+            self.assertEqual(corpus.read_jsonl(path), [record("D1/1", "2026-03-04T10:12:00Z")])
+
     def test_a_missing_block_is_an_error(self):
         with self.assertRaises(ValueError):
             corpus.fenced_block("no fences here", "surfaces")
@@ -128,6 +135,13 @@ class HoldoutTests(unittest.TestCase):
         self.assertNotIn("D1/late", threads)
         self.assertEqual({r["thread"] for r in records if r["held_out"]}, threads)
 
+    def test_a_thread_with_a_pr_body_is_not_eligible(self):
+        records = [record("R1/pr", "2025-06-01T00:00:00Z", surface="PR body"),
+                   record("R1/pr", "2025-06-02T00:00:00Z", surface="issue comment"),
+                   record("R1/review", "2025-06-01T00:00:00Z", surface="review thread reply")]
+        self.assertEqual(corpus.select_holdouts(records, None, seed=1), [("R1/review", "pre-cutoff")])
+        self.assertEqual([r["held_out"] for r in records], [False, False, True])
+
     def test_the_same_seed_picks_the_same_threads(self):
         make = lambda: [record(f"D1/{i}", "2025-06-01T00:00:00Z") for i in range(10)]
         self.assertEqual(corpus.select_holdouts(make(), "2026-01", seed=3),
@@ -172,6 +186,14 @@ class HoldoutTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out.getvalue()), [{"thread": "D1/1", "pool": "pre-cutoff"}])
         self.assertTrue(rewritten[0]["held_out"])
+
+    def test_cli_rejects_a_cutoff_that_is_not_a_month_or_never(self):
+        for bad in ("2026-1", "2026-13", "none", "Jan 2026"):
+            with self.subTest(cutoff=bad), contextlib.redirect_stderr(io.StringIO()) as err:
+                with self.assertRaises(SystemExit) as exit_:
+                    corpus.main(["holdout", "--corpus", "x", "--cutoff", bad, "--seed", "1"])
+                self.assertEqual(exit_.exception.code, 2)
+                self.assertIn("YYYY-MM or never", err.getvalue())
 
     def test_cli_reset_clears_marks_left_by_an_earlier_cutoff(self):
         with tempfile.TemporaryDirectory() as tmp:

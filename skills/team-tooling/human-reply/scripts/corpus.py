@@ -25,11 +25,14 @@ TS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 FENCED_CODE = re.compile(r"```[\s\S]*?```")
 SLACK_LINK = re.compile(r"<https?://[^>\n]+>")
 MARKDOWN_LINK = re.compile(r"\[[^\]\n]*\]\([^)\s]+\)")
+CUTOFF = re.compile(r"^\d{4}-(?:0[1-9]|1[0-2])$")
 HOLDOUTS_PER_CHANNEL = 3
+# Calibration drafts a reply to someone else's message, and a PR body answers nobody.
+NO_REPLY_TARGET_SURFACE = "PR body"
 
 
 def read_jsonl(path):
-    with open(path, encoding="utf-8") as f:
+    with open(path, encoding="utf-8-sig") as f:
         return [json.loads(line) for line in f if line.strip()]
 
 
@@ -74,6 +77,13 @@ def record_id(record):
 def is_pre_cutoff(record, cutoff):
     """cutoff is "YYYY-MM" or None; a message sent in the cutoff month is after it."""
     return cutoff is None or record["ts"][:7] < cutoff
+
+
+def cutoff_arg(value):
+    """argparse type for --cutoff: returns "YYYY-MM" or "never" unchanged."""
+    if value == "never" or CUTOFF.match(value):
+        return value
+    raise argparse.ArgumentTypeError(f"{value!r} is not YYYY-MM or never")
 
 
 def validate_record(record, surfaces):
@@ -126,7 +136,9 @@ def select_holdouts(records, cutoff, seed, passed_ids=None):
     threads = _threads(records)
     chosen = [(t, "earlier") for t, rs in threads.items() if any(r["held_out"] for r in rs)]
     eligible = {t: rs for t, rs in threads.items()
-                if max(r["others"] for r in rs) >= 1 and t not in dict(chosen)}
+                if max(r["others"] for r in rs) >= 1
+                and all(r["surface"] != NO_REPLY_TARGET_SURFACE for r in rs)
+                and t not in dict(chosen)}
     pre = sorted(t for t, rs in eligible.items() if all(is_pre_cutoff(r, cutoff) for r in rs))
     pools = [("pre-cutoff", pre)]
     if cutoff is not None and passed_ids is not None:
@@ -155,11 +167,11 @@ def main(argv=None):
     v.add_argument("--module", required=True)
     h = sub.add_parser("holdout")
     h.add_argument("--corpus", required=True)
-    h.add_argument("--cutoff", required=True, help="YYYY-MM, or never")
+    h.add_argument("--cutoff", required=True, type=cutoff_arg, help="YYYY-MM, or never")
     h.add_argument("--seed", required=True, type=int)
     h.add_argument("--passed", help="JSONL of records that passed the filter")
     h.add_argument("--reset", action="store_true", help="clear every hold-out mark before choosing")
-    n =sub.add_parser("normalize")
+    n = sub.add_parser("normalize")
     n.add_argument("--corpus", required=True)
     n.add_argument("--cap", required=True, type=int)
     o = sub.add_parser("oldest")

@@ -4,15 +4,16 @@
         --reference references/ai-filter.md --cutoff 2026-01|never
         [--threshold 3] [--borrow] --kept <channel>.kept.jsonl
 
-Prints a JSON summary: total, scanned, dropped, drop_rate, threshold, and
-up to five dropped samples with the patterns each one hit.
+Prints a JSON summary: total, scanned, dropped, drop_rate (dropped over
+scanned), total_drop_rate (dropped over total), threshold, and up to five
+dropped samples with the patterns each one hit.
 """
 import argparse
 import json
 import re
 import sys
 
-from corpus import fenced_block, is_pre_cutoff, read_jsonl, record_id, word_count, write_jsonl
+from corpus import cutoff_arg, fenced_block, is_pre_cutoff, read_jsonl, record_id, word_count, write_jsonl
 
 DEFAULT_THRESHOLD = 3
 LONG_MESSAGE_WORDS = 60
@@ -166,7 +167,7 @@ def main(argv=None):
     parser.add_argument("--corpus", required=True)
     parser.add_argument("--module", required=True)
     parser.add_argument("--reference", required=True)
-    parser.add_argument("--cutoff", required=True, help="YYYY-MM, or never")
+    parser.add_argument("--cutoff", required=True, type=cutoff_arg, help="YYYY-MM, or never")
     parser.add_argument("--threshold", type=int, default=DEFAULT_THRESHOLD)
     parser.add_argument("--borrow", action="store_true", help="colleague sample: scan every long message")
     parser.add_argument("--kept", required=True)
@@ -189,7 +190,8 @@ def main(argv=None):
         "total": len(records),
         "scanned": scanned,
         "dropped": len(dropped),
-        "drop_rate": round(len(dropped) / len(records), 3) if records else 0.0,
+        "drop_rate": round(len(dropped) / scanned, 3) if scanned else 0.0,
+        "total_drop_rate": round(len(dropped) / len(records), 3) if records else 0.0,
         "threshold": args.threshold,
         "samples": [{"id": record_id(r), "hits": hits, "text": r["text"]} for r, hits in dropped[:SAMPLES]],
     }

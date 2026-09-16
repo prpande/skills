@@ -115,6 +115,12 @@ class MeasureTests(unittest.TestCase):
         self.assertEqual(list(stats["surfaces"]), list(corpus.load_surfaces(SLACK)))
         self.assertEqual(printed.getvalue(), "measure: 1 records, 0 over 60 words\n")
 
+    def test_a_cutoff_that_is_not_a_month_or_never_is_rejected(self):
+        with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit) as exit_:
+            measure.main(["--corpus", "x", "--module", "x", "--cutoff", "26-01", "--out", "x"])
+        self.assertEqual(exit_.exception.code, 2)
+        self.assertIn("YYYY-MM or never", err.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

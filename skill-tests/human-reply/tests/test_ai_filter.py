@@ -259,9 +259,26 @@ class CliTests(unittest.TestCase):
         summary = json.loads(out.getvalue())
         self.assertEqual(code, 0)
         self.assertEqual(kept_ts, ["2026-03-02T00:00:00Z", "2026-03-03T00:00:00Z"])
-        self.assertEqual({k: summary[k] for k in ("total", "scanned", "dropped", "drop_rate", "threshold")},
-                         {"total": 3, "scanned": 2, "dropped": 1, "drop_rate": 0.333, "threshold": 3})
+        self.assertEqual({k: summary[k] for k in ("total", "scanned", "dropped", "drop_rate", "total_drop_rate", "threshold")},
+                         {"total": 3, "scanned": 2, "dropped": 1, "drop_rate": 0.5, "total_drop_rate": 0.333, "threshold": 3})
         self.assertEqual(summary["samples"][0]["id"], "C1/2026-03-01T00:00:00Z")
+
+    def test_nothing_scanned_is_a_zero_drop_rate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, kept = pathlib.Path(tmp) / "slack.jsonl", pathlib.Path(tmp) / "slack.kept.jsonl"
+            corpus.write_jsonl(source, [record("ok", "outer DM")])
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                ai_filter.main(["--corpus", str(source), "--module", str(MODULES["slack"]),
+                                "--reference", str(REFERENCE), "--cutoff", "never", "--kept", str(kept)])
+        summary = json.loads(out.getvalue())
+        self.assertEqual((summary["scanned"], summary["drop_rate"], summary["total_drop_rate"]), (0, 0.0, 0.0))
+
+    def test_a_cutoff_that_is_not_a_month_or_never_is_rejected(self):
+        with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit) as exit_:
+            ai_filter.main(["--corpus", "x", "--module", "x", "--reference", "x",
+                            "--cutoff", "2026-13", "--kept", "x"])
+        self.assertEqual(exit_.exception.code, 2)
+        self.assertIn("YYYY-MM or never", err.getvalue())
 
     def test_an_out_of_range_threshold_exits_two(self):
         with contextlib.redirect_stderr(io.StringIO()) as err:
