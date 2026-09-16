@@ -34,10 +34,18 @@ and not from the drain):
 
 - the payload `head` is not `last_pushed_head`, or any record in the
   dispatch set has an `author_type` other than `Bot`: set
-  `review_fix_pushes` to 0 and write `watch.json`;
+  `review_fix_pushes` to 0, `cap_notified_head` to null, and write
+  `watch.json`;
 - otherwise, when `review_fix_pushes` is `3`: escalate ("needs you, no
-  comment", reason "bot findings keep coming after 3 fix pushes") and
-  stop. A human comment or a push the watch did not make clears it.
+  comment", reason "bot findings keep coming after 3 fix pushes"), add
+  the dispatch set's ids to `escalated_ids`, set `cap_notified_head` to
+  the payload `head`, write `watch.json`, and stop. A human comment or a
+  push the watch did not make clears it.
+  When `cap_notified_head` already is that head, do all of it except the
+  escalation: the user has the message, and nothing the message is about
+  can have changed, because the cap is what stops the push that would
+  change it. Otherwise a bot that re-reviews on its own schedule buys the
+  user one notification per round for one situation.
 
 To skip with a reason:
 
