@@ -756,7 +756,7 @@ reply goes through it.
 
 ### 6.1 Sources
 
-- The user's Slack corpus rules in `slack-reply/references/` (shapes,
+- The user's Slack corpus rules in `skills/team-tooling/slack-reply/references/` (shapes,
   phrasebook, audit), translated to GitHub markdown.
 - The `humanizer` skill's tell catalogue.
 - A PR-comment corpus from a colleague who reviews by hand: every comment,
