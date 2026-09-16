@@ -96,7 +96,9 @@ def pending(pr, watch_pr, self_login, allowlist):
     threads = []
     for t in pr["reviewThreads"]["nodes"]:
         tail = thread_tail(t["comments"]["nodes"], cut)
-        if tail:
+        # A tail of only the user's own comments is them talking on their own PR,
+        # the same case the top-level filter below drops.
+        if tail and any(classify(c["author"], self_login, allowlist)[1] != "me" for c in tail):
             threads.append((t, tail))
     top = [(surface, item) for surface, item, _ in top_level_items(pr)
            if item["id"] not in handled

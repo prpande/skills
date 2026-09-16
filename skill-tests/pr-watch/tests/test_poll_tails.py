@@ -36,6 +36,18 @@ class PendingTests(unittest.TestCase):
         threads, _ = poll.pending(pull(threads=[t]), entry(settled_ids=["c1"]), SELF, ALLOW)
         self.assertEqual(threads, [])
 
+    def test_tail_of_only_my_own_comments_is_not_pending(self):
+        t = thread("T1", [comment("c1", "reviewer-a", T0), comment("c2", SELF, T1),
+                          comment("c3", SELF, T2)])
+        threads, _ = poll.pending(pull(threads=[t]), entry(posted_reply_ids=["c2"]), SELF, ALLOW)
+        self.assertEqual(threads, [])
+
+    def test_my_comment_after_someone_elses_keeps_the_thread_pending(self):
+        t = thread("T1", [comment("c1", SELF, T0), comment("c2", "reviewer-a", T1),
+                          comment("c3", SELF, T2)])
+        threads, _ = poll.pending(pull(threads=[t]), entry(), SELF, ALLOW)
+        self.assertEqual(tail_ids(threads), [["c1", "c2", "c3"]])
+
     def test_resolved_thread_is_read_like_an_open_one(self):
         t = thread("T1", [comment("c1", "reviewer-a", T0), comment("c2", SELF, T1),
                           comment("c3", "reviewer-a", T2)], resolved=True)

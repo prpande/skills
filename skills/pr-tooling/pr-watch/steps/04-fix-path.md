@@ -228,10 +228,13 @@ to section 9.
    - the thread was opened by a bot and the verdict is `fixed`,
      `fixed-differently`, `not-addressing` with evidence, or `replied`
      because the code is gone; or
-   - a human opened or joined it, asked for something concrete (not a
-     question), and the fix was verified.
-   Leave it open when the human's latest comment asks a question or sets
-   a condition. Never resolve to tidy up. A resolve that exits non-zero
+   - a human opened or joined it asking for a change, and the fix was
+     verified. Most review comments ask for their change as a question
+     ("can we make this checked?", "should this be nullable?"); a
+     question mark does not make it one to leave open.
+   Leave it open when the human's latest comment asks for an answer
+   rather than a change, or sets a condition on one. Never resolve to
+   tidy up. A resolve that exits non-zero
    or does not return `isResolved: true`: post the "resolve failed" line
    (`pr-watch/steps/06-notify.md`) in the PR thread and continue with the
    next return. Under `dry_run` the resolve goes to the dry-run file and
