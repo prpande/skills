@@ -18,6 +18,10 @@ The timeout is a ceiling on one stretch of watching, not on the watch:
 the monitor is armed again each time it ends, until `/pr-watch stop`.
 
 Remember the task id in the conversation; nothing on disk records it.
+Every arming returns a new one, so each re-arm below replaces the
+remembered id. `/pr-watch stop` stops whatever the last arming returned;
+on an id left over from an expired task it would stop nothing and leave
+the live monitor running.
 
 The first tick is a full reconciliation, so the first events arrive within
 a minute for every PR with pending work.
@@ -29,19 +33,22 @@ nothing to do on return.
 
 ## Stream ended
 
-The monitor ends on its own once `timeout_ms` is up, and this is the
-common notification: on a 30-minute cap a watch that runs an afternoon
-sees it several times. Arm it again as above. Nothing is missed in the
-gap and nothing is posted about it — the first tick after re-arming is a
-full reconciliation, so pending work that arrived meanwhile comes through
-as its own event.
+A monitor ends in one of two ways, and the notification says which.
 
-A stream that ends well before the timeout ended for a reason. Arm it
-again and post "Watch monitor restarted." in each PR thread that has a
-root (`pr-watch/steps/06-notify.md`), so the thread records the gap. If a
-second arming also ends within a minute, stop re-arming and tell the
-user, with whatever the task's output held; the watch is down until they
-fix it.
+An expiry notice names the deadline it reached and the number of events
+it delivered ("Monitor expired after 30m with 2 events delivered"). This
+is the common one: on a 30-minute cap a watch that runs an afternoon
+sees it several times. Arm it again as above, keep the new task id, and
+post nothing — the first tick after re-arming is a full reconciliation,
+so work that arrived in the gap comes through as its own event.
+
+Any other ending is the poller exiting or dying, and the notice carries
+its exit code or its output instead. Arm it again, keep the new task id,
+and post "Watch monitor restarted." in each PR thread that has a root
+(`pr-watch/steps/06-notify.md`), so the thread records the gap. If the
+next arming ends the same way rather than at its deadline, stop
+re-arming and tell the user what the notice said; the watch is down
+until they fix it.
 
 ## Stop
 

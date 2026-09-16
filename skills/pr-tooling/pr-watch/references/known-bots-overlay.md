@@ -23,7 +23,8 @@ fallback and read as actionable.
 | `mergewatch-playlist` | Top-level PR comment | starts with `<!-- mergewatch-review -->` | Parse — the summary, see below |
 | `mergewatch-playlist` | Review body | starts with `<!-- mergewatch-review -->` | Parse — re-read the current summary, see below |
 | `copilot-pull-request-reviewer` | Inline review comment | any body | Actionable |
-| `copilot-pull-request-reviewer` | Review body | any body | Skip — meta/summary, see below |
+| `copilot-pull-request-reviewer` | Review body | contains `### Suppressed comments` | Parse — one finding per item, see below |
+| `copilot-pull-request-reviewer` | Review body | no `### Suppressed comments` | Skip — verdict and counts only |
 
 Signatures verified against live comments on the last 40 PRs of
 `mindbody/Mindbody.Scheduling` on 2026-09-11, and the Copilot rows
@@ -90,13 +91,28 @@ Copilot rows are keyed on `Copilot` and on
 `copilot-pull-request-reviewer[bot]`, so they never match here and the
 rows above are the ones that apply.
 
-Every finding Copilot has is an inline comment on the file it concerns.
-The review body holds a verdict line (`### 🟢 Approval recommended`,
-`### 🟡 Changes recommended`) over a `<details>` block of file and
-comment counts, and nothing to act on, so it is keyed on the login alone
-rather than on a verdict this reviewer may reword. A review with no
-inline comments then raises no work at all, which is the usual outcome
-on a small PR.
+The review body opens with a verdict line (`### 🟢 Approval recommended`,
+`### 🟡 Changes recommended`, `### 🔵 Needs a closer look`) over
+`<details>` blocks. The rows are keyed on the sections inside rather than
+on that line, which this reviewer rewords freely.
+
+Most of what Copilot finds is an inline comment on the file it concerns,
+and the body then carries only the verdict, an overview, per-file
+summaries and counts: nothing to act on, and a review with no inline
+comments raises no work at all.
+
+The exception is the `### Suppressed comments` section under
+`<summary>Review details</summary>`, which holds the findings Copilot
+decided not to post inline. Each item is a `**<path>:<line>**` heading, a
+bullet holding the whole finding, and a fenced quote of the lines it
+refers to; that bullet is one actionable finding, and the review carries
+them even when its counts say `Comments generated: 0 new`. Record the
+disposition in `handled_top_level_ids` under `copilot|<path>|<the
+bullet's first sentence>`, and the review's own id under `parsed`.
+Copilot repeats a finding it still sees in the next review, under a new
+review id and often a moved line, so neither belongs in the key; the
+path and the sentence carry across and keep an answered finding from
+being raised again.
 
 A comment that matches no row falls through to the library's unknown-bot
 fallback. When a status line changes shape, update the row here rather
