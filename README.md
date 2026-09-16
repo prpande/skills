@@ -15,6 +15,7 @@ User-level Claude Code skills maintained by @prpande.
 | [`squad-learnings`](./skills/team-tooling/squad-learnings/SKILL.md) | Per-machine ledger of engineering learnings, captured as they happen; `install` wires proactive capture into the user's global CLAUDE.md, `review` compiles a quarter-half readout. Works on a bare Claude Code install. |
 | [`contribution-log`](./skills/career-tooling/contribution-log/SKILL.md) | Local-first record of what the user delivered, captured at milestone moments; window-based `review` (week/month/cycle/quarter/year) with opt-in GitHub/ADO/Notion/Slack enrichment, and a `promo` mode for annual-review and promotion packages. |
 | [`slack-reply`](./skills/team-tooling/slack-reply/SKILL.md) | Draft, rewrite, or audit a Slack message in the user's own voice: reader tier and word budget first, then corpus-derived message shapes and phrasebook. Text only, never sends. |
+| [`human-reply`](./skills/team-tooling/human-reply/SKILL.md) | Draft, rewrite, or audit a Slack, GitHub, or Notion message in the user's own voice. A guided setup measures the user's real messages per channel, filters out AI-drafted ones, and writes a voice profile to the home folder. Text only, never posts. |
 
 ## Supporting library
 
@@ -51,6 +52,7 @@ ln -s "$PWD/skills/api-tooling/api-e2e"                  "$HOME/.claude/skills/a
 ln -s "$PWD/skills/team-tooling/squad-learnings"         "$HOME/.claude/skills/squad-learnings"
 ln -s "$PWD/skills/career-tooling/contribution-log"      "$HOME/.claude/skills/contribution-log"
 ln -s "$PWD/skills/team-tooling/slack-reply"             "$HOME/.claude/skills/slack-reply"
+ln -s "$PWD/skills/team-tooling/human-reply"             "$HOME/.claude/skills/human-reply"
 ```
 
 On Windows with Git Bash, use `cmd //c mklink /D` or copy:
@@ -66,6 +68,7 @@ cp -r skills/api-tooling/api-e2e                  "$HOME/.claude/skills/api-e2e"
 cp -r skills/team-tooling/squad-learnings         "$HOME/.claude/skills/squad-learnings"
 cp -r skills/career-tooling/contribution-log      "$HOME/.claude/skills/contribution-log"
 cp -r skills/team-tooling/slack-reply             "$HOME/.claude/skills/slack-reply"
+cp -r skills/team-tooling/human-reply             "$HOME/.claude/skills/human-reply"
 ```
 
 After installation, restart your Claude Code session. The skills appear in
