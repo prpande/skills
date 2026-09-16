@@ -36,6 +36,8 @@ Standalone prompts you can paste into a Claude conversation — no install step.
 - [2026-04-17 pr-autopilot skill implementation plan](./docs/superpowers/plans/2026-04-17-pr-autopilot-skill-implementation.md)
 - [2026-04-22 design-coverage platform-agnostic design](./docs/superpowers/specs/2026-04-22-design-coverage-platform-agnostic-design.md)
 - [2026-04-22 design-coverage platform-agnostic implementation plan](./docs/superpowers/plans/2026-04-22-design-coverage-platform-agnostic.md)
+- [2026-09-16 human-reply design](./docs/superpowers/specs/2026-09-16-human-reply-design.md)
+- [2026-09-16 human-reply implementation plan](./docs/superpowers/plans/2026-09-16-human-reply.md)
 
 ## Installation
 
