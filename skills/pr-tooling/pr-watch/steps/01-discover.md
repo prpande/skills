@@ -184,9 +184,19 @@ others):
 }
 ```
 
-Use the staged write from `pr-watch/references/watch-state-schema.md`
-"Writing"; these files sit in other worktrees, which the Write tool
-refuses the same way. An existing file (from a `pr-autopilot`
+These files sit in other worktrees, which the Write tool refuses the
+same way as `STATE_DIR`. Write the object to the scratchpad and place it
+with the script from `pr-watch/references/watch-state-schema.md`
+"Writing", naming this file on both sides:
+
+```
+python "<SKILL_DIR>/scripts/state_put.py" "<scratchpad>/pr-<N>.json.new" "<worktree>/.pr-autopilot/pr-<N>.json"
+```
+
+Creating the file is all this step does; no lock exists yet, and the
+library's own write protocol (lock refresh, schema validation, the
+`state_write` log line) governs every update after step 04 acquires one.
+An existing file (from a `pr-autopilot`
 run) is left as it is; the lock protocol updates its `session_id` when it
 reclaims.
 

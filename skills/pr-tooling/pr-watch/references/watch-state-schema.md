@@ -17,18 +17,22 @@ written by the session.
 with the Write tool: it refuses every path outside the worktree the
 session is in. This is the normal case, not an edge one, and it applies
 to the library files in the other PR worktrees too. Write the new object
-to the scratchpad with the Write tool, then run one command to put it in
-place:
+to the scratchpad with the Write tool, then hand it to the script that
+does the placing:
 
 ```
-python -c "import os, shutil, sys; shutil.copyfile(sys.argv[1], sys.argv[2] + '.tmp'); os.replace(sys.argv[2] + '.tmp', sys.argv[2])" "<scratchpad>/watch.json.new" "<STATE_DIR>/watch.json"
+python "<SKILL_DIR>/scripts/state_put.py" "<scratchpad>/watch.json.new" "<STATE_DIR>/watch.json"
 ```
 
-The copy lands in `STATE_DIR` before the rename, so the rename stays
-within one filesystem and a reader sees either the old file or the new
-one. A plain move from the scratchpad does not: the scratchpad is
-usually on another volume, where the move is a copy a reader can catch
-half-written.
+It takes any source and any destination, so it places the library's
+`pr-<N>.json` the same way. It reads the staged file as JSON (a
+half-written one fails there, before anything is replaced), creates the
+destination's directory if it is missing, and writes through the
+poller's own `write_json_atomic`: the temp file is made next to the
+destination, so the rename stays on one filesystem, and a replace that
+Windows refuses because a reader holds the file open is retried before
+it gives up. A hand-rolled copy and rename has neither the retry nor the
+cleanup.
 
 ## `watch.json` — written only by the session
 
