@@ -109,6 +109,30 @@ class BaselineTests(unittest.TestCase):
                   reviews=[review("r1", SELF, T1, body="")])
         self.assertEqual(poll.baseline(pr, SELF, ALLOW)["handled_top_level_ids"], {})
 
+    def test_bot_review_on_the_current_head_stays_pending(self):
+        pr = pull(head="h2", reviews=[review("r1", "copilot-pull-request-reviewer", T1,
+                                             body="findings", oid="h2", typename="Bot")])
+        self.assertEqual(poll.baseline(pr, SELF, ALLOW)["handled_top_level_ids"], {})
+
+    def test_bot_review_on_an_older_head_is_baselined(self):
+        pr = pull(head="h2", reviews=[review("r1", "copilot-pull-request-reviewer", T1,
+                                             body="findings", oid="h1", typename="Bot")])
+        self.assertEqual(poll.baseline(pr, SELF, ALLOW)["handled_top_level_ids"],
+                         {"r1": "baseline"})
+
+    def test_bot_issue_comment_is_baselined_on_any_head(self):
+        pr = pull(head="h2", comments=[comment("b1", "sonarqube-mbodevme", T1)])
+        self.assertEqual(poll.baseline(pr, SELF, ALLOW)["handled_top_level_ids"],
+                         {"b1": "baseline"})
+
+    def test_bot_review_on_the_current_head_predating_my_activity_is_baselined(self):
+        pr = pull(head="h2",
+                  reviews=[review("r1", "copilot-pull-request-reviewer", T0,
+                                  body="findings", oid="h2", typename="Bot"),
+                           review("r2", SELF, T1, body="")])
+        self.assertEqual(poll.baseline(pr, SELF, ALLOW)["handled_top_level_ids"],
+                         {"r1": "baseline"})
+
 
 class PayloadTests(unittest.TestCase):
     def test_records_carry_exactly_the_comment_record_fields(self):

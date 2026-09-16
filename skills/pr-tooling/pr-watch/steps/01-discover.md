@@ -139,6 +139,14 @@ the excluded PRs in step 6 with the command's stderr line, and go on
 with the other PRs. A PR left in without its baseline would be resumed
 next run with every old thread pending.
 
+The baseline holds back one kind of existing item: a bot review submitted
+against the PR's current head. That is feedback on the code as it stands,
+and a review body can carry findings of its own
+(`pr-watch/references/known-bots-overlay.md`), so it arrives as the first
+`pending` event instead of being treated as history. A bot review on an
+older head, a bot issue comment, and anything the user already answered
+are baselined as before.
+
 ## 6. Confirm
 
 For each PR run `POLL --tails <N>` (authored) or `POLL --findings <N>`
