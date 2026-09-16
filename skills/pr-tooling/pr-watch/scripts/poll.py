@@ -96,7 +96,9 @@ def pending(pr, watch_pr, self_login, allowlist):
     threads = []
     for t in pr["reviewThreads"]["nodes"]:
         tail = thread_tail(t["comments"]["nodes"], cut)
-        if tail:
+        # A tail of only the user's own comments is them talking on their own PR,
+        # the same case the top-level filter below drops.
+        if tail and any(classify(c["author"], self_login, allowlist)[1] != "me" for c in tail):
             threads.append((t, tail))
     top = [(surface, item) for surface, item, _ in top_level_items(pr)
            if item["id"] not in handled
@@ -120,10 +122,19 @@ def baseline(pr, self_login, allowlist):
     stamps += [r["submittedAt"] for r in pr["reviews"]["nodes"]
                if kind(r["author"]) == "me" and r.get("submittedAt")]
     newest_me = max(stamps) if stamps else None
+    head = pr.get("headRefOid")
     handled = {}
-    for _, item, when in top_level_items(pr):
+    for surface, item, when in top_level_items(pr):
         k = kind(item["author"])
-        if k in ("bot", "me") or (newest_me and when and when < newest_me):
+        if newest_me and when and when < newest_me:
+            handled[item["id"]] = "baseline"
+            continue
+        # A review submitted against the current head is feedback on the code as
+        # it stands, so a bot review already on the PR when the watch is armed is
+        # live work rather than history. Issue comments carry no commit.
+        on_head = (surface == "review" and head
+                   and (item.get("commit") or {}).get("oid") == head)
+        if k == "me" or (k == "bot" and not on_head):
             handled[item["id"]] = "baseline"
     return {"settled_ids": settled, "handled_top_level_ids": handled}
 
