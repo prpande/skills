@@ -15,8 +15,10 @@ into `<home>/corpus/draft/` rather than their final place:
 - `draft/profile.md` from `setup.json` and the reconciliation in the read
   step. Carry every voice entry of a channel not rebuilt in this run over
   from its existing profile file unchanged. Borrowed traits already in an
-  existing `profile.md` stay, and the lines in `"borrowed"` are added with
-  today's date.
+  existing `profile.md` stay. Each line in `"borrowed"` is added under
+  Borrowed traits as `<trait> | from <borrow.name> | adopted <today> |
+  told: yes`, and the header's `borrowed from` names `borrow.name`. No
+  quoted colleague text goes into the profile.
 
 When `setup <channel>` rebuilds one channel, copy the other channels'
 existing files into `draft/channels/`, then apply the reconciliation's
