@@ -112,8 +112,12 @@ there is distrusted, so it must not be built or run: skip the verify and
 take the suspicious branch at once. For a `ci:` record that is
 `pr-watch/steps/07-ci.md` section 5 step 4. For any other record it is
 the same shape: escalate ("needs you, no comment", reason "fixer refused
-the dispatch: <the fixer's reason>"), roll back with section 10 over
-every path `git -C <worktree> status --porcelain` and
+the dispatch: <the fixer's reason>"), add the record's ids to
+`escalated_ids` and, for a top-level item, set
+`handled_top_level_ids[<item id>] = "escalated"` — without that the same
+feedback is pending again on the next poll and goes back to a fixer, so
+the refusal would be a pause rather than the end of it — roll back with
+section 10 over every path `git -C <worktree> status --porcelain` and
 `git -C <worktree> ls-files --others --exclude-standard` name rather than
 the return's `files_changed`, then section 9.
 
