@@ -70,7 +70,13 @@ Write `watch.json` after every numbered action below that changes it.
    tool, not a code comment") and add the id to `escalated_ids`; for a
    top-level item also set `handled_top_level_ids[<id>] = "escalated"`.
 7. One round per human exchange. For a thread with
-   `follows_watch_reply: true` whose `tail_kinds` holds `human`:
+   `follows_watch_reply: true` whose `tail_kinds` holds `human`, first
+   set `review_fix_pushes` to 0 and `cap_notified_head` to null and write
+   `watch.json`. A human has spoken, which is what clears the cap
+   (`pr-watch/steps/04-fix-path.md` section 1), and both branches below
+   end this event without reaching that section, so clearing it there
+   alone would leave a capped watch silent after the comment that was
+   meant to release it. Then:
    - the human only acknowledges (agreement, thanks, a thumbs-up; no
      question and no condition): run
      `POLL --assert-author <N> --repo <SLUG>`; on a non-zero exit post

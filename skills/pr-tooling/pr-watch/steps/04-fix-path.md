@@ -40,7 +40,9 @@ and not from the drain):
   comment", reason "bot findings keep coming after 3 fix pushes"), add
   the dispatch set's ids to `escalated_ids`, set `cap_notified_head` to
   the payload `head`, write `watch.json`, and stop. A human comment or a
-  push the watch did not make clears it.
+  push the watch did not make clears it; a human comment that never
+  reaches this section is cleared by `pr-watch/steps/03-route-event.md`
+  A.7 instead.
   When `cap_notified_head` already is that head, do all of it except the
   escalation: the user has the message, and nothing the message is about
   can have changed, because the cap is what stops the push that would
@@ -103,7 +105,17 @@ Run `pr-loop-lib/steps/04-dispatch-fixers.md` as written, except:
   `git checkout`; `pr-watch` never pushes a partial fix. The attempted
   change goes into the escalation text.
 
-Then run `pr-loop-lib/steps/04.5-local-verify.md` as written.
+Then run `pr-loop-lib/steps/04.5-local-verify.md` as written, unless a
+return carries `suspicious: true`. Local verify builds and runs whatever
+stands in the worktree, and that flag is the one case where what stands
+there is distrusted, so it must not be built or run: skip the verify and
+take the suspicious branch at once. For a `ci:` record that is
+`pr-watch/steps/07-ci.md` section 5 step 4. For any other record it is
+the same shape: escalate ("needs you, no comment", reason "fixer refused
+the dispatch: <the fixer's reason>"), roll back with section 10 over
+every path `git -C <worktree> status --porcelain` and
+`git -C <worktree> ls-files --others --exclude-standard` name rather than
+the return's `files_changed`, then section 9.
 
 ## 4. Sort the returns
 
