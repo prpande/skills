@@ -40,7 +40,7 @@ check the link rendered. Never post a second root for a PR.
 | CI rerun queued | `Rerun of <check name> queued behind #<M> while its checks run.` |
 | CI rerun dropped | `Rerun of <check name> dropped: the PR head moved before it ran.` |
 | CI pre-existing | `<check name> is red on <base> too; leaving it.` |
-| CI needs you | `Needs you: [<check name>](<link>) is red at <head7> (<reason>).` — then, only when the PR's `ci_log_occurrence` is this check's occurrence key, up to 20 lines from `grep -m 20 -E -e '##\[error\]' -e 'error [A-Z]+[0-9]+' -e 'Failed ' -e 'Test Run Failed'` over that redacted file, put through steps 2 and 3 of "Quoting someone else's text" (the file is already redacted), in a code block; the session never reads the whole file |
+| CI needs you | `Needs you: [<check name>](<link>) is red at <head7> (<reason>).` — then, only when the PR's `ci_log_occurrence` is this check's occurrence key and `pr-watch/steps/07-ci.md` rule 3's destination check passes again over the file now, up to 20 lines from `grep -m 20 -E -e '##\[error\]' -e 'error [A-Z]+[0-9]+' -e 'Failed ' -e 'Test Run Failed'` over it, put through "Quoting someone else's text", in a code block; the session never reads the whole file |
 | monitor restarted | `Watch monitor restarted.` |
 | reconciled | `The daily check picked up work the event stream missed.` |
 | poller error | `The watch poller has failed five ticks in a row: <error>. No events are handled until this is fixed.` in every PR thread that has a root; `<error>` is the event's `error` |
@@ -53,9 +53,11 @@ Nothing is posted when nothing happened.
 ## Quoting someone else's text
 
 Every value spliced into a message that this session did not author goes
-through all three steps below, in this order: a quoted comment, an author
-login, a path, a check name, a link, a stderr line, a fixer's `reason` or
-`<what changed>`, the poller's `error`. A fixer's text is no safer than a
+through all three steps below, in this order. The test is authorship, not
+the list: a quoted comment, an author login, a path, a check name, a
+link, a stderr line, a fixer's `reason` or `<what changed>`, the poller's
+`error`, a `POLL` output line, and anything else a row splices in that
+the session did not write itself. A fixer's text is no safer than a
 comment's, because a fixer's text is what a comment talked it into. The
 session's own words and its own counts need none of it.
 
@@ -66,9 +68,10 @@ session's own words and its own counts need none of it.
    control sequence (`<!channel>`, `<!here>`, `<@U…>`, `<#C…>`) survives.
 3. Cut it to 1500 characters, ending with `(truncated)` when cut.
 
-One exemption, and only this one: the "CI needs you" log excerpt skips
-step 1, because `pr-watch/steps/07-ci.md` rule 3 redacted that file
-before writing it. Steps 2 and 3 still apply to it.
+No exemptions. `pr-watch/steps/07-ci.md` rule 3 redacts the CI log when
+it writes it, and the excerpt is scanned again here, because rule 3's
+redaction is a fact about the moment of that write and the excerpt is
+read later, from a file in a worktree a fixer can write to.
 
 End a bare URL with punctuation or write it as `[text](url)`; a bare URL
 at the end of a line swallows the next line into the link.
