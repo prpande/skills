@@ -8,8 +8,10 @@ the same session), do not arm a second one.
 Call `Monitor` with:
 
 - `command`: `python "<SKILL_DIR>/scripts/poll.py" --monitor --state-dir "<STATE_DIR>"`
-- `timeout_ms`: `1800000`, the cap on the build this was last run
-  against. If a build rejects that, arm at the cap its error names.
+- `timeout_ms`: `1800000`. `Monitor` clamps anything larger to its own
+  cap without saying so, so a bigger number buys nothing and hides what
+  the monitor will actually do; read the cap off the arming result,
+  which states when the monitor expires.
 - `description`: `pr-watch events for <SLUG>`
 
 The timeout is a ceiling on one stretch of watching, not on the watch:
