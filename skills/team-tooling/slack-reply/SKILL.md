@@ -27,6 +27,20 @@ five are under 40. The long ones have a fixed shape (`references/shapes.md`).
 
 The skill produces text only. It never sends. The user posts it.
 
+## Not for
+
+The budgets here are ceilings for a short Slack message: a thread reply,
+a DM, or a new post. They are wrong for long-form artifacts, which have
+their own standards: a technical gate document, a pull request description,
+published or team-facing documentation, a design doc, a spec, or an
+incident write-up. Asked to draft, rewrite, or audit one of those, say
+which standard governs it and stop; cutting a tech gate to 150 words
+loses the content the reader came for.
+
+A long message that belongs in one of those artifacts is still in scope
+as the short message that points at it: write the pointer and the ask,
+and say the rest belongs in the doc.
+
 ## Workflow
 
 1. Name the reader tier (table below) and say it in one line before the
@@ -200,6 +214,7 @@ the word count against the tier budget. End with pass or fail.
     `>` line is followed by a blank line.
 11. Read once as the recipient: they can act with at most one linked doc
     open.
+12. The text is a message, not one of the artifacts under "Not for".
 
 ## Common mistakes
 
@@ -212,8 +227,8 @@ the word count against the tier budget. End with pass or fail.
 - Sending a proposal as a message. Three bullets at most; the doc carries
   the rest.
 - Letting the humanizer pass grow the draft. Re-check the budget after it.
-- Stripping backticks while shortening. `tblResourceVisitType` in prose
-  reads as a typo; in code it reads as a table.
+- Stripping backticks while shortening. `tblOrderLineItem` in prose reads
+  as a typo; in code it reads as a table.
 - Answer lines glued to the `>` line. They render inside the quote.
 
 Related skill: `humanizer` strips AI wording; this skill sets length and
