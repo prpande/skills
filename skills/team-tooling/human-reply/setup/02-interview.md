@@ -53,7 +53,9 @@ Ask: "Is there a colleague whose writing you want to borrow from? Give
 their name and the channel to read them on, or say no."
 
 On a name, ask one follow-up: "Have you told them their messages will be
-read for this?"
+read for this? Setup stores none of their text past the read step, but
+the session transcript Claude Code keeps under ~/.claude/projects/ may
+still hold it."
 
 - On a yes, resolve the colleague on that channel: a Slack user id, a
   GitHub login, or a Notion user id from the Notion user search. Store:

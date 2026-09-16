@@ -10,8 +10,10 @@ into `<home>/corpus/draft/` rather than their final place:
 
 - `draft/channels/<channel>.md` for each channel in `channels`, from
   `<channel>.stats.json`, `<channel>.read.json`, the channel module's
-  Surfaces table for the Audience and Register columns, and the channel's
-  entries in `setup.json` for the header and status lines.
+  Surfaces table for the Audience and Register columns, and
+  `per_channel.<channel>` in `setup.json` for the header and status lines.
+  A channel with no `<channel>.read.json` gets empty Phrasebook and Shapes
+  sections.
 - `draft/profile.md` from `setup.json` and the reconciliation in the read
   step. Carry every voice entry of a channel not rebuilt in this run over
   from its existing profile file unchanged. Borrowed traits already in an
@@ -26,8 +28,9 @@ Habits changes to them.
 
 ## 2. Draft against each held-out thread
 
-For each channel whose `"calibration"` is not `skipped`, and for each
-thread in its `"holdouts"`:
+For each channel whose `per_channel.<channel>.calibration` is not
+`skipped`, and for each thread in `per_channel.<channel>.holdouts`, in
+that list's order:
 
 1. Pick the target: the person's earliest record in the thread that
    comes after a message by someone else. The context is everything in
@@ -42,8 +45,8 @@ thread in its `"holdouts"`:
      conversation thread or review summary.
    - Notion: the comments tool with `page_id` and `discussion_id`.
 
-   When the fetched context shows nobody but the person, drop the thread
-   and say so.
+   When the thread has no target, or the fetched context shows nobody but
+   the person, drop the thread and say so.
 3. Draft a reply to the context with the draft mode in `SKILL.md`, reading
    the profile from `<home>/corpus/draft/` instead of `<home>/`, with the
    ask "reply to the last message" and no other hint. Do not look at the
@@ -51,8 +54,14 @@ thread in its `"holdouts"`:
 4. Show the draft and the target side by side, with the pool the thread
    came from: `pre-cutoff`, `post-cutoff`, or `earlier`.
 
-After all of a channel's threads are shown, ask: "What reads wrong in my
-drafts? One sentence per thing." Wait for the answer.
+When every held-out thread of a channel was dropped, set
+`per_channel.<channel>.calibration` to `"skipped"`, add
+`"no held-out thread with a reply to calibrate against"` to
+`per_channel.<channel>.partial`, tell the person, and skip sections 3 and
+4 for that channel.
+
+Otherwise, after all of a channel's threads are shown, ask: "What reads
+wrong in my drafts? One sentence per thing." Wait for the answer.
 
 ## 3. Adjust
 
@@ -64,17 +73,25 @@ For each thing the person names:
 - when it is about length, change the surface's budget and note the
   change in the rule; a budget never drops below the module minimum
 - when it is about wording, remove or add phrasebook entries, and add a
-  line under Banned for anything the person never says
+  "never" line under `## Habits` in `draft/channels/<channel>.md` for
+  anything the person never says; `profile.md`'s Banned holds only entries
+  two or more channels share, placed by the read step's reconciliation
 - when it is about register, amend the surface's Register cell
 
 ## 4. Re-draft once
 
-Re-draft the channel's first remaining held-out thread from the adjusted
-draft profile, the same way as above, and show it alone. Ask one yes or
-no question: "Does this read like you?" Store `"calibration": "accepted"`
-or `"calibration": "rejected"` for the channel. There is no second round
-either way; a rejected channel is named in the finish summary.
+Re-draft the channel's first remaining held-out thread, the first thread
+in `per_channel.<channel>.holdouts` that section 2 did not drop, from the
+adjusted draft profile, the same way as above, and show it alone. Ask one
+yes or no question: "Does this read like you?" Set
+`per_channel.<channel>.calibration` to `"accepted"` or `"rejected"`. There
+is no second round either way.
 
-A channel with `"calibration": "skipped"` gets no draft and no re-draft.
+On `rejected`, add `"calibration rejected"` to
+`per_channel.<channel>.partial` and rewrite the `status` line of
+`draft/channels/<channel>.md` from that list, for example
+`status: partial (calibration rejected)`.
+
+A channel whose calibration is `skipped` gets no draft and no re-draft.
 
 Add `"calibrate"` to `done`.

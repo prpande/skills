@@ -3,9 +3,10 @@
 Every collector writes one JSON object per line to
 `~/.claude/human-reply/corpus/<channel>.jsonl`, or to
 `corpus/borrow-<channel>.jsonl` for a colleague sample. Records pass
-through redaction before they are written; nothing unredacted touches
-disk. `python scripts/corpus.py validate` checks a file against this
-shape.
+through redaction before they are written, so this skill writes nothing
+unredacted to disk; the session transcript Claude Code keeps under
+`~/.claude/projects/` may still hold the raw text.
+`python scripts/corpus.py validate` checks a file against this shape.
 
 ## Fields
 

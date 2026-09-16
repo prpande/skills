@@ -91,10 +91,11 @@ Header lines:
 
 - `sample` gives the kept record count, the window, and the drop count.
 - `method` is `measured` or `estimated` for this channel.
-- `threshold` is always written; runtime and `pr-watch` read it.
+- `threshold` is always written.
 - `redaction` is `script` or `model`.
 - `status` is present only when the channel is partial, and lists every
-  reason from `setup.json` separated by `; `.
+  reason in `per_channel.<channel>.partial` from `setup.json` separated by
+  `; `, such as `status: partial (calibration rejected)`.
 
 Surfaces table:
 

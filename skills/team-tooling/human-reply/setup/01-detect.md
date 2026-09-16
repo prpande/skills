@@ -54,7 +54,10 @@ Then ask: install and rerun setup, or continue without Python. Record
 ## 4. Report and choose
 
 Print one table: channel, connected or not, collector. Then ask which of
-the connected channels to set up. When the person invoked
+the connected channels to set up, and say in one line that setup writes
+nothing unredacted itself, but the session transcript Claude Code keeps
+under `~/.claude/projects/` may still hold the raw text of collected
+messages. When the person invoked
 `setup <channel>`, confirm that one channel instead of asking. A channel
 that is not connected is recorded as skipped with the reason, and the
 finish step names it.
@@ -71,9 +74,17 @@ Write `<home>/corpus/setup.json`:
   "method": "measured",
   "channels": ["slack", "github"],
   "skipped": {"notion": "no Notion comments tool is connected"},
-  "seed": 48213
+  "seed": 48213,
+  "per_channel": {"slack": {}, "github": {}}
 }
 ```
+
+`per_channel` holds one object per channel in `channels`. Later steps
+write that channel's own state into it and name each key as
+`per_channel.<channel>.<key>`: `redacted`, `redaction`, `holdouts`,
+`github_repos_done`, `drop_rate_first`, `threshold`, `dropped`, `method`,
+`calibration`, and `partial`, a list of reasons. Everything else in
+`setup.json` is shared by all channels.
 
 `python` is `null` when there is no interpreter. `seed` is any integer
 from 1 to 99999; the hold-out steps use it so a resumed run picks the same

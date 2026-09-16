@@ -9,12 +9,14 @@ Every path passed to a script is absolute: resolve `<home>` and
 `<skill-dir>` once and use the resolved paths. `<py>` is the interpreter
 stored in `setup.json`.
 
-A channel listed under `"reused"` in `setup.json` skips sections 1 to 6
-and starts at section 7, and its first hold-out pass adds `--reset`.
+A channel listed under `"reused"` in `setup.json` skips sections 1 to 5
+and starts at section 6, and its first hold-out pass adds `--reset`.
 
 ## 1. Redaction comes first
 
-Nothing unredacted is written to disk, not even a temp file.
+This skill writes nothing unredacted to disk, not even a temp file.
+The session transcript Claude Code keeps under `~/.claude/projects/` may
+still hold the raw text the collection tools return.
 
 With Python, records reach disk only through `redact.py`, which reads
 JSONL on stdin and appends to `--out`. Pipe a batch in with a quoted
@@ -35,7 +37,7 @@ or with a single-quoted here-string from PowerShell:
 ```
 
 Keep the `redact: N of M records touched` line from each batch and add
-the touched counts up per channel in `setup.json` as `"redacted"`.
+the touched counts up in `per_channel.<channel>.redacted`.
 
 Without Python, redact by hand using the patterns in
 `scripts/redact.py`: a whole private-key block becomes
@@ -44,12 +46,13 @@ Without Python, redact by hand using the patterns in
 record of the run is written, redact every case in
 `human-reply/references/redaction-check.md` and compare with its expected output. On
 any miss, stop setup and say Python is required to collect. On a pass,
-append records with the shell and set `"redaction": "model"` for the
-channel in `setup.json`; the finish step reads it.
+append records with the shell and set `per_channel.<channel>.redaction`
+to `"model"`; the finish step reads it.
 
 ## 2. Resume point
 
-When `<home>/corpus/<channel>.jsonl` already has records, run:
+For Slack and Notion, when `<home>/corpus/<channel>.jsonl` already has
+records, run:
 
 ```
 <py> <skill-dir>/scripts/corpus.py oldest --corpus <home>/corpus/<channel>.jsonl
@@ -58,6 +61,9 @@ When `<home>/corpus/<channel>.jsonl` already has records, run:
 and continue collecting backwards from that date instead of from
 `window.until`. Duplicates are removed later by `normalize`. Without
 Python, read the oldest `ts` from the file.
+
+GitHub resumes by repo instead: skip every repo already in
+`per_channel.github.github_repos_done`.
 
 ## 3. Slack
 
@@ -108,7 +114,7 @@ gh api user --jq .login
 ```
 
 For each repo it prints, collect and redact in one pipe, then add the repo
-to `"github_repos_done"` in `setup.json` so a resumed run skips it:
+to `per_channel.github.github_repos_done` so a resumed run skips it:
 
 ```
 <py> <skill-dir>/scripts/github_records.py records --repo <owner/name> --login <login> --since <window.since> --until <window.until> | <py> <skill-dir>/scripts/redact.py --out <home>/corpus/github.jsonl
@@ -142,23 +148,9 @@ Without Python, call the same `gh search` and `gh api` endpoints that
 Tell the person that Notion comments are reached page by page, so the
 sample covers only pages they visited or created recently.
 
-## 6. Colleague sample
+## 6. Validate
 
-Skip unless `borrow` is set. Run the collector for `borrow.channel` with
-the colleague as author and write to
-`<home>/corpus/borrow-<channel>.jsonl`:
-
-- Slack: `from:<@author id>`, with `channel_types` set to
-  `public_channel,private_channel` only.
-- GitHub: `github_records.py` with `--login <colleague login>`.
-- Notion: comments whose author is the colleague's user id.
-
-Cap at 300 with `normalize --cap 300`. Borrow records are never held out
-and never measured.
-
-## 7. Validate
-
-For each channel file, and the borrow file when there is one:
+For each channel file:
 
 ```
 <py> <skill-dir>/scripts/corpus.py validate --corpus <home>/corpus/<channel>.jsonl --module <skill-dir>/channels/<channel>.md
@@ -168,7 +160,7 @@ A record that fails is fixed by rebuilding it from the source, never by
 editing the redacted text. Without Python, check every field against
 `human-reply/references/corpus-record.md`.
 
-## 8. Hold out, first pass
+## 7. Hold out, first pass
 
 For each channel in `channels`:
 
@@ -178,7 +170,7 @@ For each channel in `channels`:
 
 This marks up to three pre-cutoff threads, or threads from the whole
 window when the cutoff is `never`, where someone other than the person
-took part. Store the printed list as `"holdouts"` for the channel. The
+took part. Store the printed list as `per_channel.<channel>.holdouts`. The
 filter step runs the second pass when a channel got fewer than three.
 
 Without Python, pick the threads at random under the same rule and set

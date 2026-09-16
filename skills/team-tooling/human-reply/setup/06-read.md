@@ -5,13 +5,17 @@ Numbers come from the measure step; readers never count words.
 
 ## 1. The sample
 
-Readers read `<home>/corpus/<channel>.kept.jsonl` and skip every record
-that is held out or whose id is in the channel's `"dropped"` list. The
-sample is fixed so three readers see the same messages:
+Readers read `<home>/corpus/<channel>.kept.jsonl` and skip every
+held-out record. Without Python there is no kept file: readers read
+`<home>/corpus/<channel>.jsonl` and skip every held-out record and every
+id in `per_channel.<channel>.dropped`. The sample is fixed so three
+readers see the same messages:
 
 - every record over sixty words, newest first, up to 300
-- 200 records of sixty words or fewer, newest first, taken one surface at
-  a time in the module's surface order until 200 are taken or none remain
+- 200 records of sixty words or fewer, taken round-robin across the
+  surfaces in the module's surface order: the newest untaken record of
+  each surface in turn, skipping a surface that has run out, until 200
+  are taken or every surface has run out
 
 ## 2. Three readers per channel
 
@@ -22,8 +26,10 @@ parallel. Each gets this prompt with the slots filled:
 Read the messages one person wrote on <channel>, from <corpus path>.
 Skip records whose held_out is true and these ids (<audience>/<ts>): <dropped ids or "none">.
 Read this sample: every record over sixty words, newest first, up to 300;
-then 200 records of sixty words or fewer, newest first, one surface at a
-time in this order until 200 are taken: <surface names from the module>.
+then 200 records of sixty words or fewer, round-robin across surfaces in
+this order, taking the newest untaken record of each surface in turn and
+skipping a surface that has run out, until 200 are taken or all run out:
+<surface names from the module>.
 Count words by splitting on whitespace after replacing each fenced block
 and each link with one word.
 
@@ -45,12 +51,17 @@ Return only a JSON object in the reader return format from
 ## 3. Check each return
 
 A return fails when it is not valid JSON in the reader return format, or
-when a surface with 30 or more records has a shape with fewer than two
-examples. Re-run a failed reader once with a fresh subagent. When the
-second attempt fails too, drop that reader and add
-`"reader returned off-schema twice"` to the channel's `"partial"` list.
-With fewer than two readers left, there is nothing to vote on: use the
-one remaining return as is.
+when any surface with 30 or more records has fewer than two examples
+across all its shapes, a surface with no shape included. Re-run a failed
+reader once with a fresh subagent. When the second attempt fails too,
+drop that reader and add `"reader returned off-schema twice"` to
+`per_channel.<channel>.partial`. With one reader left, there is nothing
+to vote on: use its return as is.
+
+With no reader left, skip section 4 for the channel and write no
+`<channel>.read.json`, so the channel gets no shapes, phrasebook, or
+voice entries. Add `"no reader returned a valid read"` to
+`per_channel.<channel>.partial` and tell the person.
 
 ## 4. Merge within a channel
 
@@ -66,6 +77,8 @@ one remaining return as is.
   grep -v '"held_out": true' <home>/corpus/<channel>.kept.jsonl | grep -ciF "<phrase>"
   ```
 
+  Without Python, count in `<home>/corpus/<channel>.jsonl` instead,
+  leaving out held-out records and ids in `per_channel.<channel>.dropped`.
   Keep the phrase when the count is 2 or more, with that count.
 
 Write the merged result to `<home>/corpus/<channel>.read.json` in the
@@ -97,8 +110,31 @@ different words; keep the wording of the first.
 
 ## 6. Colleague traits
 
-When `borrow` is set, dispatch one sonnet subagent on
-`<home>/corpus/borrow-<channel>.kept.jsonl`:
+Skip unless `borrow` is set. The colleague sample is collected, filtered,
+read, and deleted in this section, so no borrow file outlives it.
+
+1. Run the collect step's collector for `borrow.channel` with the
+   colleague as author, redacting as the collect step does, into
+   `<home>/corpus/borrow-<channel>.jsonl`:
+   - Slack: `from:<@author id>`, with `channel_types` set to
+     `public_channel,private_channel` only.
+   - GitHub: `github_records.py` with `--login <colleague login>`.
+   - Notion: comments whose author is the colleague's user id.
+
+   Cap at 300 with `normalize --cap 300`, then run `corpus.py validate`
+   on the file. Borrow records are never held out and never measured.
+2. Filter it:
+
+   ```
+   <py> <skill-dir>/scripts/ai_filter.py --corpus <home>/corpus/borrow-<channel>.jsonl --module <skill-dir>/channels/<channel>.md --reference <skill-dir>/references/ai-filter.md --cutoff never --borrow --kept <home>/corpus/borrow-<channel>.kept.jsonl
+   ```
+
+   Report the drop count. No adjustment is offered on a colleague sample.
+   Without Python, score every colleague message over sixty words by
+   reading, as the filter step describes, and leave the dropped ones out
+   of the reader's path by writing the rest to the kept file.
+3. Dispatch one sonnet subagent on
+   `<home>/corpus/borrow-<channel>.kept.jsonl`:
 
 ````
 Read the messages in <path>. Return only a JSON list of five to ten

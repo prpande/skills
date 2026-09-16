@@ -10,17 +10,21 @@ module's `ai-filter` block. Channels run one at a time.
 <py> <skill-dir>/scripts/ai_filter.py --corpus <home>/corpus/<channel>.jsonl --module <skill-dir>/channels/<channel>.md --reference <skill-dir>/references/ai-filter.md --cutoff <cutoff> --kept <home>/corpus/<channel>.kept.jsonl
 ```
 
-It prints `total`, `scanned`, `dropped`, `drop_rate`, `threshold`, and up
-to five dropped `samples`, each with the patterns it hit. Store
-`drop_rate` as `"drop_rate_first"` for the channel.
+It prints `total`, `scanned`, `dropped`, `drop_rate`, `total_drop_rate`,
+`threshold`, and up to five dropped `samples`, each with the patterns it
+hit. `drop_rate` is dropped over scanned and is the rate every check below
+reads; `total_drop_rate` is dropped over all records and is shown only.
+Store `drop_rate` as `per_channel.<channel>.drop_rate_first`.
 
-Show the person the drop count out of the total, and the five samples
-with their hits, each sample cut to its first 300 characters.
+Show the person the drop count out of the scanned count and out of the
+total, and the five samples with their hits, each sample cut to its first
+300 characters.
 
 ## 2. The one adjustment
 
-When `drop_rate_first` is over 0.4, say that more than 40 percent of the
-channel was dropped and name the two likely causes:
+When `per_channel.<channel>.drop_rate_first` is over 0.4, say that more
+than 40 percent of the scanned messages were dropped and name the two
+likely causes:
 
 - the cutoff month is wrong, and messages from before AI drafting are
   being scanned
@@ -28,22 +32,28 @@ channel was dropped and name the two likely causes:
 
 Ask them to pick one: re-ask the cutoff, or raise the threshold by one.
 
-When `drop_rate_first` is 0.4 or less, ask whether the drops look right,
-and offer the same adjustment as optional: a new threshold from 1 up to
-4, or no change.
+When `per_channel.<channel>.drop_rate_first` is 0.4 or less, ask whether
+the drops look right, and offer the same adjustment as optional: a new
+threshold from 1 up to 4, or no change.
 
 Only one adjustment per channel:
 
-- **New cutoff.** Ask the cutoff question from the interview step again.
-  Store the answer, then clear and redo the hold-outs, since the old ones
-  were chosen against the old date:
+- **New cutoff.** Ask the cutoff question from the interview step again
+  and store the answer as the top-level `cutoff`. The cutoff is shared,
+  so the change applies to every channel. The old hold-outs were chosen
+  against the old date: for this channel and for every channel already
+  filtered, clear and redo them as in the collect step's hold-out first
+  pass, storing each list as `per_channel.<channel>.holdouts`:
 
   ```
   <py> <skill-dir>/scripts/corpus.py holdout --corpus <home>/corpus/<channel>.jsonl --cutoff <new cutoff> --seed <seed> --reset
   ```
 
+  Then redo this step from section 1 for every channel already filtered.
+
 - **New threshold.** Lower is allowed to any value from 1. Higher is
-  allowed by one point, to 4. Store `"threshold": <n>` for the channel.
+  allowed by one point, to 4. Store `<n>` as
+  `per_channel.<channel>.threshold`.
 
 Rerun the filter command with the new `--cutoff` or `--threshold`. A
 channel with no adjustment keeps threshold 3 and needs no rerun.
@@ -52,8 +62,8 @@ channel with no adjustment keeps threshold 3 and needs no rerun.
 
 Read `drop_rate` from the latest run. When it is over 0.4, do not loop:
 keep the filtered set, add
-`"drop rate <rate> after the threshold adjustment"` to the channel's
-`"partial"` list in `setup.json`, and tell the person the channel will be
+`"drop rate <rate> after the threshold adjustment"` to
+`per_channel.<channel>.partial`, and tell the person the channel will be
 marked partial for that reason.
 
 ## 4. Enough records
@@ -81,31 +91,23 @@ Skip when the channel already has three hold-out threads or the cutoff is
 
 Threads already held out come back with pool `earlier`. New ones come
 from post-cutoff threads whose every message passed the filter, with pool
-`post-cutoff`. Store the list as the channel's `"holdouts"`, then rerun
-the filter command with the channel's threshold so the kept file carries
-the new marks.
+`post-cutoff`. Store the list as `per_channel.<channel>.holdouts`, then
+rerun the filter command with the channel's threshold so the kept file
+carries the new marks.
 
 When a channel still has no hold-out thread, set
-`"calibration": "skipped"` for it and add
-`"no thread with another participant to calibrate against"` to its
-`"partial"` list.
+`per_channel.<channel>.calibration` to `"skipped"` and add
+`"no thread with another participant to calibrate against"` to
+`per_channel.<channel>.partial`.
 
-## 6. Colleague sample
-
-When `borrow` is set:
-
-```
-<py> <skill-dir>/scripts/ai_filter.py --corpus <home>/corpus/borrow-<channel>.jsonl --module <skill-dir>/channels/<channel>.md --reference <skill-dir>/references/ai-filter.md --cutoff never --borrow --kept <home>/corpus/borrow-<channel>.kept.jsonl
-```
-
-Report the drop count. No adjustment is offered on a colleague sample.
+The colleague sample is collected and filtered in the read step.
 
 ## Without Python
 
 Score by reading. For each message in scope under `human-reply/references/ai-filter.md`,
 check each pattern id the channel lists, skipping ids whose `exempt:`
-list names the message's surface. Record dropped record ids per channel
-in `setup.json` as `"dropped"` instead of writing a kept file; later
+list names the message's surface. Record dropped record ids in
+`per_channel.<channel>.dropped` instead of writing a kept file; later
 steps treat a dropped id as absent. The reads, the adjustment, the
 100-record check, and the hold-out rules are the same.
 

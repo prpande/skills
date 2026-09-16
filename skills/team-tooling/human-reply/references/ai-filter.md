@@ -73,7 +73,9 @@ vibrant
 
 ## Drop rate
 
-The drop rate is dropped messages over all messages in the channel,
-including short ones and held-out ones. `scripts/ai_filter.py` prints
-it with the drop count and five dropped samples. Setup reads it before
-and after the one threshold change, as its filter step describes.
+The drop rate is dropped messages over scanned messages. Short,
+pre-cutoff, and held-out messages are never scanned and do not count.
+`scripts/ai_filter.py` prints it as `drop_rate`, with the drop count,
+five dropped samples, and `total_drop_rate`, dropped over every message,
+which is for display only. Setup gates on `drop_rate` before and after
+the one threshold change, as its filter step describes.

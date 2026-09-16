@@ -22,8 +22,8 @@ A surface with 30 or more pre-cutoff records has a budget from its own
 
 When the script exits non-zero, show its error and ask whether to
 estimate this channel instead. Do not switch without the answer. On a yes,
-follow the section below for this channel only and set the channel's
-`"method": "estimated"` in `setup.json`.
+follow the section below for this channel only and set
+`per_channel.<channel>.method` to `"estimated"`.
 
 ## No pre-cutoff records
 
@@ -32,15 +32,16 @@ budgets have nothing from before the cutoff to measure and offer to widen
 the window, which reruns the collect and filter steps for the channel.
 When the person declines, keep the stats as they are, where every surface
 is already on its default and labelled estimated, and add
-`"budgets not measured: no messages before the cutoff"` to the channel's
-`"partial"` list.
+`"budgets not measured: no messages before the cutoff"` to
+`per_channel.<channel>.partial`.
 
 ## Without Python
 
 Dispatch one subagent per channel on the sonnet model. Give it:
 
 - the channel module path and the corpus path
-- the record ids to ignore: held-out records and ids in `"dropped"`
+- the record ids to ignore: held-out records and ids in
+  `per_channel.<channel>.dropped`
 - the cutoff, and the word-counting rule from
   `human-reply/references/corpus-record.md`
 

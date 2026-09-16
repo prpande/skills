@@ -11,7 +11,7 @@ description: >
   messages. Drafts in the user's measured voice for that channel. Text
   only, never posts.
 argument-hint: "[setup [slack|github|notion] | draft <what to say> | rewrite <text> | audit <text>]"
-allowed-tools: Read, Bash, Write, Skill, ToolSearch, Agent, mcp__plugin_slack_slack__slack_search_public_and_private, mcp__plugin_slack_slack__slack_read_thread, mcp__plugin_slack_slack__slack_search_users, mcp__claude_ai_Notion__notion-fetch, mcp__claude_ai_Notion__notion-search, mcp__claude_ai_Notion__notion-get-comments, mcp__claude_ai_Notion__notion-list-recent-pages
+allowed-tools: Read, Bash, Write, Skill, ToolSearch, Agent, mcp__plugin_slack_slack__slack_search_public_and_private, mcp__plugin_slack_slack__slack_read_thread, mcp__plugin_slack_slack__slack_search_users, mcp__claude_ai_Notion__notion-fetch, mcp__claude_ai_Notion__notion-search, mcp__claude_ai_Notion__notion-get-comments, mcp__claude_ai_Notion__notion-list-recent-pages, mcp__claude_ai_Notion__notion-get-users
 ---
 
 # human-reply
@@ -90,8 +90,11 @@ Write inside the budget, counting each link and each fenced block as one
 word. Use:
 
 - the profile's phrasebook, and the hedges, typing habits, disagreement
-  pattern, and sign-offs from `~/.claude/human-reply/profile.md`; where the
-  channel profile's Habits say otherwise, Habits win for that channel
+  pattern, sign-offs, and Borrowed traits from
+  `~/.claude/human-reply/profile.md`; where the channel profile's Habits
+  say otherwise, Habits win for that channel
+- each Borrowed trait as the user's own habit, never attributed to the
+  colleague it came from
 - nothing on the Banned list
 - the channel module's markup rules
 
@@ -115,7 +118,9 @@ phrasebook wins.
 After the first line, print the draft in one fenced block with the
 channel's markup exactly as it should be pasted, then one line saying
 where it goes. Nothing else. For `rewrite`, that line also gives the word
-count before and after.
+count before and after. The outer fence is longer than any fence inside
+the draft: four backticks when the draft holds a three-backtick fence,
+such as a `suggestion` block.
 
 ### Audit mode
 
