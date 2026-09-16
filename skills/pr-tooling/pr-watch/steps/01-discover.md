@@ -62,7 +62,9 @@ Otherwise start from an empty set with a fresh `session_id`.
 
 Authored PRs with a worktree:
 
-- `gh pr list --repo <SLUG> --author @me --state open --limit 100 --json number,title,url,headRefName`
+- `gh pr list --repo <SLUG> --author '@me' --state open --limit 100 --json number,title,url,headRefName`.
+  The quotes around `@me` are load-bearing in PowerShell: bare, the shell
+  eats the next flag and `gh` fails with `unknown argument "open"`.
 - `git -C <MAIN> worktree list --porcelain` → map each `branch refs/heads/<name>`
   line to the `worktree` path above it.
 - A PR whose `headRefName` has a worktree joins the set as `authored` with
@@ -182,7 +184,19 @@ others):
 }
 ```
 
-Use the tmp-then-rename write. An existing file (from a `pr-autopilot`
+These files sit in other worktrees, which the Write tool refuses the
+same way as `STATE_DIR`. Write the object to the scratchpad and place it
+with the script from `pr-watch/references/watch-state-schema.md`
+"Writing", naming this file on both sides:
+
+```
+python "<SKILL_DIR>/scripts/state_put.py" "<scratchpad>/pr-<N>.json.new" "<worktree>/.pr-autopilot/pr-<N>.json"
+```
+
+Creating the file is all this step does; no lock exists yet, and the
+library's own write protocol (lock refresh, schema validation, the
+`state_write` log line) governs every update after step 04 acquires one.
+An existing file (from a `pr-autopilot`
 run) is left as it is; the lock protocol updates its `session_id` when it
 reclaims.
 

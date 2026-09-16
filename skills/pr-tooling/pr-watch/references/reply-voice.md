@@ -53,6 +53,9 @@ Four traits read by hand:
 - **Fixed.** Carries the short sha and what changed. Must not restate the
   comment or explain why it was right.
   ``moved the null check into `InvoiceMapper.ToDomain` so both callers get it, in 3f9c2e1``
+  A dry run commits nothing, so a reply it writes to the dry-run file
+  carries `<no sha: dry run>` in the sha's place and satisfies the audit
+  with it.
 - **Refuted.** Carries the evidence: file, line, what the code does. Must
   not argue or hedge; the evidence does the disagreeing.
   ``the loop can't spin, `RetryPolicy` stops at three attempts [here](https://github.com/acme/billing/blob/4c2e9a1/src/Http/RetryPolicy.cs#L40-L52)``
@@ -84,10 +87,12 @@ Each line must answer yes.
 1. Under sixty words with code excluded, and one to four sentences?
 2. Is the substance in the first sentence?
 3. Does the reply fit exactly one shape above and carry what that shape
-   requires (sha, evidence, pending reason)?
+   requires (sha, evidence, pending reason), counting the dry-run
+   placeholder as the sha?
 4. Is every identifier in backticks and every multi-line snippet in a
    fenced block?
-5. Is the evidence a path, a line-range link, or a sha, not a paragraph?
+5. Is the evidence a path, a line-range link, or a sha (or the dry-run
+   placeholder), not a paragraph?
 6. Is nothing from the comment being answered repeated?
 7. At most one hedge?
 8. Free of em dashes, curly quotes, bold labels, headers, emoji, and

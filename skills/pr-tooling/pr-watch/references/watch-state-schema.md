@@ -7,12 +7,32 @@ one writer. `.pr-autopilot/` must be ignored by git; step 01 adds it to
 
 ## Writing
 
-The session writes `watch.json` atomically: write the whole new object to
-`watch.json.tmp` with the Write tool, then rename it over `watch.json`
-(`mv -f` in Bash or `Move-Item -Force` in PowerShell). Never edit
+The session writes the whole new object every time and never edits
 `watch.json` in place. Re-read it before every write; events are handled
 one at a time, so no two session writes race. The poller files are never
-written by the session.
+written by the session. The write itself is atomic, through the two
+steps below.
+
+`STATE_DIR` is in `MAIN`, and a session in a worktree cannot write there
+with the Write tool: it refuses every path outside the worktree the
+session is in. This is the normal case, not an edge one, and it applies
+to the library files in the other PR worktrees too. Write the new object
+to the scratchpad with the Write tool, then hand it to the script that
+does the placing:
+
+```
+python "<SKILL_DIR>/scripts/state_put.py" "<scratchpad>/watch.json.new" "<STATE_DIR>/watch.json"
+```
+
+It takes any source and any destination, so it places the library's
+`pr-<N>.json` the same way. It reads the staged file as JSON (a
+half-written one fails there, before anything is replaced), creates the
+destination's directory if it is missing, and writes through the
+poller's own `write_json_atomic`: the temp file is made next to the
+destination, so the rename stays on one filesystem, and a replace that
+Windows refuses because a reader holds the file open is retried before
+it gives up. A hand-rolled copy and rename has neither the retry nor the
+cleanup.
 
 ## `watch.json` — written only by the session
 
