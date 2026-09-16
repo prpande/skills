@@ -8,8 +8,9 @@ These accounts post as GitHub Apps. REST shows them as
 `<name>[bot]`; GraphQL, which `poll.py --tails` reads, shows the bare
 `<name>`, and that is the login in every record Filter B sees. The
 library's rows are keyed on other logins (`sonarqube[bot]`,
-`sonarqubecloud[bot]`), so without this overlay every comment here would
-fall through to the unknown-bot fallback and read as actionable.
+`sonarqubecloud[bot]`, `copilot-pull-request-reviewer[bot]`), so without
+this overlay every comment here would fall through to the unknown-bot
+fallback and read as actionable.
 
 | Login | Where it posts | Signature (body starts with / contains) | Classification |
 |---|---|---|---|
@@ -21,9 +22,12 @@ fall through to the unknown-bot fallback and read as actionable.
 | `mergewatch-playlist` | Inline review comment | no `<!-- mergewatch-inline -->` marker | Skip — mergewatch answering in a thread; settles the tail |
 | `mergewatch-playlist` | Top-level PR comment | starts with `<!-- mergewatch-review -->` | Parse — the summary, see below |
 | `mergewatch-playlist` | Review body | starts with `<!-- mergewatch-review -->` | Parse — re-read the current summary, see below |
+| `copilot-pull-request-reviewer` | Inline review comment | any body | Actionable |
+| `copilot-pull-request-reviewer` | Review body | any body | Skip — meta/summary, see below |
 
 Signatures verified against live comments on the last 40 PRs of
-`mindbody/Mindbody.Scheduling` on 2026-09-11.
+`mindbody/Mindbody.Scheduling` on 2026-09-11, and the Copilot rows
+against `prpande/skills` on 2026-09-16.
 
 ## `mindbody-ado-pipelines` review
 
@@ -77,6 +81,22 @@ last output line. `--jq` runs once per page, so a reducing filter such as
   and titles do not, so the line is left out of the key. Record the
   disposition in `handled_top_level_ids` under that key, and the summary's
   own id and the pointer review's id under `parsed`.
+
+## `copilot-pull-request-reviewer`
+
+GitHub's own reviewer, enabled per repository. The login on both its
+records is the bare `copilot-pull-request-reviewer`; the library's two
+Copilot rows are keyed on `Copilot` and on
+`copilot-pull-request-reviewer[bot]`, so they never match here and the
+rows above are the ones that apply.
+
+Every finding Copilot has is an inline comment on the file it concerns.
+The review body holds a verdict line (`### 🟢 Approval recommended`,
+`### 🟡 Changes recommended`) over a `<details>` block of file and
+comment counts, and nothing to act on, so it is keyed on the login alone
+rather than on a verdict this reviewer may reword. A review with no
+inline comments then raises no work at all, which is the usual outcome
+on a small PR.
 
 A comment that matches no row falls through to the library's unknown-bot
 fallback. When a status line changes shape, update the row here rather

@@ -127,6 +127,12 @@ No returns in section 5: go to section 7, then section 9.
    Go to section 7 (which writes to the same dry-run file instead of
    posting) and then section 9. Steps 3 to 6 below never run under
    `dry_run`.
+
+   Nothing is committed, so there is no sha for section 7 step 1 to put
+   in a `Fixed.` reply. Write `<no sha: dry run>` where the sha would go
+   and keep the rest of the shape; the point of the dry-run file is to
+   show the reply that would be posted, and a reply missing its sha
+   clause would not show it.
 3. Work item: the first `AB#<digits>` in the PR title, else the PR body,
    else `git log -1 --format=%s`.
 4. Write the message to `<scratchpad>/commit-<N>.txt`: one line,

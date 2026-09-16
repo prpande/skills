@@ -7,12 +7,28 @@ one writer. `.pr-autopilot/` must be ignored by git; step 01 adds it to
 
 ## Writing
 
-The session writes `watch.json` atomically: write the whole new object to
-`watch.json.tmp` with the Write tool, then rename it over `watch.json`
-(`mv -f` in Bash or `Move-Item -Force` in PowerShell). Never edit
+The session writes `watch.json` atomically: the whole new object goes to
+`watch.json.tmp`, which is then renamed over `watch.json`. Never edit
 `watch.json` in place. Re-read it before every write; events are handled
 one at a time, so no two session writes race. The poller files are never
 written by the session.
+
+`STATE_DIR` is in `MAIN`, and a session in a worktree cannot write there
+with the Write tool: it refuses every path outside the worktree the
+session is in. This is the normal case, not an edge one, and it applies
+to the library files in the other PR worktrees too. Write the new object
+to the scratchpad with the Write tool, then run one command to put it in
+place:
+
+```
+python -c "import os, shutil, sys; shutil.copyfile(sys.argv[1], sys.argv[2] + '.tmp'); os.replace(sys.argv[2] + '.tmp', sys.argv[2])" "<scratchpad>/watch.json.new" "<STATE_DIR>/watch.json"
+```
+
+The copy lands in `STATE_DIR` before the rename, so the rename stays
+within one filesystem and a reader sees either the old file or the new
+one. A plain move from the scratchpad does not: the scratchpad is
+usually on another volume, where the move is a copy a reader can catch
+half-written.
 
 ## `watch.json` — written only by the session
 
