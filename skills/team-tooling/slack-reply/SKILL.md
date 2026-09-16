@@ -29,9 +29,9 @@ The skill produces text only. It never sends. The user posts it.
 
 ## Not for
 
-The budgets here are ceilings for a short message to someone already in
-the thread. They are wrong for long-form artifacts, which have their own
-standards: a technical gate document, a pull request description,
+The budgets here are ceilings for a short Slack message: a thread reply,
+a DM, or a new post. They are wrong for long-form artifacts, which have
+their own standards: a technical gate document, a pull request description,
 published or team-facing documentation, a design doc, a spec, or an
 incident write-up. Asked to draft, rewrite, or audit one of those, say
 which standard governs it and stop; cutting a tech gate to 150 words
