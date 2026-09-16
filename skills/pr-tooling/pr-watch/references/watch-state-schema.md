@@ -7,11 +7,11 @@ one writer. `.pr-autopilot/` must be ignored by git; step 01 adds it to
 
 ## Writing
 
-The session writes `watch.json` atomically: the whole new object goes to
-`watch.json.tmp`, which is then renamed over `watch.json`. Never edit
+The session writes the whole new object every time and never edits
 `watch.json` in place. Re-read it before every write; events are handled
 one at a time, so no two session writes race. The poller files are never
-written by the session.
+written by the session. The write itself is atomic, through the two
+steps below.
 
 `STATE_DIR` is in `MAIN`, and a session in a worktree cannot write there
 with the Write tool: it refuses every path outside the worktree the

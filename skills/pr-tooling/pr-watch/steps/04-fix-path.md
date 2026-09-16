@@ -132,7 +132,8 @@ No returns in section 5: go to section 7, then section 9.
    in a `Fixed.` reply. Write `<no sha: dry run>` where the sha would go
    and keep the rest of the shape; the point of the dry-run file is to
    show the reply that would be posted, and a reply missing its sha
-   clause would not show it.
+   clause would not show it. `pr-watch/references/reply-voice.md` takes
+   the placeholder in the sha's place, in the shape and in its audit.
 3. Work item: the first `AB#<digits>` in the PR title, else the PR body,
    else `git log -1 --format=%s`.
 4. Write the message to `<scratchpad>/commit-<N>.txt`: one line,
