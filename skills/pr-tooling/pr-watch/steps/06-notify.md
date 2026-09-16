@@ -31,6 +31,7 @@ check the link rendered. Never post a second root for a PR.
 | skipped | `Skipped: <reason>. Retrying in 10 minutes.` (only when the PR's `skip_reason` differs; `pr-watch/steps/04-fix-path.md` section 1) |
 | stopped waiting | `Stopped waiting for #<M>'s checks after an hour.` (once per `queued_at`; `pr-watch/steps/04-fix-path.md` section 8 step 1) |
 | resolve failed | `Could not resolve the thread at <path>:<line>; it stays open.` |
+| voice fallback | `Replied plainly on <path>:<line>: the drafted reply failed the contract audit twice.` |
 | checks unreadable | `Could not read #<M>'s checks: <first stderr line>.` |
 | merge conflict | `Merge with origin/<base> conflicts in <paths>. Fix commit <sha7> is local and unpushed.` |
 | re-review | `Re-reviewed <old7>..<new7>: <a> addressed, <p> partial, <n> not addressed, <s> superseded.` then one line per finding |
