@@ -51,8 +51,9 @@ automation, or a process. No phrase lifted from any colleague. No
 2. **Draft.** Invoke the `human-reply` skill with `draft`, channel
    `github`, the surface, and an ask that names the shape and lists what
    the shape must carry, with the facts filled in (the sha, the evidence
-   link, the pending reason). Take the text inside its fenced block and
-   nothing else.
+   link, the pending reason). Take the text inside its outermost fenced
+   block and nothing else; a fence inside that text, such as a
+   `suggestion` block, is part of the reply.
 3. **Audit.** Run the audit below on that text. When it passes, the reply
    is that text. When it fails, invoke `human-reply` once more with the
    same ask plus each failing item stated as content to add or remove,

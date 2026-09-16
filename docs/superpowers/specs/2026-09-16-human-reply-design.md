@@ -188,7 +188,9 @@ says so.
 
 Colleague sample: the same collector on the named channel with the
 colleague as author, capped at 300 records, written to
-`corpus/borrow-<channel>.jsonl`.
+`corpus/borrow-<channel>.jsonl`. It runs at the start of the colleague
+pass in the read step (section 3.6), not here, so the file is collected,
+filtered, read, and deleted in one step.
 
 Every record passes through `scripts/redact.py` before it is written.
 Private-key, token, key, password, and connection-string patterns become
@@ -204,7 +206,9 @@ Hold-out: before anything else reads the corpus, three threads per set-up
 channel that the person replied to are marked `held_out: true`, chosen at
 random from pre-cutoff threads (the whole window when there is no cutoff)
 with at least one other participant, so DMs and two-person review threads
-qualify. When a channel has a cutoff and fewer than three such threads,
+qualify. A thread holding a PR body does not qualify, because calibration
+drafts a reply to someone else's message and a PR body answers nobody.
+When a channel has a cutoff and fewer than three such threads,
 the remainder come from post-cutoff threads whose reply passes the
 filter, and the calibration prompt says which pool each thread came from.
 A channel with no qualifying thread after both pools skips calibration
@@ -249,12 +253,15 @@ before continuing: lower it freely, or raise it by at most one point. A
 threshold other than the default is written into the channel profile
 header as `threshold: <n>` so a loosened filter is visible downstream.
 
-The drop rate is read twice. The first read, before any adjustment,
-decides whether the two-cause prompt shows: over 40 percent, the prompt
+The drop rate is dropped messages over scanned messages; the rate over
+all of a channel's messages is shown but gates nothing. The drop rate is
+read twice. The first read, before any adjustment, decides whether the
+two-cause prompt shows: over 40 percent of scanned messages, the prompt
 names a wrong cutoff date and a person who writes in this shape by
 default, and the person picks re-asking the date or raising the
 threshold (that is the one adjustment). The second read, after the
-adjustment, decides the outcome: a rate still over 40 percent does not
+adjustment, decides the outcome: a rate still over 40 percent of scanned
+messages does not
 loop; setup proceeds with the filtered set, marks the channel `partial`
 in the profile header, and says why.
 
@@ -280,7 +287,8 @@ ten percent. `stats.json` gets `"method": "estimated"`.
 ### 3.6 Read
 
 Sonnet subagents read a stratified sample per channel: every message over
-sixty words up to 300, and 200 shorter messages spread across surfaces.
+sixty words up to 300, and 200 shorter messages taken round-robin across
+surfaces in module order until 200 are taken or the surfaces run out.
 Each reader returns, in the schema from `human-reply/references/profile-schema.md`:
 
 - shapes per surface: when the shape applies, a skeleton with slots, and
@@ -301,7 +309,9 @@ whichever reader returned it, so a rare tone marker that one reader
 noticed survives. A reader whose return fails the schema, or has fewer
 than two examples for any surface at or above the 30-record floor
 (surfaces below the floor need none), is re-run once with a fresh agent; a
-second failure marks the channel `partial` in the profile header.
+second failure marks the channel `partial` in the profile header. When no
+reader survives, the channel gets no shapes or phrasebook and is marked
+`partial` with that reason.
 
 Cross-channel reconciliation runs over every set-up channel each time a
 channel is added or rebuilt. An entry for hedges, typing habits,
@@ -333,8 +343,14 @@ adjusted. After the adjustments are written, one held-out thread per
 channel is re-drafted from the updated profile and shown for a yes or no,
 so the last thing the person sees is the profile they will use, and that
 re-draft is what acceptance item 2 scores. One round. A channel that
-skipped calibration for lack of hold-out threads (section 3.3) gets no
-re-draft and does not count towards item 2.
+skipped calibration for lack of hold-out threads (section 3.3), or whose
+every held-out thread turned out to have no reply by the person after
+someone else's message, gets no re-draft, is marked `partial` with the
+reason, and does not count towards item 2. When the person answers no to
+the re-draft, the channel is marked `partial` with the reason
+`calibration rejected`, so its header reads
+`status: partial (calibration rejected)` and `pr-watch` does not draft
+from it.
 
 ### 3.8 Finish
 
@@ -343,7 +359,9 @@ numbered; the person strikes or replaces any of them, since the channel
 files are permanent and the examples are their own messages. Then write
 `profile.md` and `channels/<channel>.md`. Print their paths, the sample
 size and window per channel, the drop count, the method, and any channel
-marked skipped or partial. Delete `corpus/borrow-<channel>.jsonl`
+marked skipped or partial. Each channel header's `status` line lists every
+partial reason recorded during setup, a rejected calibration included.
+Delete `corpus/borrow-<channel>.jsonl`
 unconditionally, then delete the rest of `corpus/` unless the person says
 keep; the keep choice covers the person's own records only and is not
 offered when the model did the redaction (section 3.3). Say that
@@ -527,8 +545,8 @@ Setup:
 - No pre-cutoff records for a channel: offer to widen the window; if the
   person declines, every surface takes the module default, is labelled
   `estimated`, and the summary says the budgets were not measured.
-- Filter drops over 40 percent of a channel after the one threshold
-  adjustment: proceed with the filtered set, mark the channel `partial`,
+- Filter drops over 40 percent of a channel's scanned messages after the
+  one threshold adjustment: proceed with the filtered set, mark the channel `partial`,
   say why (section 3.4).
 - Reader return off-schema or under two examples for a surface at the
   30-record floor: re-run once with a fresh agent; second failure marks
@@ -541,7 +559,8 @@ Setup:
   and any borrow file is deleted. Collection runs newest first, so
   rerunning `setup <channel>` resumes from the oldest timestamp on disk,
   continuing backwards through the window, and skips records already on
-  disk by `ts`.
+  disk by `ts`. GitHub resumes by repo instead, skipping every repo
+  already collected.
 
 Runtime:
 
@@ -553,7 +572,10 @@ Runtime:
 
 ## 8. Privacy
 
-- Redaction runs before any record touches disk. Placeholders replace
+- Redaction runs before the skill writes any record to disk. The session
+  transcript Claude Code keeps under `~/.claude/projects/` is outside the
+  skill's control and may still hold the raw text the collection tools
+  returned; setup says so before collecting. Placeholders replace
   private-key, token, key, password, and connection-string patterns. The
   pattern list is a copy of `pr-loop-lib/references/secret-scan-rules.md`
   (a copy, not an import, because a colleague installs this skill without
@@ -568,9 +590,11 @@ Runtime:
   shape examples, redacted for secrets and with `<name>` and `<team>` in
   place of people, nothing more. The person reviews every example at
   finish (section 3.8) before the file is written.
-- Colleague samples are read for traits and never stored past the end of
-  setup: the borrow file is deleted at the end of setup and on any
-  interrupted run, regardless of the keep choice. The collector runs only
+- Colleague samples are read for traits, and the skill stores them no
+  longer than the read step that collects them: the borrow file is
+  deleted there, again at the end of setup, and on any interrupted run,
+  regardless of the keep choice. The session transcript is the exception
+  named above, and the consent question says so. The collector runs only
   after the person confirms the colleague has been told. The profile
   records the trait, the colleague's name, and that confirmation, no
   quoted text.
