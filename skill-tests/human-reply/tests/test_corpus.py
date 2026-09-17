@@ -171,6 +171,108 @@ class NormalizeTests(unittest.TestCase):
                 corpus.main(["oldest", "--corpus", str(path), "--from-month", "2026-06"])
         self.assertEqual(out.getvalue(), "2026-07-01T00:00:00Z\n")
 
+    def test_a_busy_month_does_not_crowd_out_quieter_months(self):
+        busy = [record(f"D1/b{i}", f"2025-12-{i + 1:02d}T00:00:00Z") for i in range(10)]
+        quiet = [record("D1/q1", "2025-11-05T00:00:00Z"), record("D1/q2", "2025-10-05T00:00:00Z"),
+                 record("D1/q3", "2025-10-06T00:00:00Z")]
+        kept = corpus.normalize(busy + quiet, cap=5)
+        self.assertEqual([r["ts"] for r in kept], ["2025-12-10T00:00:00Z", "2025-12-09T00:00:00Z",
+                                                   "2025-11-05T00:00:00Z", "2025-10-06T00:00:00Z",
+                                                   "2025-10-05T00:00:00Z"])
+
+    def test_the_spread_applies_within_each_side_of_the_cutoff(self):
+        pre = [record(f"D1/a{i}", f"2025-12-{i + 1:02d}T00:00:00Z") for i in range(3)]
+        pre.append(record("D1/b", "2025-11-01T00:00:00Z"))
+        post = [record(f"D1/p{i}", f"2026-03-{i + 1:02d}T00:00:00Z") for i in range(3)]
+        kept = corpus.normalize(pre + post, cap=3, cutoff="2026-01")
+        self.assertEqual([r["ts"] for r in kept], ["2025-12-03T00:00:00Z", "2025-12-02T00:00:00Z",
+                                                   "2025-11-01T00:00:00Z"])
+
+
+class PhraseTests(unittest.TestCase):
+    def test_tokens_ignore_case_and_edge_punctuation_and_break_at_links_and_code(self):
+        text = "Thanks! :slightly_smiling_face: see <https://x.example|this> and\n```\ncode here\n```\nThat said, ok"
+        self.assertEqual(corpus.phrase_tokens(text),
+                         [["thanks", ":slightly_smiling_face:", "see"], ["and"], ["that", "said", "ok"]])
+
+    def test_phrases_count_records_and_drop_stopword_runs_and_subsumed_parts(self):
+        texts = ["IMO we ship it", "imo, that said we wait", "That said, IMO fine", "the of the", "the of the",
+                 "the of the", "floated the following PR", "Floated the following PR", "floated the following pr!"]
+        records = [record(f"D1/{i}", f"2025-06-01T00:00:{i:02d}Z", text=t) for i, t in enumerate(texts)]
+        found = {p["phrase"]: p["records"] for p in corpus.phrases(records, minimum=2)}
+        self.assertEqual(found["imo"], 3)
+        self.assertEqual(found["that said"], 2)
+        self.assertEqual(found["floated the following pr"], 3)
+        self.assertNotIn("floated the following", found)
+        self.assertNotIn("the of the", found)
+        self.assertNotIn("said", found)
+
+    def test_held_out_records_are_not_counted(self):
+        records = [record("D1/1", "2025-06-01T00:00:01Z", text="QQ one"),
+                   record("D1/2", "2025-06-01T00:00:02Z", text="QQ two", held_out=True)]
+        self.assertEqual(corpus.phrases(records, minimum=1), [{"phrase": "qq one", "records": 1}])
+        self.assertEqual(corpus.count_phrase(records, "QQ"), 1)
+
+    def test_single_words_take_at_most_their_share_of_the_places(self):
+        texts = ["alpha"] * 3 + ["beta"] * 3 + ["delta epsilon"] * 2
+        records = [record(f"D1/{i}", f"2025-06-01T00:00:{i:02d}Z", text=t) for i, t in enumerate(texts)]
+        found = [p["phrase"] for p in corpus.phrases(records, minimum=2, top=2, singles=1)]
+        self.assertEqual(found, ["alpha", "delta epsilon"])
+
+    def test_count_matches_whole_words_in_order(self):
+        records = [record("D1/1", "2025-06-01T00:00:01Z", text="a memo about imo"),
+                   record("D1/2", "2025-06-01T00:00:02Z", text="Thanks! :slightly_smiling_face:"),
+                   record("D1/3", "2025-06-01T00:00:03Z", text="memo only")]
+        self.assertEqual(corpus.count_phrase(records, "IMO"), 1)
+        self.assertEqual(corpus.count_phrase(records, "thanks :slightly_smiling_face:"), 1)
+        self.assertEqual(corpus.count_phrase(records, "!!"), 0)
+
+    def test_cli_writes_phrases_and_prints_counts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "slack.kept.jsonl"
+            out_path = pathlib.Path(tmp) / "slack.phrases.jsonl"
+            corpus.write_jsonl(path, [record(f"D1/{i}", f"2025-06-01T00:00:0{i}Z", text="JFYI deploy done")
+                                      for i in range(3)])
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(corpus.main(["phrases", "--corpus", str(path), "--out", str(out_path)]), 0)
+                self.assertEqual(corpus.main(["count", "--corpus", str(path), "--phrase", "JFYI",
+                                              "--phrase", "deploy done"]), 0)
+            written = corpus.read_jsonl(out_path)
+        self.assertEqual(written, [{"phrase": "jfyi deploy done", "records": 3}])
+        self.assertEqual(out.getvalue().splitlines(), ["phrases: 1 written",
+                                                       '{"phrase": "JFYI", "records": 3}',
+                                                       '{"phrase": "deploy done", "records": 3}'])
+
+
+class FingerprintTests(unittest.TestCase):
+    def make_skill(self, root, setup_text):
+        (root / "setup").mkdir()
+        (root / "scripts" / "__pycache__").mkdir(parents=True)
+        (root / "SKILL.md").write_bytes(b"# skill\n")
+        (root / "setup" / "01-detect.md").write_bytes(setup_text)
+        (root / "scripts" / "__pycache__" / "x.pyc").write_bytes(b"\x00")
+        (root / "notes.txt").write_bytes(b"not part of the skill")
+
+    def test_line_endings_and_other_files_do_not_change_it_and_an_edited_step_does(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            roots = [pathlib.Path(tmp) / name for name in ("lf", "crlf", "edited")]
+            for root in roots:
+                root.mkdir()
+            self.make_skill(roots[0], b"step one\nline two\n")
+            self.make_skill(roots[1], b"step one\r\nline two\r\n")
+            self.make_skill(roots[2], b"step one\nline 2\n")
+            (roots[1] / "scripts" / "__pycache__" / "x.pyc").write_bytes(b"\x01")
+            (roots[1] / "notes.txt").write_bytes(b"changed")
+            prints = [corpus.fingerprint(root) for root in roots]
+        self.assertEqual(prints[0], prints[1])
+        self.assertNotEqual(prints[0], prints[2])
+        self.assertRegex(prints[0], r"^[0-9a-f]{12}$")
+
+    def test_cli_prints_the_fingerprint_of_this_skill(self):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(corpus.main(["fingerprint", "--skill-dir", str(SKILL)]), 0)
+        self.assertEqual(out.getvalue(), corpus.fingerprint(SKILL) + "\n")
+
 
 class TemplatedTests(unittest.TestCase):
     def status_lines(self, audience, count, start=0):

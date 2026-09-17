@@ -99,6 +99,15 @@ Within a pass, search one calendar month at a time, newest month first,
 and run two windows per month: one with `channel_types` set to
 `public_channel,private_channel`, one with `im,mpim`. The newest month
 ends where the pass starts and the oldest month begins where it ends.
+
+Each month gets a quota, so the sample covers the whole pass instead of
+its newest months: the room left under the cap when the pass starts
+(1500 for `pre`, 1500 minus the records kept for `post`), divided by the
+months in the pass, rounded up. Store it as `per_channel.slack.quota`.
+The channels window runs first and stops at half the quota, rounded up;
+the DM window stops at the quota minus the records the channels window
+took. Count only records built, not skipped messages.
+
 Each call:
 
 - `query`: `from:<@USER_ID> after:<last day of the previous month> before:<first day of the next month>`
@@ -110,8 +119,8 @@ Each call:
 - `sort`: `timestamp`, `sort_dir`: `desc`, `limit`: 20, `include_context`: false
 - `cursor`: the cursor from the previous page, empty on the first page
 
-A window ends when no cursor comes back, or when a page is short and the
-page before it was short too. An empty page after a full one does not end
+A window ends when it reaches its share of the quota, when no cursor
+comes back, or when a page is short and the page before it was short too. An empty page after a full one does not end
 the window; ask for the next page. The search stops at 20 pages. When a
 window reaches page 20, start a new window with the same `after:` and
 `before:` set to the day after the oldest message captured so far; the
@@ -131,7 +140,9 @@ whose text is empty after trimming, such as an attachment with no text.
 | `text` | the message text as returned |
 
 Pipe each page's records through redaction before asking for the next
-page. After each month, run:
+page. After each month, run the command below. When it trims to the cap,
+it keeps the newest records of every month in turn, so no month is
+dropped whole:
 
 ```
 <py> <skill-dir>/scripts/corpus.py normalize --corpus <home>/corpus/slack.jsonl --cap 1500 --cutoff <cutoff>
@@ -143,8 +154,8 @@ query text against the form above and run the month once more. A month
 still empty after that goes into `per_channel.slack.empty_months` as
 `YYYY-MM`.
 
-End the pass when `normalize` reports 1500 kept or its oldest month is
-done.
+End the pass when its oldest month is done. A resumed pass reuses the
+stored quota.
 
 ## 4. GitHub
 

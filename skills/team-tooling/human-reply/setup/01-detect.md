@@ -17,6 +17,12 @@ If `<home>/corpus/` exists:
   covers, and ask one question: resume, or start over. Start over deletes
   `<home>/corpus/` entirely. Resume skips to the first step `setup.json`
   does not mark done; the collect step picks up from the records on disk.
+  With Python, first run
+  `<py> <skill-dir>/scripts/corpus.py fingerprint --skill-dir <skill-dir>`.
+  When `skill_fingerprint` in `setup.json` is missing or differs, say
+  that setup's steps changed since that run, so a resumed run would mix
+  files from the old steps with the new ones, and recommend start over.
+  Ask the question either way.
 - If `setup.json` does not exist but `<channel>.jsonl` files do, they are
   a sample kept by an earlier finished setup. Ask one question: collect
   fresh, which deletes them, or reuse them. Reuse marks those channels as
@@ -75,13 +81,18 @@ Write `<home>/corpus/setup.json`:
   "channels": ["slack", "github"],
   "skipped": {"notion": "no Notion comments tool is connected"},
   "seed": 48213,
+  "skill_fingerprint": "3f9a1c0be274",
   "per_channel": {"slack": {}, "github": {}}
 }
 ```
 
+`skill_fingerprint` is what
+`<py> <skill-dir>/scripts/corpus.py fingerprint --skill-dir <skill-dir>`
+prints, or `null` without Python.
+
 `per_channel` holds one object per channel in `channels`. Later steps
 write that channel's own state into it and name each key as
-`per_channel.<channel>.<key>`: `redacted`, `redaction`, `pass`,
+`per_channel.<channel>.<key>`: `redacted`, `redaction`, `pass`, `quota`,
 `empty_months`, `excluded_audiences`, `holdouts`, `github_repos_done`,
 `drop_rate_first`, `threshold`, `dropped`, `method`, `calibration`, and
 `partial`, a list of reasons. Everything else in

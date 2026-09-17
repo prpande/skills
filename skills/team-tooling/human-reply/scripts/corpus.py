@@ -6,9 +6,14 @@
     python corpus.py oldest --corpus <channel>.jsonl [--from-month 2026-01]
     python corpus.py templated --corpus <channel>.jsonl [--min 10]
     python corpus.py drop --corpus <channel>.jsonl --audience <id> [--audience <id> ...]
+    python corpus.py phrases --corpus <channel>.kept.jsonl --out <channel>.phrases.jsonl [--min 3] [--top 200] [--singles 50]
+    python corpus.py count --corpus <channel>.kept.jsonl --phrase "<phrase>" [--phrase "<phrase>" ...]
+    python corpus.py fingerprint --skill-dir <skill-dir>
 """
 import argparse
+import hashlib
 import json
+import pathlib
 import random
 import re
 import sys
@@ -29,6 +34,16 @@ SLACK_LINK = re.compile(r"<https?://[^>\n]+>")
 MARKDOWN_LINK = re.compile(r"\[[^\]\n]*\]\([^)\s]+\)")
 CUTOFF = re.compile(r"^\d{4}-(?:0[1-9]|1[0-2])$")
 HOLDOUTS_PER_CHANNEL = 3
+PHRASE_MAX_WORDS = 5
+PHRASE_BREAK = re.compile(r"<[^>\n]*>|https?://\S+")
+PHRASE_STRIP = "\"'()[]{}.,;?!*_~`"
+STOPWORDS = frozenset(
+    "a an the and or but if so of to in on at by for from with as is are was were be been being it its "
+    "this that these those i me my we our you your he she they them their his her there here what which "
+    "who when where why how not no yes do does did done have has had will would can could should may "
+    "might must just also then than too very all any some more most other into out up down over about "
+    "again only own same such both each few am".split())
+FINGERPRINT_PARTS = ("SKILL.md", "setup", "references", "channels", "scripts")
 # Calibration drafts a reply to someone else's message, and a PR body answers nobody.
 NO_REPLY_TARGET_SURFACE = "PR body"
 
@@ -107,22 +122,37 @@ def validate_record(record, surfaces):
     return errors
 
 
-def normalize(records, cap, cutoff=None):
-    """Drop repeated ids and blank messages, keep `cap` records, newest first.
+def _spread_by_month(records):
+    """Newest first within each month, then round-robin across months, newest month first."""
+    months = {}
+    for record in sorted(records, key=lambda r: r["ts"], reverse=True):
+        months.setdefault(record["ts"][:7], []).append(record)
+    queues = [months[m] for m in sorted(months, reverse=True)]
+    order = []
+    for depth in range(max((len(q) for q in queues), default=0)):
+        order.extend(q[depth] for q in queues if depth < len(q))
+    return order
 
-    With a cutoff, pre-cutoff records take the cap first, newest first, and
-    post-cutoff records fill what room is left, newest first.
+
+def normalize(records, cap, cutoff=None):
+    """Drop repeated ids and blank messages and keep `cap` records, returned newest first.
+
+    Trimming spreads the cap across months: each month keeps its newest
+    records, one round at a time, so a busy month cannot crowd out the rest.
+    With a cutoff, pre-cutoff records take the cap first and post-cutoff
+    records fill what room is left.
     """
     unique = {}
     for record in records:
         if isinstance(record.get("text"), str) and not record["text"].strip():
             continue
         unique.setdefault(record_id(record), record)
-    newest = sorted(unique.values(), key=lambda r: r["ts"], reverse=True)
-    if cutoff is not None:
-        pre = [r for r in newest if is_pre_cutoff(r, cutoff)]
-        newest = pre + [r for r in newest if not is_pre_cutoff(r, cutoff)]
-    return sorted(newest[:cap], key=lambda r: r["ts"], reverse=True)
+    if cutoff is None:
+        order = _spread_by_month(unique.values())
+    else:
+        order = (_spread_by_month(r for r in unique.values() if is_pre_cutoff(r, cutoff))
+                 + _spread_by_month(r for r in unique.values() if not is_pre_cutoff(r, cutoff)))
+    return sorted(order[:cap], key=lambda r: r["ts"], reverse=True)
 
 
 def oldest_ts(records, from_month=None):
@@ -152,6 +182,88 @@ def templated(records, minimum=10):
             flagged.append({"audience": audience, "records": len(rs), "share": round(count / len(rs), 2),
                             "prefix": prefix})
     return sorted(flagged, key=lambda line: (-line["records"], line["audience"]))
+
+
+def phrase_tokens(text):
+    """Lowercased word runs; a code block, link, mention, or placeholder breaks a run."""
+    runs = []
+    for chunk in PHRASE_BREAK.split(FENCED_CODE.sub("<code>", text)):
+        run = [token.strip(PHRASE_STRIP) for token in chunk.lower().split()]
+        run = [token for token in run if token]
+        if run:
+            runs.append(run)
+    return runs
+
+
+def _ngrams(runs, max_words):
+    grams = set()
+    for run in runs:
+        for size in range(1, max_words + 1):
+            for start in range(len(run) - size + 1):
+                grams.add(tuple(run[start:start + size]))
+    return grams
+
+
+def phrases(records, minimum=3, top=200, singles=50, max_words=PHRASE_MAX_WORDS):
+    """Word sequences of 1 to max_words words by the number of records holding them.
+
+    Held-out records are skipped. A sequence made only of stopwords and
+    tokens without letters is left out, and so is one whose longer extension
+    appears in as many records. Single words take at most `singles` of the
+    `top` places, since most frequent single words are topic words.
+    """
+    counts = {}
+    for record in records:
+        if record.get("held_out"):
+            continue
+        for gram in _ngrams(phrase_tokens(record["text"]), max_words):
+            counts[gram] = counts.get(gram, 0) + 1
+    subsumed = set()
+    for gram, count in counts.items():
+        if len(gram) > 1:
+            for part in (gram[:-1], gram[1:]):
+                if counts.get(part) == count:
+                    subsumed.add(part)
+    kept = [(gram, count) for gram, count in counts.items()
+            if count >= minimum and gram not in subsumed
+            and not all(token in STOPWORDS or not any(ch.isalpha() for ch in token) for token in gram)]
+    kept.sort(key=lambda item: (-item[1], -len(item[0]), item[0]))
+    single_room = min(singles, top)
+    single = [item for item in kept if len(item[0]) == 1][:single_room]
+    multi = [item for item in kept if len(item[0]) > 1][:top - len(single)]
+    return [{"phrase": " ".join(gram), "records": count} for gram, count in single + multi]
+
+
+def count_phrase(records, phrase):
+    """Records, held-out ones skipped, whose words hold the phrase's words in order, tokenized as `phrases` does."""
+    target = [token for run in phrase_tokens(phrase) for token in run]
+    if not target:
+        return 0
+    size = len(target)
+    total = 0
+    for record in records:
+        if record.get("held_out"):
+            continue
+        if any(run[i:i + size] == target for run in phrase_tokens(record["text"])
+               for i in range(len(run) - size + 1)):
+            total += 1
+    return total
+
+
+def fingerprint(skill_dir):
+    """Short hash of the skill's instructions and scripts, line endings ignored."""
+    root = pathlib.Path(skill_dir)
+    files = []
+    for part in FINGERPRINT_PARTS:
+        target = root / part
+        candidates = [target] if target.is_file() else sorted(target.rglob("*")) if target.is_dir() else []
+        files.extend(f for f in candidates
+                     if f.is_file() and "__pycache__" not in f.parts and f.suffix in (".md", ".py"))
+    digest = hashlib.sha256()
+    for f in files:
+        digest.update(f.relative_to(root).as_posix().encode("utf-8") + b"\0")
+        digest.update(f.read_bytes().replace(b"\r\n", b"\n") + b"\0")
+    return digest.hexdigest()[:12]
 
 
 def _threads(records):
@@ -221,9 +333,32 @@ def main(argv=None):
     d = sub.add_parser("drop")
     d.add_argument("--corpus", required=True)
     d.add_argument("--audience", required=True, action="append")
+    p = sub.add_parser("phrases")
+    p.add_argument("--corpus", required=True)
+    p.add_argument("--out", required=True)
+    p.add_argument("--min", type=int, default=3)
+    p.add_argument("--top", type=int, default=200)
+    p.add_argument("--singles", type=int, default=50)
+    c = sub.add_parser("count")
+    c.add_argument("--corpus", required=True)
+    c.add_argument("--phrase", required=True, action="append")
+    f = sub.add_parser("fingerprint")
+    f.add_argument("--skill-dir", required=True)
     args = parser.parse_args(argv)
 
+    if args.command == "fingerprint":
+        print(fingerprint(args.skill_dir))
+        return 0
     records = read_jsonl(args.corpus)
+    if args.command == "phrases":
+        found = phrases(records, args.min, args.top, args.singles)
+        write_jsonl(args.out, found)
+        print(f"phrases: {len(found)} written")
+        return 0
+    if args.command == "count":
+        for phrase in args.phrase:
+            print(json.dumps({"phrase": phrase, "records": count_phrase(records, phrase)}, ensure_ascii=False))
+        return 0
     if args.command == "normalize":
         kept = normalize(records, args.cap, None if args.cutoff in (None, "never") else args.cutoff)
         write_jsonl(args.corpus, kept)

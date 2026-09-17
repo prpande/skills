@@ -17,6 +17,19 @@ readers see the same messages:
   each surface in turn, skipping a surface that has run out, until 200
   are taken or every surface has run out
 
+With Python, also list the phrases the person repeats across the whole
+kept file, so the phrasebook does not depend on what a reader happens to
+notice in the sample:
+
+```
+<py> <skill-dir>/scripts/corpus.py phrases --corpus <home>/corpus/<channel>.kept.jsonl --out <home>/corpus/<channel>.phrases.jsonl
+```
+
+It writes up to 200 word sequences of one to five words found in three or
+more records, most frequent first, with at most 50 single words. Most
+lines are topic words or filler; readers pick the rest. Without Python
+there is no candidate file.
+
 ## 2. Three readers per channel
 
 Dispatch three subagents on the sonnet model for each channel, in
@@ -43,8 +56,15 @@ Return only a JSON object in the reader return format from
   <team>. Placeholders like <redacted:kind> stay as they are.
 - Give two examples for a shape on a surface with 30 or more records, one
   otherwise. Surface record counts: <surface: records, from stats.json>.
-- Phrasebook phrases are literal text the person wrote, three to eight
-  words, grouped by role.
+- Phrasebook phrases are literal text the person wrote, one to eight
+  words, grouped by role. A single word or shortcode counts when it plays
+  a role, such as "JFYI", "IMO", "cc:", or ":sweat_smile:".
+- Candidate phrases: <candidate file path, or "none">. Each line is a
+  phrase and the number of records holding it, lowercased, with edge
+  punctuation removed.
+  Put every candidate that plays a role into the phrasebook, written the
+  way the person writes it in the sample. Leave out topic words (names of
+  services, tables, features) and filler.
 - Write nothing to disk.
 ````
 
@@ -70,16 +90,19 @@ voice entries. Add `"no reader returned a valid read"` to
   are on the same surface and their skeletons have the same slots in the
   same order. Merge their examples, drop repeats, and keep two, or one on
   a surface under 30 records.
-- **Phrasebook.** No vote. Count each candidate phrase's records in the
-  channel corpus, case-insensitively, ignoring held-out records:
+- **Phrasebook.** No vote. Count the records holding each phrase any
+  reader returned, as whole words in order, ignoring case, edge
+  punctuation, and held-out records:
 
   ```
-  grep -v '"held_out": true' <home>/corpus/<channel>.kept.jsonl | grep -ciF "<phrase>"
+  <py> <skill-dir>/scripts/corpus.py count --corpus <home>/corpus/<channel>.kept.jsonl --phrase "<phrase>" --phrase "<phrase>"
   ```
 
-  Without Python, count in `<home>/corpus/<channel>.jsonl` instead,
+  Without Python, count by reading `<home>/corpus/<channel>.jsonl`,
   leaving out held-out records and ids in `per_channel.<channel>.dropped`.
-  Keep the phrase when the count is 2 or more, with that count.
+  Keep the phrase when the count is 2 or more, with that count. Phrases
+  that differ only in case or edge punctuation count the same records;
+  keep one, in the spelling the sample uses most.
 
 Write the merged result to `<home>/corpus/<channel>.read.json` in the
 reader return format, with a `count` on each phrasebook entry.

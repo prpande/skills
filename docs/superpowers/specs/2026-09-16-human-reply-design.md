@@ -186,12 +186,17 @@ fills with the pre-cutoff messages budgets are measured from. The first
 pass runs from the last day of the month before the cutoff back to the
 window start and stops at the cap. The second runs only when the first
 ended below the cap, from the window end back to the first day of the
-cutoff month, and stops at the cap. `scripts/corpus.py normalize` takes
-the cutoff on every call, including GitHub's: when it trims to the cap it
-keeps pre-cutoff records first, newest first, then fills the remaining
-room with post-cutoff records, newest first, and it drops records whose
-text is blank. The pass in progress is stored in setup state so a resumed
-run continues it.
+cutoff month, and stops at the cap. Within a Slack pass each month gets a
+quota, the room left under the cap divided by the months in the pass,
+so 1,500 records cover the whole pass rather than its newest three
+months; the channels window takes at most half of a month's quota and
+the DM window the rest. `scripts/corpus.py normalize` takes the cutoff on
+every call, including GitHub's: when it trims to the cap it keeps
+pre-cutoff records first, then fills the remaining room with post-cutoff
+records, and on each side it takes the newest record of every month in
+turn, so a busy month cannot crowd out the others. It drops records
+whose text is blank. The pass in progress and its quota are stored in
+setup state so a resumed run continues it.
 
 GitHub: `gh search prs` with `--author @me`, `--reviewed-by @me`, and
 `--commenter @me`, plus `gh search issues --commenter @me`, together list
@@ -326,15 +331,25 @@ Each reader returns, in the schema from `human-reply/references/profile-schema.m
   and `<team>`: two where the surface has 30 or more records, one
   otherwise
 - phrasebook candidates by role (openers, asks, evidence, hedges, pivots,
-  closers, visibility, tone markers), each with the count seen
+  closers, visibility, tone markers), one to eight words each, so single
+  markers such as "IMO", "JFYI", and "cc:" qualify
 - typing habits: contractions, capitalisation, punctuation, code spans
 - how disagreement is worded
 - sign-off habits
 
+Readers alone miss frequent phrases: a reader proposes what it notices in
+a 500-message sample. So before the readers run, `scripts/corpus.py
+phrases` lists the word sequences of one to five words that appear in
+three or more records of the whole kept file, at most 200 with at most 50
+single words, and every reader gets that list and places each candidate
+that plays a role, leaving out topic words and filler. The no-Python path
+has no list.
+
 Three readers per channel read the same sample. For shapes, disagreement
 wording, typing habits, and sign-offs the merge keeps an entry two or more
 readers returned. Phrasebook entries are not voted on: a candidate phrase
-is kept when its literal count in the channel corpus is two or more,
+is kept when `scripts/corpus.py count` finds it, as whole words in
+order ignoring case and edge punctuation, in two or more records,
 whichever reader returned it, so a rare tone marker that one reader
 noticed survives. A reader whose return fails the schema, or has fewer
 than two examples for any surface at or above the 30-record floor
@@ -597,6 +612,11 @@ Setup:
 - Python present but `measure.py` fails: show the error and offer the
   fallback for that channel; do not silently switch. The channel file's
   header then says `estimated`; `profile.md` keeps the probe result.
+- Setup resumed after the skill changed: setup state records a
+  fingerprint of the skill's steps, references, channel modules, and
+  scripts. When the fingerprint on resume differs, setup says a resumed
+  run would mix files from the old steps with the new ones and recommends
+  starting over, then asks as usual.
 - Collection interrupted: the person's own JSONL written so far is kept
   and any borrow file is deleted. Collection runs newest first, so
   rerunning `setup <channel>` resumes from the oldest timestamp on disk,
@@ -681,9 +701,13 @@ Acceptance, recorded in the PR that ships the skill:
 
 1. Extractor regression: setup run on the author's own Slack, and the
    generated `channels/slack.md` compared by hand against the current
-   `slack-reply` numbers and phrasebook. Pass when every surface median
-   and derived budget is within five words of the hand-derived one and
-   every phrasebook entry in the hand file appears in the generated one.
+   `slack-reply` numbers and phrasebook, on the tiers the hand corpus
+   notes measure. Pass when every median is within five words of the
+   hand-derived one, every 90th percentile is within 10 percent of it,
+   and every hand phrasebook entry that appears in two or more records of
+   the sample is in the generated phrasebook. Budgets are not compared:
+   the hand budgets were judgment calls, while setup derives them from
+   the 90th percentile by a fixed rule.
 2. Second person: one colleague runs setup end to end on their own machine
    for at least one channel, and the calibration round is the test. Pass
    when the person accepts the post-adjustment re-draft (section 3.7) for
