@@ -95,10 +95,10 @@ from post-cutoff threads whose every message passed the filter, with pool
 rerun the filter command with the channel's threshold so the kept file
 carries the new marks.
 
-When a channel still has no hold-out thread, set
-`per_channel.<channel>.calibration` to `"skipped"` and add
-`"no thread with another participant to calibrate against"` to
-`per_channel.<channel>.partial`.
+A channel that still has fewer than three hold-out threads, or none,
+goes on to calibration as it is; the calibrate step backfills from
+threads older than the sample and marks the channel skipped only when
+that finds none.
 
 The colleague sample is collected and filtered in the read step.
 

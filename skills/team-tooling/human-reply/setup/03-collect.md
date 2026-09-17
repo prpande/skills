@@ -41,8 +41,13 @@ the touched counts up in `per_channel.<channel>.redacted`.
 
 Without Python, redact by hand using the patterns in
 `scripts/redact.py`: a whole private-key block becomes
-`<redacted:private-key>`, and every match of the other patterns becomes
-`<redacted:kind>` with the kind named beside the pattern. Before the first
+`<redacted:private-key>`, and every match of the other
+`SOURCE_PATTERNS` becomes `<redacted:kind>` with the kind named beside the
+pattern. Then apply `SKILL_LOCAL_PATTERNS` in order: a `pwd=` URL value,
+a `Cookie:` or `Set-Cookie:` header value, a session or tracking cookie
+value, and a Bearer token of 20 or more characters. Each keeps the text
+before the value and replaces only the value, as in `pwd=<redacted:password>`,
+and skips a value that is already a placeholder. Before the first
 record of the run is written, redact every case in
 `human-reply/references/redaction-check.md` and compare with its expected output. On
 any miss, stop setup and say Python is required to collect. On a pass,
@@ -52,30 +57,56 @@ to `"model"`; the finish step reads it.
 ## 2. Resume point
 
 For Slack and Notion, when `<home>/corpus/<channel>.jsonl` already has
-records, run:
+records, resume the pass named in `per_channel.<channel>.pass` (section
+3). In the `pre` pass, or when the cutoff is `never`, run:
 
 ```
 <py> <skill-dir>/scripts/corpus.py oldest --corpus <home>/corpus/<channel>.jsonl
 ```
 
-and continue collecting backwards from that date instead of from
-`window.until`. Duplicates are removed later by `normalize`. Without
-Python, read the oldest `ts` from the file.
+and continue collecting backwards from that date instead of from where
+the pass starts. In the `post` pass, add `--from-month <cutoff>` so
+pre-cutoff records are ignored; when it prints `none`, start the `post`
+pass from `window.until`. Duplicates are removed later by `normalize`.
+Without Python, read the oldest `ts` from the file, counting only records
+from the cutoff month on in the `post` pass.
 
 GitHub resumes by repo instead: skip every repo already in
 `per_channel.github.github_repos_done`.
+
+On every run of this step, first or later, each collector skips the
+audiences in `per_channel.<channel>.excluded_audiences` (section 7).
 
 ## 3. Slack
 
 Get the person's own Slack user id from the search tool's description or
 from the user search tool.
 
-Search one calendar month at a time, newest month first, and run two
-windows per month: one with `channel_types` set to
+With the cutoff `never`, collect in one pass from `window.until` back to
+`window.since`. With a cutoff month, collect in two passes, so the cap
+fills first with pre-cutoff messages, the ones budgets are measured from:
+
+1. `pre`: from the last day of the month before the cutoff back to
+   `window.since`.
+2. `post`, only when `pre` ended below the cap: from `window.until` back
+   to the first day of the cutoff month.
+
+Both passes stay inside the window; a pass with no day in the window is
+skipped. Store `per_channel.slack.pass` as `pre` or `post` when a pass
+starts.
+
+Within a pass, search one calendar month at a time, newest month first,
+and run two windows per month: one with `channel_types` set to
 `public_channel,private_channel`, one with `im,mpim`. The newest month
-ends at `window.until` and the oldest starts at `window.since`. Each call:
+ends where the pass starts and the oldest month begins where it ends.
+Each call:
 
 - `query`: `from:<@USER_ID> after:<last day of the previous month> before:<first day of the next month>`
+
+  The angle brackets are literal `<` and `>` characters. An HTML-entity
+  form such as `&lt;@USER_ID&gt;` returns "No results found" with no
+  error.
+
 - `sort`: `timestamp`, `sort_dir`: `desc`, `limit`: 20, `include_context`: false
 - `cursor`: the cursor from the previous page, empty on the first page
 
@@ -86,7 +117,9 @@ window reaches page 20, start a new window with the same `after:` and
 `before:` set to the day after the oldest message captured so far; the
 one-day overlap is removed by `normalize`.
 
-Build one record per message:
+Build one record per message. Skip a message in the person's own
+self-DM, the DM whose other member is the person, and a message whose
+text is empty after trimming, such as an attachment with no text.
 
 | Field | Value |
 |---|---|
@@ -94,17 +127,24 @@ Build one record per message:
 | `ts` | the message timestamp converted to UTC `YYYY-MM-DDTHH:MM:SSZ` |
 | `audience` | the channel or DM id |
 | `thread` | `<channel id>/<thread ts>`, or `<channel id>/<ts>` outside a thread |
-| `others` | 1 for a 1:1 DM; the member count minus one for a group DM, or 2 when unknown; 1 for a thread reply; 1 for a top-level post that shows replies, 0 otherwise |
+| `others` | the participants other than the person within the record's `thread` id: a DM or group DM message outside a thread: 0, since its thread id holds only that message; a thread reply: 1; a top-level channel post: 1 when it shows replies, 0 otherwise; a thread reply inside a DM or group DM: 1 |
 | `text` | the message text as returned |
 
 Pipe each page's records through redaction before asking for the next
 page. After each month, run:
 
 ```
-<py> <skill-dir>/scripts/corpus.py normalize --corpus <home>/corpus/slack.jsonl --cap 1500
+<py> <skill-dir>/scripts/corpus.py normalize --corpus <home>/corpus/slack.jsonl --cap 1500 --cutoff <cutoff>
 ```
 
-Stop when it reports 1500 kept or the month is before `window.since`.
+Then check the month's coverage. When both windows returned no messages
+and the month is not before the person's first Slack message, check the
+query text against the form above and run the month once more. A month
+still empty after that goes into `per_channel.slack.empty_months` as
+`YYYY-MM`.
+
+End the pass when `normalize` reports 1500 kept or its oldest month is
+done.
 
 ## 4. GitHub
 
@@ -121,7 +161,7 @@ to `per_channel.github.github_repos_done` so a resumed run skips it:
 ```
 
 A repo that fails with a 403 or 404 is skipped and named in the summary.
-After the last repo, run `normalize` with `--cap 1500`.
+After the last repo, run `normalize` with `--cap 1500 --cutoff <cutoff>`.
 
 Without Python, call the same `gh search` and `gh api` endpoints that
 `scripts/github_records.py` calls and build the same records by hand.
@@ -139,11 +179,18 @@ Without Python, call the same `gh search` and `gh api` endpoints that
    `include_all_blocks: true` and `include_resolved: true`. A discussion
    in the first answer is a `page comment` discussion; one only in the
    second is an `inline comment` discussion.
-4. For each comment the person wrote inside the window, build a record:
-   `audience` is the page id, `thread` is `<page id>/<discussion id>`,
-   `others` is the number of other authors in the discussion.
-5. Pipe each page's records through redaction. Stop at 500 records after
-   `normalize --cap 500`, or when the pages run out.
+4. For each comment the person wrote inside the current pass's dates,
+   build a record: `audience` is the page id, `thread` is
+   `<page id>/<discussion id>`, `others` is the number of other authors
+   in the discussion.
+5. Pipe each page's records through redaction, then run
+   `normalize --cap 500 --cutoff <cutoff>`. End the pass when it reports
+   500 kept, or when the pages run out.
+
+Notion uses the same passes and dates as Slack (section 3) and stores
+`per_channel.notion.pass`. The `post` pass, run only when `pre` ended
+below 500, walks the page list again and keeps only comments from the
+cutoff month on.
 
 Tell the person that Notion comments are reached page by page, so the
 sample covers only pages they visited or created recently.
@@ -160,7 +207,35 @@ A record that fails is fixed by rebuilding it from the source, never by
 editing the redacted text. Without Python, check every field against
 `human-reply/references/corpus-record.md`.
 
-## 7. Hold out, first pass
+## 7. Automated posts
+
+An automation that posts under the person's name would teach the profile
+its status lines as the person's habits. For each channel in `channels`:
+
+```
+<py> <skill-dir>/scripts/corpus.py templated --corpus <home>/corpus/<channel>.jsonl
+```
+
+Each printed line is an audience with at least ten records where half or
+more open with the same three words. When no channel prints a line, skip
+to section 8. Otherwise show every flagged audience in one list, with its
+channel name (Slack channel, repo, or page title), `records`, and
+`prefix`, and ask one question: "Which of these are automated posts to
+leave out? You can also name other channels." Wait for the answer.
+
+Resolve any channel the person names that was not flagged to its id.
+For each channel with audiences to leave out, run:
+
+```
+<py> <skill-dir>/scripts/corpus.py drop --corpus <home>/corpus/<channel>.jsonl --audience <id> --audience <id>
+```
+
+and add the ids to `per_channel.<channel>.excluded_audiences`.
+
+Without Python, apply the same rule by reading each file and remove the
+chosen audiences' records with the shell.
+
+## 8. Hold out, first pass
 
 For each channel in `channels`:
 
@@ -169,13 +244,15 @@ For each channel in `channels`:
 ```
 
 This marks up to three pre-cutoff threads, or threads from the whole
-window when the cutoff is `never`, where someone other than the person
-took part. Store the printed list as `per_channel.<channel>.holdouts`. The
-filter step runs the second pass when a channel got fewer than three.
+window when the cutoff is `never`, with a record whose `others` is 1 or
+more. A DM message outside a Slack thread has `others` 0 and never
+qualifies. Store the printed list as `per_channel.<channel>.holdouts`.
+The filter step runs the second pass when a channel got fewer than three.
 
 Without Python, pick the threads at random under the same rule and set
 `held_out` to `true` on every record of each chosen thread.
 
 Add `"collect"` to `done`, and print per channel: records kept, date of
-the oldest record, records touched by redaction, and hold-out threads
-marked.
+the oldest record, records touched by redaction, hold-out threads marked,
+excluded audiences, and for Slack every month in
+`per_channel.slack.empty_months`, named as a possible gap in the sample.

@@ -38,6 +38,8 @@ An empty list is allowed; every 1:1 DM is then an outer DM.
 ## 3. Sample window
 
 Ask: "How far back should I read? The default is the last twelve months."
+When the cutoff is a month, add: "Months before your cutoff are collected
+first, so they fill the sample before later ones."
 
 Store `"window": {"since": "YYYY-MM-DD", "until": "YYYY-MM-DD"}`, with
 `until` set to today.

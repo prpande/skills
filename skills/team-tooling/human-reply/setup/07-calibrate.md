@@ -52,9 +52,33 @@ that list's order:
    ask "reply to the last message" and no other hint. Do not look at the
    target first.
 4. Show the draft and the target side by side, with the pool the thread
-   came from: `pre-cutoff`, `post-cutoff`, or `earlier`.
+   came from: `pre-cutoff`, `post-cutoff`, `earlier`, or `backfill`.
 
-When every held-out thread of a channel was dropped, set
+When fewer than three of a channel's held-out threads have a target,
+including when `holdouts` is empty, backfill from threads older than the
+sample before giving up. Search one month at a time, going back from
+`window.since`, or from the first day of the cutoff month when that is
+earlier, for up to 12 months:
+
+- Slack: the collect step's Slack search for that month in both
+  `channel_types` windows, with `before:` never later than `window.since`,
+  keeping only thread replies. Read each candidate's thread with the
+  thread read tool.
+- GitHub: `gh search prs --commenter <login> --created <that month>`, then
+  each PR's review comments with `gh api repos/<owner>/<repo>/pulls/<n>/comments`.
+- Notion: the Notion search tool with `created_date_range` set to that
+  month, then each page's discussions with the comments tool.
+
+Keep a thread when a message by someone else comes before the person's
+reply, skipping threads already in `holdouts` and audiences in
+`per_channel.<channel>.excluded_audiences`. Stop when the channel has
+three threads with a target. Append each kept thread to
+`per_channel.<channel>.holdouts` with pool `backfill`, then run steps 3
+and 4 on it; its target is the person's earliest reply in the fetched
+thread that comes after someone else's message. Backfilled threads are
+used for calibration only and are never written to the corpus.
+
+When no held-out or backfilled thread of a channel has a target, set
 `per_channel.<channel>.calibration` to `"skipped"`, add
 `"no held-out thread with a reply to calibrate against"` to
 `per_channel.<channel>.partial`, tell the person, and skip sections 3 and

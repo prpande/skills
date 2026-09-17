@@ -23,7 +23,7 @@ unredacted to disk; the session transcript Claude Code keeps under
 | `ts` | string | when the message was sent, UTC, `YYYY-MM-DDTHH:MM:SSZ` |
 | `audience` | string | the channel id, `owner/repo`, or page id; never a person's name |
 | `thread` | string | an id for the conversation the message belongs to, stable across its records, so calibration can rebuild the context |
-| `others` | integer | how many participants in the thread are not the person; 0 when unknown |
+| `others` | integer | how many participants other than the person appear within the record's `thread` id; 0 when unknown. A Slack DM or group DM message outside a thread has 0, since its thread id holds only that message; a Slack thread reply, in a channel or a DM, has 1 |
 | `text` | string | the message as sent, after redaction |
 | `held_out` | boolean | `false` when written; set by the hold-out step, never by a collector |
 

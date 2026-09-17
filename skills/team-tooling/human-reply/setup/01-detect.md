@@ -81,9 +81,10 @@ Write `<home>/corpus/setup.json`:
 
 `per_channel` holds one object per channel in `channels`. Later steps
 write that channel's own state into it and name each key as
-`per_channel.<channel>.<key>`: `redacted`, `redaction`, `holdouts`,
-`github_repos_done`, `drop_rate_first`, `threshold`, `dropped`, `method`,
-`calibration`, and `partial`, a list of reasons. Everything else in
+`per_channel.<channel>.<key>`: `redacted`, `redaction`, `pass`,
+`empty_months`, `excluded_audiences`, `holdouts`, `github_repos_done`,
+`drop_rate_first`, `threshold`, `dropped`, `method`, `calibration`, and
+`partial`, a list of reasons. Everything else in
 `setup.json` is shared by all channels.
 
 `python` is `null` when there is no interpreter. `seed` is any integer
