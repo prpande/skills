@@ -118,8 +118,8 @@ window reaches page 20, start a new window with the same `after:` and
 one-day overlap is removed by `normalize`.
 
 Build one record per message. Skip a message in the person's own
-self-DM, the DM whose other member is the person, and a message whose
-text is empty after trimming, such as an attachment with no text.
+self-DM (the DM whose other member is the person), and skip a message
+whose text is empty after trimming, such as an attachment with no text.
 
 | Field | Value |
 |---|---|

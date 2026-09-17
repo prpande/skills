@@ -48,7 +48,7 @@ class PatternCopyTests(unittest.TestCase):
 class RedactionCheckTests(unittest.TestCase):
     def test_every_case_redacts_to_its_expected_output(self):
         cases = check_cases()
-        self.assertEqual(len(cases), 23)
+        self.assertEqual(len(cases), 24)
         for given, expected in cases:
             with self.subTest(given=given):
                 self.assertEqual(redact.redact(given.replace("{join}", ""))[0], expected)

@@ -39,6 +39,7 @@ the _cfu{join}vid=Qm9vZ2xlQ29va2llVmFsdWU1 cookie again ==> the _cfuvid=<redacte
 curl -b 'PHPSESS{join}ID=9f8e7d6c5b4a3f2e; theme=dark' https://example.com ==> curl -b 'PHPSESSID=<redacted:cookie>; theme=dark' https://example.com
 Authorization: Bea{join}rer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghij ==> Authorization: Bearer <redacted:token>
 retry with Bea{join}rer abcdefghijklmnopqrstuvwx0123 and it works ==> retry with Bearer <redacted:token> and it works
-Authorization: Bearer ghp_{join}0123456789abcdefghijklmnopqrstuvwxyz ==> Authorization: Bearer <redacted:github-pat>
+Authorization: Bea{join}rer ghp_{join}0123456789abcdefghijklmnopqrstuvwxyz ==> Authorization: Bearer <redacted:github-pat>
 the cookie: chocolate chip, and he is the bearer of good news ==> the cookie: chocolate chip, and he is the bearer of good news
+start a new pairing session=today and a sessionid=42 debug run ==> start a new pairing session=today and a sessionid=42 debug run
 ```

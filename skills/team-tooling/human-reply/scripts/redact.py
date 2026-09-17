@@ -38,7 +38,7 @@ PEM_BLOCK = re.compile(
 SKILL_LOCAL_PATTERNS = [
     ("password", r"(?i)([?&]pwd=)[^&#\s<][^&#\s]*"),
     ("cookie", r"(?i)(\b(?:set-)?cookie:[ \t]*)(?=[^\s=;]+=)[^\r\n]+"),
-    ("cookie", r"(?i)((?<![\w.])(?:_cfuvid|__cf_bm|cf_clearance|JSESSIONID|PHPSESSID|sessionid|session|connect\.sid)=)[^;\s&'\"<][^;\s&'\"]*"),
+    ("cookie", r"(?i)((?<![\w.])(?:_cfuvid|__cf_bm|cf_clearance|JSESSIONID|PHPSESSID|connect\.sid)=)[^;\s&'\"<][^;\s&'\"]*"),
     ("token", r"(?i)(\bBearer[ \t]+)[A-Za-z0-9\-._~+/]{20,}=*"),
 ]
 
