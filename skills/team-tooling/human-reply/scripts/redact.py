@@ -32,7 +32,18 @@ PEM_BLOCK = re.compile(
     r"[\s\S]*?(?:-----END (?:RSA |EC |OPENSSH |DSA |)PRIVATE KEY-----|\Z)"
 )
 
+# Skill-local additions, kept apart so the list above stays a verbatim copy.
+# Group 1 is kept and only the value after it is replaced. A value starting
+# with "<" is skipped, so a secret a copied rule already replaced is not counted twice.
+SKILL_LOCAL_PATTERNS = [
+    ("password", r"(?i)([?&]pwd=)[^&#\s<][^&#\s]*"),
+    ("cookie", r"(?i)(\b(?:set-)?cookie:[ \t]*)(?=[^\s=;]+=)[^\r\n]+"),
+    ("cookie", r"(?i)((?<![\w.])(?:_cfuvid|__cf_bm|cf_clearance|JSESSIONID|PHPSESSID|sessionid|session|connect\.sid)=)[^;\s&'\"<][^;\s&'\"]*"),
+    ("token", r"(?i)(\bBearer[ \t]+)[A-Za-z0-9\-._~+/]{20,}=*"),
+]
+
 COMPILED = [(kind, re.compile(pattern)) for kind, pattern in SOURCE_PATTERNS]
+LOCAL_COMPILED = [(kind, re.compile(pattern)) for kind, pattern in SKILL_LOCAL_PATTERNS]
 
 
 def redact(text):
@@ -44,6 +55,9 @@ def redact(text):
         if kind == "private-key":
             continue
         text, n = pattern.subn(f"<redacted:{kind}>", text)
+        total += n
+    for kind, pattern in LOCAL_COMPILED:
+        text, n = pattern.subn(rf"\g<1><redacted:{kind}>", text)
         total += n
     return text, total
 

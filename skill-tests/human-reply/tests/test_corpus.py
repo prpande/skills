@@ -121,6 +121,103 @@ class NormalizeTests(unittest.TestCase):
     def test_oldest_of_an_empty_corpus_is_none(self):
         self.assertIsNone(corpus.oldest_ts([]))
 
+    def test_a_cap_with_a_cutoff_keeps_every_pre_cutoff_record_that_fits(self):
+        records = [record(f"D1/post{i}", f"2026-0{i}-01T00:00:00Z") for i in range(5, 10)]
+        records += [record("D1/pre1", "2025-01-01T00:00:00Z"), record("D1/pre2", "2025-02-01T00:00:00Z")]
+        kept = corpus.normalize(records, cap=4, cutoff="2026-05")
+        self.assertEqual([r["ts"] for r in kept], ["2026-09-01T00:00:00Z", "2026-08-01T00:00:00Z",
+                                                   "2025-02-01T00:00:00Z", "2025-01-01T00:00:00Z"])
+
+    def test_a_cap_with_a_cutoff_keeps_only_the_newest_pre_cutoff_when_they_overflow(self):
+        records = [record("D1/post", "2026-06-01T00:00:00Z")]
+        records += [record(f"D1/pre{i}", f"2025-0{i}-01T00:00:00Z") for i in range(1, 5)]
+        kept = corpus.normalize(records, cap=2, cutoff="2026-05")
+        self.assertEqual([r["ts"] for r in kept], ["2025-04-01T00:00:00Z", "2025-03-01T00:00:00Z"])
+
+    def test_a_cap_without_a_cutoff_keeps_the_newest_whatever_their_month(self):
+        records = [record("D1/post", "2026-06-01T00:00:00Z"), record("D1/pre", "2025-01-01T00:00:00Z")]
+        self.assertEqual([r["ts"] for r in corpus.normalize(records, cap=1)], ["2026-06-01T00:00:00Z"])
+
+    def test_records_with_blank_text_are_dropped(self):
+        records = [record("D1/1", "2025-01-01T00:00:00Z", text="  \n\t"), record("D1/2", "2025-01-02T00:00:00Z", text=""),
+                   record("D1/3", "2025-01-03T00:00:00Z")]
+        self.assertEqual([r["thread"] for r in corpus.normalize(records, cap=10)], ["D1/3"])
+
+    def test_cli_normalize_accepts_a_cutoff_and_never(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "slack.jsonl"
+            corpus.write_jsonl(path, [record("D1/1", "2025-01-01T00:00:00Z"), record("D1/2", "2026-03-01T00:00:00Z")])
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                corpus.main(["normalize", "--corpus", str(path), "--cap", "1", "--cutoff", "2026-01"])
+                kept = corpus.read_jsonl(path)
+                corpus.main(["normalize", "--corpus", str(path), "--cap", "1", "--cutoff", "never"])
+        self.assertEqual([r["thread"] for r in kept], ["D1/1"])
+        self.assertEqual(out.getvalue(), "corpus: 2 records in, 1 kept\ncorpus: 1 records in, 1 kept\n")
+
+    def test_cli_normalize_rejects_a_bad_cutoff(self):
+        with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
+            corpus.main(["normalize", "--corpus", "x", "--cap", "1", "--cutoff", "2026-13"])
+        self.assertIn("YYYY-MM or never", err.getvalue())
+
+    def test_oldest_from_a_month_ignores_earlier_records(self):
+        records = [record("D1/1", "2025-01-01T00:00:00Z"), record("D1/2", "2026-05-03T00:00:00Z"),
+                   record("D1/3", "2026-07-01T00:00:00Z")]
+        self.assertEqual(corpus.oldest_ts(records, from_month="2026-05"), "2026-05-03T00:00:00Z")
+        self.assertIsNone(corpus.oldest_ts(records[:1], from_month="2026-05"))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "slack.jsonl"
+            corpus.write_jsonl(path, records)
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                corpus.main(["oldest", "--corpus", str(path), "--from-month", "2026-06"])
+        self.assertEqual(out.getvalue(), "2026-07-01T00:00:00Z\n")
+
+
+class TemplatedTests(unittest.TestCase):
+    def status_lines(self, audience, count, start=0):
+        return [record(f"{audience}/{i}", f"2026-03-01T00:00:{i:02d}Z", audience=audience,
+                       text=f"[Bot] Stage started run {i}") for i in range(start, start + count)]
+
+    def test_an_audience_where_half_the_records_share_a_prefix_is_flagged(self):
+        records = self.status_lines("C1", 6) + [record(f"C1/h{i}", f"2026-03-02T00:00:0{i}Z", audience="C1",
+                                                       text=f"note {i} was hand written") for i in range(6)]
+        self.assertEqual(corpus.templated(records, minimum=10),
+                         [{"audience": "C1", "records": 12, "share": 0.5, "prefix": "[Bot] Stage started"}])
+
+    def test_small_or_varied_audiences_are_not_flagged(self):
+        small = self.status_lines("C1", 9)
+        varied = self.status_lines("C2", 4) + [record(f"C2/h{i}", f"2026-03-02T00:00:0{i}Z", audience="C2",
+                                                      text=f"note {i} about things") for i in range(7)]
+        self.assertEqual(corpus.templated(small + varied, minimum=10), [])
+
+    def test_flagged_audiences_are_sorted_by_record_count(self):
+        records = self.status_lines("C1", 10) + self.status_lines("C2", 20)
+        self.assertEqual([line["audience"] for line in corpus.templated(records, minimum=10)], ["C2", "C1"])
+
+    def test_cli_prints_one_json_line_per_flagged_audience(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "slack.jsonl"
+            corpus.write_jsonl(path, self.status_lines("C1", 3) + self.status_lines("C2", 2))
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(corpus.main(["templated", "--corpus", str(path), "--min", "3"]), 0)
+        self.assertEqual([json.loads(line) for line in out.getvalue().splitlines()],
+                         [{"audience": "C1", "records": 3, "share": 1.0, "prefix": "[Bot] Stage started"}])
+
+
+class DropTests(unittest.TestCase):
+    def test_cli_removes_every_record_of_the_named_audiences(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "slack.jsonl"
+            corpus.write_jsonl(path, [record("C1/1", "2026-03-01T00:00:00Z", audience="C1"),
+                                      record("C2/1", "2026-03-01T00:00:00Z", audience="C2"),
+                                      record("C2/2", "2026-03-02T00:00:00Z", audience="C2"),
+                                      record("D1/1", "2026-03-01T00:00:00Z")])
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                code = corpus.main(["drop", "--corpus", str(path), "--audience", "C1", "--audience", "C2"])
+            rest = corpus.read_jsonl(path)
+        self.assertEqual(code, 0)
+        self.assertEqual(out.getvalue(), "drop: 3 records removed\n")
+        self.assertEqual([r["audience"] for r in rest], ["D1"])
+
 
 class HoldoutTests(unittest.TestCase):
     def test_three_pre_cutoff_threads_with_another_participant_are_marked(self):
@@ -147,9 +244,14 @@ class HoldoutTests(unittest.TestCase):
         self.assertEqual(corpus.select_holdouts(make(), "2026-01", seed=3),
                          corpus.select_holdouts(make(), "2026-01", seed=3))
 
-    def test_a_dm_with_one_other_participant_qualifies(self):
-        records = [record("D1/1", "2025-06-01T00:00:00Z", others=1)]
-        self.assertEqual(corpus.select_holdouts(records, None, seed=1), [("D1/1", "pre-cutoff")])
+    def test_a_lone_dm_message_is_never_chosen_and_a_thread_reply_is(self):
+        records = [record("D1/1709546000.1", "2025-06-01T00:00:00Z", others=0),
+                   record("C1/1709546000.2", "2025-06-01T00:00:00Z", others=1,
+                          surface="channel thread reply", audience="C1")]
+        for seed in range(20):
+            with self.subTest(seed=seed):
+                self.assertEqual(corpus.select_holdouts([dict(r) for r in records], None, seed=seed),
+                                 [("C1/1709546000.2", "pre-cutoff")])
 
     def test_no_cutoff_draws_from_the_whole_window(self):
         records = [record("D1/1", "2026-08-01T00:00:00Z"), record("D1/2", "2026-09-01T00:00:00Z")]

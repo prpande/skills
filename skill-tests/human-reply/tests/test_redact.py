@@ -48,16 +48,35 @@ class PatternCopyTests(unittest.TestCase):
 class RedactionCheckTests(unittest.TestCase):
     def test_every_case_redacts_to_its_expected_output(self):
         cases = check_cases()
-        self.assertEqual(len(cases), 14)
+        self.assertEqual(len(cases), 23)
         for given, expected in cases:
             with self.subTest(given=given):
                 self.assertEqual(redact.redact(given.replace("{join}", ""))[0], expected)
+
+    def test_every_skill_local_pattern_has_a_check_case(self):
+        expected = " ".join(e for _, e in check_cases())
+        for kind, _ in redact.SKILL_LOCAL_PATTERNS:
+            with self.subTest(kind=kind):
+                self.assertIn(f"<redacted:{kind}>", expected)
 
     def test_the_check_file_itself_matches_no_scan_rule(self):
         text = CHECK.read_text(encoding="utf-8")
         for number, pattern in scan_rule_patterns().items():
             with self.subTest(rule=number):
                 self.assertIsNone(re.search(pattern, text, re.M))
+
+    def test_the_check_file_itself_matches_no_skill_local_pattern(self):
+        text = CHECK.read_text(encoding="utf-8")
+        for index, (kind, pattern) in enumerate(redact.SKILL_LOCAL_PATTERNS):
+            with self.subTest(index=index, kind=kind):
+                self.assertIsNone(re.search(pattern, text))
+
+    def test_skill_local_patterns_run_after_the_copied_rules_and_count(self):
+        token = "ghp_" + "0123456789abcdefghijklmnopqrstuvwxyz"
+        self.assertEqual(redact.redact(f"Authorization: Bearer {token}"),
+                         ("Authorization: Bearer <redacted:github-pat>", 1))
+        self.assertEqual(redact.redact("x?p" + "wd=abc123&y=1 and Bearer " + "a" * 24),
+                         ("x?pwd=<redacted:password>&y=1 and Bearer <redacted:token>", 2))
 
     def test_a_pem_body_is_removed_with_its_header(self):
         key = "-----BEGIN OPENSSH " + "PRIVATE KEY-----\nb3BlbnNzaC1rZXk\nAAAA\n-----END OPENSSH PRIVATE KEY-----"

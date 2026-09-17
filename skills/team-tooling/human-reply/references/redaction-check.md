@@ -32,4 +32,13 @@ mongo{join}db://admin:pa55word@cluster0 is prod ==> <redacted:mongodb-connection
 post{join}gres://app:pa55word@db:5432/x is staging ==> <redacted:postgres-connection-string>db:5432/x is staging
 the retry policy stops at 3 attempts ==> the retry policy stops at 3 attempts
 see https://example.com/docs for the password reset flow ==> see https://example.com/docs for the password reset flow
+join https://zoom.us/j/81234567890?p{join}wd=Xy7Qa9LmNpRsTuVw.1 at noon ==> join https://zoom.us/j/81234567890?pwd=<redacted:password> at noon
+Set-Coo{join}kie: cart_id=8f3a2b1c9d7e; Path=/; HttpOnly ==> Set-Cookie: <redacted:cookie>
+curl -H 'coo{join}kie: theme=dark; cart_id=8f3a2b1c9d7e' https://api.example.com/v1 ==> curl -H 'cookie: <redacted:cookie>
+the _cfu{join}vid=Qm9vZ2xlQ29va2llVmFsdWU1 cookie again ==> the _cfuvid=<redacted:cookie> cookie again
+curl -b 'PHPSESS{join}ID=9f8e7d6c5b4a3f2e; theme=dark' https://example.com ==> curl -b 'PHPSESSID=<redacted:cookie>; theme=dark' https://example.com
+Authorization: Bea{join}rer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghij ==> Authorization: Bearer <redacted:token>
+retry with Bea{join}rer abcdefghijklmnopqrstuvwx0123 and it works ==> retry with Bearer <redacted:token> and it works
+Authorization: Bearer ghp_{join}0123456789abcdefghijklmnopqrstuvwxyz ==> Authorization: Bearer <redacted:github-pat>
+the cookie: chocolate chip, and he is the bearer of good news ==> the cookie: chocolate chip, and he is the bearer of good news
 ```

@@ -2,8 +2,10 @@
 
     python corpus.py validate --corpus <channel>.jsonl --module channels/<channel>.md
     python corpus.py holdout --corpus <channel>.jsonl --cutoff 2026-01|never --seed N [--passed kept.jsonl] [--reset]
-    python corpus.py normalize --corpus <channel>.jsonl --cap 1500
-    python corpus.py oldest --corpus <channel>.jsonl
+    python corpus.py normalize --corpus <channel>.jsonl --cap 1500 [--cutoff 2026-01|never]
+    python corpus.py oldest --corpus <channel>.jsonl [--from-month 2026-01]
+    python corpus.py templated --corpus <channel>.jsonl [--min 10]
+    python corpus.py drop --corpus <channel>.jsonl --audience <id> [--audience <id> ...]
 """
 import argparse
 import json
@@ -105,16 +107,51 @@ def validate_record(record, surfaces):
     return errors
 
 
-def normalize(records, cap):
-    """Drop repeated ids, keep the newest `cap` records, newest first."""
+def normalize(records, cap, cutoff=None):
+    """Drop repeated ids and blank messages, keep `cap` records, newest first.
+
+    With a cutoff, pre-cutoff records take the cap first, newest first, and
+    post-cutoff records fill what room is left, newest first.
+    """
     unique = {}
     for record in records:
+        if isinstance(record.get("text"), str) and not record["text"].strip():
+            continue
         unique.setdefault(record_id(record), record)
-    return sorted(unique.values(), key=lambda r: r["ts"], reverse=True)[:cap]
+    newest = sorted(unique.values(), key=lambda r: r["ts"], reverse=True)
+    if cutoff is not None:
+        pre = [r for r in newest if is_pre_cutoff(r, cutoff)]
+        newest = pre + [r for r in newest if not is_pre_cutoff(r, cutoff)]
+    return sorted(newest[:cap], key=lambda r: r["ts"], reverse=True)
 
 
-def oldest_ts(records):
-    return min((r["ts"] for r in records), default=None)
+def oldest_ts(records, from_month=None):
+    """Oldest ts, counting only records sent in or after from_month ("YYYY-MM") when given."""
+    return min((r["ts"] for r in records if from_month is None or r["ts"][:7] >= from_month), default=None)
+
+
+def templated(records, minimum=10):
+    """Audiences with at least `minimum` records where half or more open with the same three tokens."""
+    by_audience = {}
+    for record in records:
+        by_audience.setdefault(record["audience"], []).append(record)
+    flagged = []
+    for audience, rs in by_audience.items():
+        if len(rs) < minimum:
+            continue
+        prefixes = {}
+        for record in rs:
+            tokens = record["text"].split()[:3]
+            if len(tokens) == 3:
+                prefix = " ".join(tokens)
+                prefixes[prefix] = prefixes.get(prefix, 0) + 1
+        if not prefixes:
+            continue
+        prefix, count = max(sorted(prefixes.items()), key=lambda item: item[1])
+        if count * 2 >= len(rs):
+            flagged.append({"audience": audience, "records": len(rs), "share": round(count / len(rs), 2),
+                            "prefix": prefix})
+    return sorted(flagged, key=lambda line: (-line["records"], line["audience"]))
 
 
 def _threads(records):
@@ -174,18 +211,36 @@ def main(argv=None):
     n = sub.add_parser("normalize")
     n.add_argument("--corpus", required=True)
     n.add_argument("--cap", required=True, type=int)
+    n.add_argument("--cutoff", type=cutoff_arg, help="YYYY-MM, or never")
     o = sub.add_parser("oldest")
     o.add_argument("--corpus", required=True)
+    o.add_argument("--from-month", type=cutoff_arg, help="YYYY-MM: ignore records sent before this month")
+    t = sub.add_parser("templated")
+    t.add_argument("--corpus", required=True)
+    t.add_argument("--min", type=int, default=10)
+    d = sub.add_parser("drop")
+    d.add_argument("--corpus", required=True)
+    d.add_argument("--audience", required=True, action="append")
     args = parser.parse_args(argv)
 
     records = read_jsonl(args.corpus)
     if args.command == "normalize":
-        kept = normalize(records, args.cap)
+        kept = normalize(records, args.cap, None if args.cutoff in (None, "never") else args.cutoff)
         write_jsonl(args.corpus, kept)
         print(f"corpus: {len(records)} records in, {len(kept)} kept")
         return 0
     if args.command == "oldest":
-        print(oldest_ts(records) or "none")
+        month = None if args.from_month in (None, "never") else args.from_month
+        print(oldest_ts(records, month) or "none")
+        return 0
+    if args.command == "templated":
+        for line in templated(records, args.min):
+            print(json.dumps(line, ensure_ascii=False))
+        return 0
+    if args.command == "drop":
+        kept = [r for r in records if r["audience"] not in set(args.audience)]
+        write_jsonl(args.corpus, kept)
+        print(f"drop: {len(records) - len(kept)} records removed")
         return 0
     if args.command == "validate":
         surfaces = load_surfaces(args.module)
