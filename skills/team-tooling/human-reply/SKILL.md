@@ -33,6 +33,21 @@ reacts.
 
 With no arguments and no request in the conversation, ask which mode.
 
+## Not for
+
+The budgets are ceilings for a message: a Slack DM, thread reply, or
+post, a GitHub comment, review, or PR body, a Notion comment. They are
+wrong for long-form artifacts, which have their own standards: a
+technical gate document, published or team-facing documentation, a
+design doc, a spec, an incident write-up, or a Notion page body. Asked
+to draft, rewrite, or audit one of those, say which standard governs it
+and stop; cutting a tech gate to a message budget loses the content the
+reader came for.
+
+A long message that belongs in one of those artifacts is still in scope
+as the short message that points at it: write the pointer and the ask,
+and say the rest belongs in the doc.
+
 ## Setup
 
 Follow the eight step files in the `human-reply/setup/` folder in number
@@ -104,7 +119,8 @@ every fact, link, code span, and mention of the original.
 ### 5. Audit
 
 Check the draft against the channel module's audit checklist and every
-rule under the profile's Calibration notes. Fix every hit.
+rule under the profile's Calibration notes, and confirm the text is a
+message, not one of the artifacts under Not for. Fix every hit.
 
 ### 6. Humanizer
 

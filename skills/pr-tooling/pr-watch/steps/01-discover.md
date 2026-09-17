@@ -120,6 +120,7 @@ Each new PR starts with `posted_reply_ids`, `settled_ids`, and
 as `null`. A new `authored` PR also starts with:
 
 - `ci_reruns`, `ci_rerun_queued`, `ci_handled`, and `ci_log_retries` as `[]`;
+- `ci_log_occurrence` and `cap_notified_head` as `null`;
 - `ci_fix_pushes` and `review_fix_pushes` as `0`;
 - `last_pushed_head`, `queued_head`, `queued_at`, `wait_notice_at`,
   `retry_after`, and `skip_reason` as `null`.
@@ -138,6 +139,14 @@ When it exits non-zero, remove the PR from `watch.json`, list it among
 the excluded PRs in step 6 with the command's stderr line, and go on
 with the other PRs. A PR left in without its baseline would be resumed
 next run with every old thread pending.
+
+The baseline holds back one kind of existing item: a bot review submitted
+against the PR's current head. That is feedback on the code as it stands,
+and a review body can carry findings of its own
+(`pr-watch/references/known-bots-overlay.md`), so it arrives as the first
+`pending` event instead of being treated as history. A bot review on an
+older head, a bot issue comment, and anything the user already answered
+are baselined as before.
 
 ## 6. Confirm
 

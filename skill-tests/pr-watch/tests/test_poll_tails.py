@@ -36,6 +36,18 @@ class PendingTests(unittest.TestCase):
         threads, _ = poll.pending(pull(threads=[t]), entry(settled_ids=["c1"]), SELF, ALLOW)
         self.assertEqual(threads, [])
 
+    def test_tail_of_only_my_own_comments_is_not_pending(self):
+        t = thread("T1", [comment("c1", "reviewer-a", T0), comment("c2", SELF, T1),
+                          comment("c3", SELF, T2)])
+        threads, _ = poll.pending(pull(threads=[t]), entry(posted_reply_ids=["c2"]), SELF, ALLOW)
+        self.assertEqual(threads, [])
+
+    def test_my_comment_after_someone_elses_keeps_the_thread_pending(self):
+        t = thread("T1", [comment("c1", SELF, T0), comment("c2", "reviewer-a", T1),
+                          comment("c3", SELF, T2)])
+        threads, _ = poll.pending(pull(threads=[t]), entry(), SELF, ALLOW)
+        self.assertEqual(tail_ids(threads), [["c1", "c2", "c3"]])
+
     def test_resolved_thread_is_read_like_an_open_one(self):
         t = thread("T1", [comment("c1", "reviewer-a", T0), comment("c2", SELF, T1),
                           comment("c3", "reviewer-a", T2)], resolved=True)
@@ -96,6 +108,30 @@ class BaselineTests(unittest.TestCase):
         pr = pull(comments=[comment("i1", "reviewer-a", T1)],
                   reviews=[review("r1", SELF, T1, body="")])
         self.assertEqual(poll.baseline(pr, SELF, ALLOW)["handled_top_level_ids"], {})
+
+    def test_bot_review_on_the_current_head_stays_pending(self):
+        pr = pull(head="h2", reviews=[review("r1", "copilot-pull-request-reviewer", T1,
+                                             body="findings", oid="h2", typename="Bot")])
+        self.assertEqual(poll.baseline(pr, SELF, ALLOW)["handled_top_level_ids"], {})
+
+    def test_bot_review_on_an_older_head_is_baselined(self):
+        pr = pull(head="h2", reviews=[review("r1", "copilot-pull-request-reviewer", T1,
+                                             body="findings", oid="h1", typename="Bot")])
+        self.assertEqual(poll.baseline(pr, SELF, ALLOW)["handled_top_level_ids"],
+                         {"r1": "baseline"})
+
+    def test_bot_issue_comment_is_baselined_on_any_head(self):
+        pr = pull(head="h2", comments=[comment("b1", "sonarqube-mbodevme", T1)])
+        self.assertEqual(poll.baseline(pr, SELF, ALLOW)["handled_top_level_ids"],
+                         {"b1": "baseline"})
+
+    def test_bot_review_on_the_current_head_predating_my_activity_is_baselined(self):
+        pr = pull(head="h2",
+                  reviews=[review("r1", "copilot-pull-request-reviewer", T0,
+                                  body="findings", oid="h2", typename="Bot"),
+                           review("r2", SELF, T1, body="")])
+        self.assertEqual(poll.baseline(pr, SELF, ALLOW)["handled_top_level_ids"],
+                         {"r1": "baseline"})
 
 
 class PayloadTests(unittest.TestCase):

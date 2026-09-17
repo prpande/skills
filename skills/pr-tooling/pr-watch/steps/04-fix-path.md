@@ -34,10 +34,20 @@ and not from the drain):
 
 - the payload `head` is not `last_pushed_head`, or any record in the
   dispatch set has an `author_type` other than `Bot`: set
-  `review_fix_pushes` to 0 and write `watch.json`;
+  `review_fix_pushes` to 0, `cap_notified_head` to null, and write
+  `watch.json`;
 - otherwise, when `review_fix_pushes` is `3`: escalate ("needs you, no
-  comment", reason "bot findings keep coming after 3 fix pushes") and
-  stop. A human comment or a push the watch did not make clears it.
+  comment", reason "bot findings keep coming after 3 fix pushes"), add
+  the dispatch set's ids to `escalated_ids`, set `cap_notified_head` to
+  the payload `head`, write `watch.json`, and stop. A human comment or a
+  push the watch did not make clears it; a human comment that never
+  reaches this section is cleared by `pr-watch/steps/03-route-event.md`
+  A.7 instead.
+  When `cap_notified_head` already is that head, do all of it except the
+  escalation: the user has the message, and nothing the message is about
+  can have changed, because the cap is what stops the push that would
+  change it. Otherwise a bot that re-reviews on its own schedule buys the
+  user one notification per round for one situation.
 
 To skip with a reason:
 
@@ -95,7 +105,21 @@ Run `pr-loop-lib/steps/04-dispatch-fixers.md` as written, except:
   `git checkout`; `pr-watch` never pushes a partial fix. The attempted
   change goes into the escalation text.
 
-Then run `pr-loop-lib/steps/04.5-local-verify.md` as written.
+Then run `pr-loop-lib/steps/04.5-local-verify.md` as written, unless a
+return carries `suspicious: true`. Local verify builds and runs whatever
+stands in the worktree, and that flag is the one case where what stands
+there is distrusted, so it must not be built or run: skip the verify and
+take the suspicious branch at once. For a `ci:` record that is
+`pr-watch/steps/07-ci.md` section 5 step 4. For any other record it is
+the same shape: escalate ("needs you, no comment", reason "fixer refused
+the dispatch: <the fixer's reason>"), add the record's ids to
+`escalated_ids` and, for a top-level item, set
+`handled_top_level_ids[<item id>] = "escalated"` — without that the same
+feedback is pending again on the next poll and goes back to a fixer, so
+the refusal would be a pause rather than the end of it — roll back with
+section 10 over every path `git -C <worktree> status --porcelain` and
+`git -C <worktree> ls-files --others --exclude-standard` name rather than
+the return's `files_changed`, then section 9.
 
 ## 4. Sort the returns
 
@@ -228,10 +252,13 @@ to section 9.
    - the thread was opened by a bot and the verdict is `fixed`,
      `fixed-differently`, `not-addressing` with evidence, or `replied`
      because the code is gone; or
-   - a human opened or joined it, asked for something concrete (not a
-     question), and the fix was verified.
-   Leave it open when the human's latest comment asks a question or sets
-   a condition. Never resolve to tidy up. A resolve that exits non-zero
+   - a human opened or joined it asking for a change, and the fix was
+     verified. Most review comments ask for their change as a question
+     ("can we make this checked?", "should this be nullable?"); a
+     question mark does not make it one to leave open.
+   Leave it open when the human's latest comment asks for an answer
+   rather than a change, or sets a condition on one. Never resolve to
+   tidy up. A resolve that exits non-zero
    or does not return `isResolved: true`: post the "resolve failed" line
    (`pr-watch/steps/06-notify.md`) in the PR thread and continue with the
    next return. Under `dry_run` the resolve goes to the dry-run file and
