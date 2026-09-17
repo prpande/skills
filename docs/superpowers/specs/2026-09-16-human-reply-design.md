@@ -148,7 +148,8 @@ One question per turn, in this order:
 2. Who is your inner circle on Slack? Names of the people you DM most.
    Skipped when Slack is not being set up. Used for the inner-circle DM
    surface; without it every DM is an outer DM.
-3. Sample window. Default the last twelve months.
+3. Sample window. Default the last twelve months. With a cutoff month,
+   the question says months before the cutoff are collected first.
 4. Is there a colleague whose writing you want to borrow from? Name, and
    which channel to read them on. Optional. When a colleague is named,
    one follow-up: have you told them their messages will be read for
@@ -172,8 +173,25 @@ so calibration can reconstruct context.
 
 Slack: one calendar month per search window, channels and DMs as separate
 windows, re-windowed from the last captured date minus one day when a
-window hits the 20-page cap. Capped at 1,500 records, newest first. An
-early empty page ends a window only when the previous page was also short.
+window hits the 20-page cap. Capped at 1,500 records. An early empty page
+ends a window only when the previous page was also short. The `from:`
+query uses literal angle brackets; the HTML-entity form returns "No
+results found" with no error, so a month where both windows come back
+empty is re-run once after checking the query, and a month still empty is
+recorded and named in the collect report. Messages in the person's own
+self-DM and messages with no text after trimming are skipped.
+
+With a cutoff month, Slack and Notion collect in two passes so the cap
+fills with the pre-cutoff messages budgets are measured from. The first
+pass runs from the last day of the month before the cutoff back to the
+window start and stops at the cap. The second runs only when the first
+ended below the cap, from the window end back to the first day of the
+cutoff month, and stops at the cap. `scripts/corpus.py normalize` takes
+the cutoff on every call, including GitHub's: when it trims to the cap it
+keeps pre-cutoff records first, newest first, then fills the remaining
+room with post-cutoff records, newest first, and it drops records whose
+text is blank. The pass in progress is stored in setup state so a resumed
+run continues it.
 
 GitHub: `gh search prs` with `--author @me`, `--reviewed-by @me`, and
 `--commenter @me`, plus `gh search issues --commenter @me`, together list
@@ -186,6 +204,15 @@ Notion: walk the person's recent pages, pull their comments on each. This
 is the weakest collector, capped at 500 records, and the profile header
 says so.
 
+Automated posts: automations that post under the person's name would
+teach the profile their status lines. After collection,
+`scripts/corpus.py templated` flags every audience with at least ten
+records where half or more open with the same three words. The person
+sees each flagged audience with its channel name, record count, and
+prefix, and answers one question: which are automated posts to leave out,
+naming any other channels too. `scripts/corpus.py drop` removes the chosen
+audiences, and the collectors skip them on any later rerun.
+
 Colleague sample: the same collector on the named channel with the
 colleague as author, capped at 300 records, written to
 `corpus/borrow-<channel>.jsonl`. It runs at the start of the colleague
@@ -194,7 +221,8 @@ filtered, read, and deleted in one step.
 
 Every record passes through `scripts/redact.py` before it is written.
 Private-key, token, key, password, and connection-string patterns become
-`<redacted:kind>` placeholders. The summary states how many records were
+`<redacted:kind>` placeholders, and so do URL `pwd=` values, cookie
+values, and Bearer tokens (section 8). The summary states how many records were
 touched. On the no-Python path the model applies the same pattern list,
 and before the first record is written it must redact the known-bad
 fixture from section 9 with no miss; a miss stops setup and says Python
@@ -205,14 +233,16 @@ the `keep` choice at finish, and the channel header records
 Hold-out: before anything else reads the corpus, three threads per set-up
 channel that the person replied to are marked `held_out: true`, chosen at
 random from pre-cutoff threads (the whole window when there is no cutoff)
-with at least one other participant, so DMs and two-person review threads
-qualify. A thread holding a PR body does not qualify, because calibration
+with at least one other participant within the record's thread id, so
+thread replies and two-person review threads qualify. A Slack DM message
+outside a thread is its own thread id with nobody else in it, so it does
+not. A thread holding a PR body does not qualify, because calibration
 drafts a reply to someone else's message and a PR body answers nobody.
 When a channel has a cutoff and fewer than three such threads,
 the remainder come from post-cutoff threads whose reply passes the
 filter, and the calibration prompt says which pool each thread came from.
-A channel with no qualifying thread after both pools skips calibration
-and is marked `partial` in its header, with the reason. Held-out records
+A channel still short of three is backfilled at calibration (section
+3.7). Held-out records
 are excluded from measure and read, and used only in calibration.
 Calibration compares the draft against what the person actually wrote, so
 a held-out reply that was itself AI-drafted would teach the profile the
@@ -342,11 +372,23 @@ under ten words") and the affected budgets or phrasebook entries are
 adjusted. After the adjustments are written, one held-out thread per
 channel is re-drafted from the updated profile and shown for a yes or no,
 so the last thing the person sees is the profile they will use, and that
-re-draft is what acceptance item 2 scores. One round. A channel that
-skipped calibration for lack of hold-out threads (section 3.3), or whose
-every held-out thread turned out to have no reply by the person after
-someone else's message, gets no re-draft, is marked `partial` with the
-reason, and does not count towards item 2. When the person answers no to
+re-draft is what acceptance item 2 scores. One round.
+
+When fewer than three held-out threads have a reply by the person after
+someone else's message, calibration backfills before giving up. It
+searches the channel for the person's pre-cutoff replies older than the
+window start, one month at a time for up to 12 months, reads each
+candidate thread, and keeps it when a message by someone else comes
+before the person's reply, stopping at three. On Slack that is the
+collect search with a `before:` no later than the window start, thread
+replies only, read with the thread-read tool. On GitHub it is
+`gh search prs --commenter` for that month, with review comments read
+through `gh api`. On Notion it is the Notion search for pages created that
+month, with discussions read through the comments tool. Backfilled threads
+are used for calibration only and never written to the corpus. A channel
+with no thread that has such a reply after the backfill gets no draft or
+re-draft, is marked `partial` with the reason, and does not count towards
+item 2. When the person answers no to
 the re-draft, the channel is marked `partial` with the reason
 `calibration rejected`, so its header reads
 `status: partial (calibration rejected)` and `pr-watch` does not draft
@@ -576,11 +618,17 @@ Runtime:
   transcript Claude Code keeps under `~/.claude/projects/` is outside the
   skill's control and may still hold the raw text the collection tools
   returned; setup says so before collecting. Placeholders replace
-  private-key, token, key, password, and connection-string patterns. The
-  pattern list is a copy of `pr-loop-lib/references/secret-scan-rules.md`
-  (a copy, not an import, because a colleague installs this skill without
-  `pr-loop-lib`), and a test fails when the two lists diverge; a new
-  pattern is added to `pr-loop-lib` first and then copied. The redaction
+  private-key, token, key, password, and connection-string patterns. Those
+  patterns are a copy of rules 1 to 12 of
+  `pr-loop-lib/references/secret-scan-rules.md` (a copy, not an import,
+  because a colleague installs this skill without `pr-loop-lib`), and a
+  test fails when the two lists diverge; a new scan rule is added to
+  `pr-loop-lib` first and then copied. A separate skill-local list runs
+  after the copied rules and covers secrets people paste into messages: a
+  `pwd=` URL value (`password`), a `Cookie:` or `Set-Cookie:` header value
+  and common session and tracking cookie values (`cookie`), and a Bearer
+  token of 20 or more characters (`token`). Each replaces only the value
+  and skips one a copied rule already replaced. The redaction
   patterns are tested against synthetic known-bad input, and the
   no-Python path must pass the same fixture before its first write
   (section 3.3).
@@ -613,7 +661,9 @@ layout.
   quarter drift; the long-message list; the surface budget derivation.
 - `redact.py`: every pattern against synthetic known-bad input, a
   known-clean fixture that must pass untouched, and an assertion that the
-  pattern list matches `pr-loop-lib/references/secret-scan-rules.md`.
+  copied pattern list matches rules 1 to 12 of
+  `pr-loop-lib/references/secret-scan-rules.md`; the skill-local patterns
+  each have a known-bad case in the same fixture.
 - AI filter: a Slack fixture of paired messages, the 2025 originals and
   their 2026 scaffolded versions from the current `slack-reply` shapes
   file, asserting each side lands where it should at the default
