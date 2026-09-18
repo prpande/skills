@@ -561,7 +561,7 @@ file, so it is passed once per watch.
 
 ### 4.4 Reply and resolve
 
-Every reply is composed through `pr-watch/references/reply-voice.md`
+Every reply is composed through `skills/pr-tooling/pr-watch/references/reply-voice.md`
 (section 6). No templates, no markers, no fixed prefixes. A reply that
 names a commit posts only after that commit is on the remote. The push
 guard (section 9) runs before the first reply or resolve of each pass. The
@@ -751,12 +751,12 @@ other than where it was flagged.
 
 ## 6. Reply voice
 
-`pr-watch/references/reply-voice.md`, owned by this skill. Every posted
+`skills/pr-tooling/pr-watch/references/reply-voice.md`, owned by this skill. Every posted
 reply goes through it.
 
 ### 6.1 Sources
 
-- The user's Slack corpus rules in `slack-reply/references/` (shapes,
+- The user's Slack corpus rules in `skills/team-tooling/slack-reply/references/` (shapes,
   phrasebook, audit), translated to GitHub markdown.
 - The `humanizer` skill's tell catalogue.
 - A PR-comment corpus from a colleague who reviews by hand: every comment,

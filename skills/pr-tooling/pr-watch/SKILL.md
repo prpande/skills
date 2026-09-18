@@ -140,8 +140,8 @@ Owned by `pr-watch`:
 - Never rebase and never force-push. A wrong pushed fix is undone with
   `git revert` on top of the branch and a further reply.
 - Nothing posted on GitHub carries a marker, a template, a fixed prefix,
-  or a trailer, and commits carry no trailer. Every reply is written with
-  `pr-watch/references/reply-voice.md`.
+  or a trailer, and commits carry no trailer. Every reply follows
+  `pr-watch/references/reply-contract.md`.
 - One automatic reply per human exchange; the next turn goes to the user.
 - At most three fix pushes per PR from bot-only feedback, and three from
   CI. Both counters reset when a head the watch did not push arrives;

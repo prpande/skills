@@ -31,7 +31,7 @@ creates a worktree. Under `dry_run`, verdicts, replies, and resolutions go to
    is escalated rather than posted.
 5. For each judged finding whose verdict differs from
    `finding_verdicts[<thread_id>]` (absent counts as no prior verdict):
-   one reply on its thread written with `pr-watch/references/reply-voice.md`
+   one reply on its thread written by Writing a reply in `pr-watch/references/reply-contract.md`
    (shape: re-review verdict), posted with the thread-reply mutation in
    `pr-watch/steps/04-fix-path.md` section 7. Record the reply id in this
    PR's `posted_reply_ids`, set `finding_verdicts[<thread_id>]` to the new

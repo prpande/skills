@@ -156,7 +156,7 @@ No returns in section 5: go to section 7, then section 9.
    in a `Fixed.` reply. Write `<no sha: dry run>` where the sha would go
    and keep the rest of the shape; the point of the dry-run file is to
    show the reply that would be posted, and a reply missing its sha
-   clause would not show it. `pr-watch/references/reply-voice.md` takes
+   clause would not show it. `pr-watch/references/reply-contract.md` takes
    the placeholder in the sha's place, in the shape and in its audit.
 3. Work item: the first `AB#<digits>` in the PR title, else the PR body,
    else `git log -1 --format=%s`.
@@ -223,8 +223,8 @@ escalate ("needs you, no comment", reason "reply guard refused"), and go
 to section 9.
 
 1. Write the reply from the return's `verdict`, `reason`, `reply_text`
-   (facts only), the short sha, and the files, using
-   `pr-watch/references/reply-voice.md`. Run its audit and its last step.
+   (facts only), the short sha, and the files, following Writing a reply
+   in `pr-watch/references/reply-contract.md`. Post only the reply text.
 2. Thread reply: write `<scratchpad>/reply.json`
    ```json
    {"query": "mutation($t: ID!, $b: String!) { addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $t, body: $b}) { comment { id } } }",
