@@ -9,8 +9,9 @@ Every path passed to a script is absolute: resolve `<home>` and
 `<skill-dir>` once and use the resolved paths. `<py>` is the interpreter
 stored in `setup.json`.
 
-A channel listed under `"reused"` in `setup.json` skips sections 1 to 5
-and starts at section 6, and its first hold-out pass adds `--reset`.
+A channel listed under `"reused"` in `setup.json` skips sections 1 to 5,
+runs `normalize` once with that channel's cap and the cutoff, and starts
+at section 6, and its first hold-out pass adds `--reset`.
 
 ## 1. Redaction comes first
 
@@ -137,7 +138,7 @@ whose text is empty after trimming, such as an attachment with no text.
 | `audience` | the channel or DM id |
 | `thread` | `<channel id>/<thread ts>`, or `<channel id>/<ts>` outside a thread |
 | `others` | the participants other than the person within the record's `thread` id: a DM or group DM message outside a thread: 0, since its thread id holds only that message; a thread reply: 1; a top-level channel post: 1 when it shows replies, 0 otherwise; a thread reply inside a DM or group DM: 1 |
-| `text` | the message text as returned |
+| `text` | the message text as returned; `normalize` decodes `&lt;`, `&gt;`, and `&amp;` |
 
 Pipe each page's records through redaction before asking for the next
 page. After each month, run the command below. When it trims to the cap,

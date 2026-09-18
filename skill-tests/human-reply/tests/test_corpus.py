@@ -138,6 +138,10 @@ class NormalizeTests(unittest.TestCase):
         records = [record("D1/post", "2026-06-01T00:00:00Z"), record("D1/pre", "2025-01-01T00:00:00Z")]
         self.assertEqual([r["ts"] for r in corpus.normalize(records, cap=1)], ["2026-06-01T00:00:00Z"])
 
+    def test_slack_entities_are_decoded_and_a_typed_entity_survives(self):
+        records = [record("D1/1", "2025-01-01T00:00:00Z", text="a &amp; b &gt; c &lt;d&gt; typed &amp;lt; ok")]
+        self.assertEqual(corpus.normalize(records, cap=1)[0]["text"], "a & b > c <d> typed &lt; ok")
+
     def test_records_with_blank_text_are_dropped(self):
         records = [record("D1/1", "2025-01-01T00:00:00Z", text="  \n\t"), record("D1/2", "2025-01-02T00:00:00Z", text=""),
                    record("D1/3", "2025-01-03T00:00:00Z")]
@@ -219,6 +223,27 @@ class PhraseTests(unittest.TestCase):
         found = [p["phrase"] for p in corpus.phrases(records, minimum=2, top=2, singles=1)]
         self.assertEqual(found, ["alpha", "delta epsilon"])
 
+    def test_line_openers_take_the_first_words_of_each_line_but_not_quotes_links_or_code(self):
+        texts = ["Also, the deploy is done\nThat said, wait", "also check the flag\n> Also quoted",
+                 "<https://x.example|link> also here\n```\nAlso in code\n```", "So we wait"]
+        records = [record(f"D1/{i}", f"2025-06-01T00:00:0{i}Z", text=t) for i, t in enumerate(texts)]
+        found = {p["phrase"]: p["records"] for p in corpus.line_openers(records, minimum=1)}
+        self.assertEqual(found["also"], 2)
+        self.assertEqual(found["that said wait"], 1)
+        self.assertNotIn("that said", found)
+        self.assertEqual(found["so we wait"], 1)
+        self.assertNotIn("also here", found)
+        self.assertNotIn("also in", found)
+        self.assertNotIn("also quoted", found)
+
+    def test_markers_keep_case_and_skip_links_code_and_quotes(self):
+        texts = ["JFYI done :sweat_smile:", "IMO fine. TLDR: ship it. PS: thanks :sweat_smile:",
+                 "see <https://x.example/API|API> and ```NOPE```", "> JFYI quoted", "JFYI again"]
+        records = [record(f"D1/{i}", f"2025-06-01T00:00:0{i}Z", text=t) for i, t in enumerate(texts)]
+        self.assertEqual(corpus.markers(records, minimum=1), [
+            {"phrase": ":sweat_smile:", "records": 2}, {"phrase": "JFYI", "records": 2},
+            {"phrase": "IMO", "records": 1}, {"phrase": "PS", "records": 1}, {"phrase": "TLDR", "records": 1}])
+
     def test_count_matches_whole_words_in_order(self):
         records = [record("D1/1", "2025-06-01T00:00:01Z", text="a memo about imo"),
                    record("D1/2", "2025-06-01T00:00:02Z", text="Thanks! :slightly_smiling_face:"),
@@ -238,8 +263,10 @@ class PhraseTests(unittest.TestCase):
                 self.assertEqual(corpus.main(["count", "--corpus", str(path), "--phrase", "JFYI",
                                               "--phrase", "deploy done"]), 0)
             written = corpus.read_jsonl(out_path)
-        self.assertEqual(written, [{"phrase": "jfyi deploy done", "records": 3}])
-        self.assertEqual(out.getvalue().splitlines(), ["phrases: 1 written",
+        self.assertEqual(written, [{"phrase": "jfyi deploy done", "records": 3, "kind": "phrase"},
+                                   {"phrase": "jfyi deploy done", "records": 3, "kind": "line opener"},
+                                   {"phrase": "JFYI", "records": 3, "kind": "marker"}])
+        self.assertEqual(out.getvalue().splitlines(), ["phrases: 1 phrases, 1 line openers, 1 markers written",
                                                        '{"phrase": "JFYI", "records": 3}',
                                                        '{"phrase": "deploy done", "records": 3}'])
 

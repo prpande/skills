@@ -25,10 +25,18 @@ notice in the sample:
 <py> <skill-dir>/scripts/corpus.py phrases --corpus <home>/corpus/<channel>.kept.jsonl --out <home>/corpus/<channel>.phrases.jsonl
 ```
 
-It writes up to 200 word sequences of one to five words found in three or
-more records, most frequent first, with at most 50 single words. Most
-lines are topic words or filler; readers pick the rest. Without Python
-there is no candidate file.
+Each line has a `kind`, most frequent first within each kind:
+
+- `phrase`: up to 200 word sequences of one to five words found in three
+  or more records, at most 50 of them single words
+- `line opener`: up to 250 of the first one to three words of a line,
+  found in two or more records
+- `marker`: every emoji shortcode and all-caps word of two to five
+  letters found in two or more records, as written
+
+Quoted lines and code are skipped. Most lines are topic words, system
+acronyms, or filler; readers pick the rest. Without Python there is no
+candidate file.
 
 ## 2. Three readers per channel
 
@@ -60,11 +68,12 @@ Return only a JSON object in the reader return format from
   words, grouped by role. A single word or shortcode counts when it plays
   a role, such as "JFYI", "IMO", "cc:", or ":sweat_smile:".
 - Candidate phrases: <candidate file path, or "none">. Each line is a
-  phrase and the number of records holding it, lowercased, with edge
-  punctuation removed.
+  phrase, the number of records holding it, and its kind: a repeated
+  phrase, a line opener, or a marker (emoji shortcode or all-caps word).
+  Phrases and line openers are lowercased, with edge punctuation removed.
   Put every candidate that plays a role into the phrasebook, written the
   way the person writes it in the sample. Leave out topic words (names of
-  services, tables, features) and filler.
+  services, tables, features), acronyms that name a system, and filler.
 - Write nothing to disk.
 ````
 

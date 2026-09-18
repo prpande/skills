@@ -195,7 +195,8 @@ every call, including GitHub's: when it trims to the cap it keeps
 pre-cutoff records first, then fills the remaining room with post-cutoff
 records, and on each side it takes the newest record of every month in
 turn, so a busy month cannot crowd out the others. It drops records
-whose text is blank. The pass in progress and its quota are stored in
+whose text is blank and decodes the `&lt;`, `&gt;`, and `&amp;` Slack
+returns for typed characters. The pass in progress and its quota are stored in
 setup state so a resumed run continues it.
 
 GitHub: `gh search prs` with `--author @me`, `--reviewed-by @me`, and
@@ -339,10 +340,15 @@ Each reader returns, in the schema from `human-reply/references/profile-schema.m
 
 Readers alone miss frequent phrases: a reader proposes what it notices in
 a 500-message sample. So before the readers run, `scripts/corpus.py
-phrases` lists the word sequences of one to five words that appear in
-three or more records of the whole kept file, at most 200 with at most 50
-single words, and every reader gets that list and places each candidate
-that plays a role, leaving out topic words and filler. The no-Python path
+phrases` lists candidates of three kinds from the whole kept file: word
+sequences of one to five words in three or more records (at most 200,
+at most 50 single words); the first one to three words of each line in
+two or more records (at most 250), which is where discourse markers
+such as "Also," "PS:" and greetings sit; and every emoji shortcode and
+all-caps word of two to five letters in two or more records. Quoted
+lines and code are skipped. Every reader gets the list and places each
+candidate that plays a role, leaving out topic words, acronyms of
+systems, and filler. The no-Python path
 has no list.
 
 Three readers per channel read the same sample. For shapes, disagreement
@@ -534,7 +540,9 @@ Workflow per call:
    profile measured 2026-09-16."
 3. Pick the shape from the profile's shapes for that surface; the channel
    module names the default when none matches.
-4. Write within the budget using the profile's phrasebook, hedges, typing
+4. Write toward the surface median, with the budget as a ceiling a
+   message reaches only for content the reader cannot act without, using
+   the profile's phrasebook, hedges, typing
    habits, and banned list, and the channel module's markup rules (Slack
    quote lines followed by a blank line, GitHub line-range links at a
    commit and `suggestion` blocks, Notion mention syntax). An in-thread
@@ -702,7 +710,9 @@ Acceptance, recorded in the PR that ships the skill:
 1. Extractor regression: setup run on the author's own Slack, and the
    generated `channels/slack.md` compared by hand against the current
    `slack-reply` numbers and phrasebook, on the tiers the hand corpus
-   notes measure. Pass when every median is within five words of the
+   notes measure, on each tier with 30 or more records in the sample
+   (below that floor setup labels the tier estimated). Pass when every
+   median is within five words of the
    hand-derived one, every 90th percentile is within 10 percent of it,
    and every hand phrasebook entry that appears in two or more records of
    the sample is in the generated phrasebook. Budgets are not compared:

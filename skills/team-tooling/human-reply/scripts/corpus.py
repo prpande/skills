@@ -35,6 +35,10 @@ MARKDOWN_LINK = re.compile(r"\[[^\]\n]*\]\([^)\s]+\)")
 CUTOFF = re.compile(r"^\d{4}-(?:0[1-9]|1[0-2])$")
 HOLDOUTS_PER_CHANNEL = 3
 PHRASE_MAX_WORDS = 5
+OPENER_MAX_WORDS = 3
+MARKER = re.compile(r"(?<![\w:])(?::[a-z0-9_+'-]+:(?![\w:])|[A-Z]{2,5}(?!\w))")
+# Slack escapes these three in message text; order matters so a typed "&lt;" survives as text.
+SLACK_ENTITIES = (("&lt;", "<"), ("&gt;", ">"), ("&amp;", "&"))
 PHRASE_BREAK = re.compile(r"<[^>\n]*>|https?://\S+")
 PHRASE_STRIP = "\"'()[]{}.,;?!*_~`"
 STOPWORDS = frozenset(
@@ -134,8 +138,14 @@ def _spread_by_month(records):
     return order
 
 
+def decode_entities(text):
+    for entity, char in SLACK_ENTITIES:
+        text = text.replace(entity, char)
+    return text
+
+
 def normalize(records, cap, cutoff=None):
-    """Drop repeated ids and blank messages and keep `cap` records, returned newest first.
+    """Decode &lt; &gt; &amp;, drop repeated ids and blank messages, and keep `cap` records, newest first.
 
     Trimming spreads the cap across months: each month keeps its newest
     records, one round at a time, so a busy month cannot crowd out the rest.
@@ -144,8 +154,10 @@ def normalize(records, cap, cutoff=None):
     """
     unique = {}
     for record in records:
-        if isinstance(record.get("text"), str) and not record["text"].strip():
-            continue
+        if isinstance(record.get("text"), str):
+            if not record["text"].strip():
+                continue
+            record["text"] = decode_entities(record["text"])
         unique.setdefault(record_id(record), record)
     if cutoff is None:
         order = _spread_by_month(unique.values())
@@ -232,6 +244,63 @@ def phrases(records, minimum=3, top=200, singles=50, max_words=PHRASE_MAX_WORDS)
     single = [item for item in kept if len(item[0]) == 1][:single_room]
     multi = [item for item in kept if len(item[0]) > 1][:top - len(single)]
     return [{"phrase": " ".join(gram), "records": count} for gram, count in single + multi]
+
+
+def _usable_lines(record):
+    """Lines of a record's text, without fenced blocks and without lines quoting someone else."""
+    text = FENCED_CODE.sub("\n", record["text"])
+    return [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith(">")]
+
+
+def line_openers(records, minimum=2, top=250, max_words=OPENER_MAX_WORDS):
+    """The first 1 to max_words words of each line, by the number of records holding them.
+
+    A line that starts with a link, mention, or placeholder has no opener.
+    Stopwords are kept, since "Also," or "So" opening a line is a habit. An
+    opener without letters, or one whose longer extension appears in as many
+    records, is left out.
+    """
+    counts = {}
+    for record in records:
+        if record.get("held_out"):
+            continue
+        grams = set()
+        for line in _usable_lines(record):
+            if PHRASE_BREAK.match(line):
+                continue
+            runs = phrase_tokens(line)
+            if runs:
+                grams.update(tuple(runs[0][:size]) for size in range(1, min(max_words, len(runs[0])) + 1))
+        for gram in grams:
+            counts[gram] = counts.get(gram, 0) + 1
+    subsumed = {gram[:-1] for gram, count in counts.items() if len(gram) > 1 and counts.get(gram[:-1]) == count}
+    kept = [(gram, count) for gram, count in counts.items()
+            if count >= minimum and gram not in subsumed
+            and any(any(ch.isalpha() for ch in token) for token in gram)]
+    kept.sort(key=lambda item: (-item[1], -len(item[0]), item[0]))
+    return [{"phrase": " ".join(gram), "records": count} for gram, count in kept[:top]]
+
+
+def markers(records, minimum=2):
+    """Emoji shortcodes and all-caps words of 2 to 5 letters, as written, by the number of records holding them."""
+    counts = {}
+    for record in records:
+        if record.get("held_out"):
+            continue
+        found = set()
+        for line in _usable_lines(record):
+            found.update(MARKER.findall(PHRASE_BREAK.sub(" ", line)))
+        for marker in found:
+            counts[marker] = counts.get(marker, 0) + 1
+    kept = sorted(((m, c) for m, c in counts.items() if c >= minimum), key=lambda item: (-item[1], item[0]))
+    return [{"phrase": marker, "records": count} for marker, count in kept]
+
+
+def candidates(records, minimum=3, top=200, singles=50):
+    """Phrase, line-opener, and marker candidates for the readers, each tagged with its kind."""
+    return ([dict(p, kind="phrase") for p in phrases(records, minimum, top, singles)]
+            + [dict(p, kind="line opener") for p in line_openers(records)]
+            + [dict(p, kind="marker") for p in markers(records)])
 
 
 def count_phrase(records, phrase):
@@ -351,9 +420,10 @@ def main(argv=None):
         return 0
     records = read_jsonl(args.corpus)
     if args.command == "phrases":
-        found = phrases(records, args.min, args.top, args.singles)
+        found = candidates(records, args.min, args.top, args.singles)
         write_jsonl(args.out, found)
-        print(f"phrases: {len(found)} written")
+        kinds = [sum(line["kind"] == kind for line in found) for kind in ("phrase", "line opener", "marker")]
+        print("phrases: {} phrases, {} line openers, {} markers written".format(*kinds))
         return 0
     if args.command == "count":
         for phrase in args.phrase:

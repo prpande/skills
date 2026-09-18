@@ -101,8 +101,11 @@ fits, use the default shape the channel module names.
 
 ### 4. Write
 
-Write inside the budget, counting each link and each fenced block as one
-word. Use:
+Aim for the surface's Median from the profile's Surfaces table, counting
+each link and each fenced block as one word. The budget is a ceiling
+for the rare message that needs it, not a length to fill: go past the
+median only for content the reader cannot act without, and never past
+the budget. Use:
 
 - the profile's phrasebook, and the hedges, typing habits, disagreement
   pattern, sign-offs, and Borrowed traits from
@@ -120,7 +123,9 @@ every fact, link, code span, and mention of the original.
 
 Check the draft against the channel module's audit checklist and every
 rule under the profile's Calibration notes, and confirm the text is a
-message, not one of the artifacts under Not for. Fix every hit.
+message, not one of the artifacts under Not for. When the draft is over
+the surface median, cut every line the reader can act without. Fix every
+hit.
 
 ### 6. Humanizer
 
