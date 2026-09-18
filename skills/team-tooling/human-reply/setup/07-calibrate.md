@@ -35,7 +35,13 @@ that list's order:
 1. Pick the target: the person's earliest record in the thread that
    comes after a message by someone else. The context is everything in
    the thread before the target.
-2. Fetch the context:
+2. Fetch the context through one sonnet subagent, because every tool
+   below returns the whole thread, target included, and a draft written
+   after seeing the target proves nothing. The subagent fetches the
+   thread, picks the target by the rule in step 1, and returns only the
+   context messages with their authors and the target's timestamp or id;
+   it never returns or quotes the target, and writes nothing to disk.
+   Fetch with:
    - Slack: the thread read tool with the channel id and the thread's
      parent ts from the `thread` field.
    - GitHub: `gh api repos/<owner>/<repo>/pulls/<n>/comments` for a
@@ -49,10 +55,11 @@ that list's order:
    the person, drop the thread and say so.
 3. Draft a reply to the context with the draft mode in `SKILL.md`, reading
    the profile from `<home>/corpus/draft/` instead of `<home>/`, with the
-   ask "reply to the last message" and no other hint. Do not look at the
-   target first.
-4. Show the draft and the target side by side, with the pool the thread
-   came from: `pre-cutoff`, `post-cutoff`, `earlier`, or `backfill`.
+   ask "reply to the last message" and no other hint. Finish every
+   channel's drafts before reading any target.
+4. Read the target yourself, then show the draft and the target side by
+   side, with the pool the thread came from: `pre-cutoff`, `post-cutoff`,
+   `earlier`, or `backfill`.
 
 When fewer than three of a channel's held-out threads have a target,
 including when `holdouts` is empty, backfill from threads older than the
@@ -62,15 +69,16 @@ earlier, for up to 12 months:
 
 - Slack: the collect step's Slack search for that month in both
   `channel_types` windows, with `before:` never later than `window.since`,
-  keeping only thread replies. Read each candidate's thread with the
-  thread read tool.
+  keeping only thread replies.
 - GitHub: `gh search prs --commenter <login> --created <that month>`, then
   each PR's review comments with `gh api repos/<owner>/<repo>/pulls/<n>/comments`.
 - Notion: the Notion search tool with `created_date_range` set to that
   month, then each page's discussions with the comments tool.
 
-Keep a thread when a message by someone else comes before the person's
-reply, skipping threads already in `holdouts` and audiences in
+The search runs in the same subagent as step 2, which reads each
+candidate thread and returns only the kept threads' context, never the
+person's reply. Keep a thread when a message by someone else comes
+before the person's reply, skipping threads already in `holdouts` and audiences in
 `per_channel.<channel>.excluded_audiences`. Stop when the channel has
 three threads with a target. Append each kept thread to
 `per_channel.<channel>.holdouts` with pool `backfill`, then run steps 3

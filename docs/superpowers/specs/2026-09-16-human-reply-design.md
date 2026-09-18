@@ -243,7 +243,11 @@ with at least one other participant within the record's thread id, so
 thread replies and two-person review threads qualify. A Slack DM message
 outside a thread is its own thread id with nobody else in it, so it does
 not. A thread holding a PR body does not qualify, because calibration
-drafts a reply to someone else's message and a PR body answers nobody.
+drafts a reply to someone else's message and a PR body answers nobody,
+and neither does a thread whose only record of the person is its opening
+post. Calibration fetches each thread through a subagent that returns
+only the context before the person's reply, so the draft is written
+before the real reply is seen.
 When a channel has a cutoff and fewer than three such threads,
 the remainder come from post-cutoff threads whose reply passes the
 filter, and the calibration prompt says which pool each thread came from.

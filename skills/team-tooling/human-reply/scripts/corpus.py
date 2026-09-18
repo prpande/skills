@@ -50,6 +50,8 @@ STOPWORDS = frozenset(
 FINGERPRINT_PARTS = ("SKILL.md", "setup", "references", "channels", "scripts")
 # Calibration drafts a reply to someone else's message, and a PR body answers nobody.
 NO_REPLY_TARGET_SURFACE = "PR body"
+# A thread's opening post answers nobody either, so it cannot be the reply calibration compares against.
+THREAD_ROOT_SURFACES = frozenset({"PR body", "channel new post", "write-up"})
 
 
 def read_jsonl(path):
@@ -354,7 +356,7 @@ def select_holdouts(records, cutoff, seed, passed_ids=None):
     threads = _threads(records)
     chosen = [(t, "earlier") for t, rs in threads.items() if any(r["held_out"] for r in rs)]
     eligible = {t: rs for t, rs in threads.items()
-                if max(r["others"] for r in rs) >= 1
+                if any(r["others"] >= 1 and r["surface"] not in THREAD_ROOT_SURFACES for r in rs)
                 and all(r["surface"] != NO_REPLY_TARGET_SURFACE for r in rs)
                 and t not in dict(chosen)}
     pre = sorted(t for t, rs in eligible.items() if all(is_pre_cutoff(r, cutoff) for r in rs))

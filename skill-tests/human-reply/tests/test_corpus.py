@@ -382,6 +382,12 @@ class HoldoutTests(unittest.TestCase):
                 self.assertEqual(corpus.select_holdouts([dict(r) for r in records], None, seed=seed),
                                  [("C1/1709546000.2", "pre-cutoff")])
 
+    def test_a_thread_holding_only_the_persons_opening_post_is_not_eligible(self):
+        records = [record("C1/root", "2025-06-01T00:00:00Z", surface="channel new post", audience="C1"),
+                   record("C2/long", "2025-06-01T00:00:00Z", surface="write-up", audience="C2"),
+                   record("C3/root", "2025-06-01T00:00:00Z", surface="channel new post", audience="C3"),
+                   record("C3/root", "2025-06-02T00:00:00Z", surface="channel thread reply", audience="C3")]
+        self.assertEqual(corpus.select_holdouts(records, None, seed=1), [("C3/root", "pre-cutoff")])
     def test_no_cutoff_draws_from_the_whole_window(self):
         records = [record("D1/1", "2026-08-01T00:00:00Z"), record("D1/2", "2026-09-01T00:00:00Z")]
         chosen = corpus.select_holdouts(records, None, seed=1)
