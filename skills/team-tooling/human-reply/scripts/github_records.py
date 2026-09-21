@@ -38,6 +38,11 @@ def number_from_url(url):
     return int(url.rstrip("/").rsplit("/", 1)[1])
 
 
+def login_of(item, field="user"):
+    """None when the account was deleted: GitHub returns a null user."""
+    return (item.get(field) or {}).get("login")
+
+
 def record(surface, ts, repo, thread, others, text):
     return {"channel": "github", "surface": surface, "ts": ts, "audience": repo,
             "thread": thread, "others": others, "text": text, "held_out": False}
@@ -47,10 +52,10 @@ def review_comment_records(comments, login, repo, since, until):
     participants = {}
     for c in comments:
         key = (number_from_url(c["pull_request_url"]), c.get("in_reply_to_id") or c["id"])
-        participants.setdefault(key, set()).add(c["user"]["login"])
+        participants.setdefault(key, set()).add(login_of(c))
     records = []
     for c in comments:
-        if c["user"]["login"] != login or not in_window(c["created_at"], since, until):
+        if login_of(c) != login or not in_window(c["created_at"], since, until):
             continue
         number, root = number_from_url(c["pull_request_url"]), c.get("in_reply_to_id") or c["id"]
         records.append(record("review thread reply", c["created_at"], repo, f"{repo}#{number}/c{root}",
@@ -61,7 +66,7 @@ def review_comment_records(comments, login, repo, since, until):
 def commenters(comments, url_field):
     by_number = {}
     for c in comments:
-        by_number.setdefault(number_from_url(c[url_field]), set()).add(c["user"]["login"])
+        by_number.setdefault(number_from_url(c[url_field]), set()).add(login_of(c))
     return by_number
 
 
@@ -70,21 +75,21 @@ def issue_comment_records(comments, login, repo, since, until):
     return [record("issue comment", c["created_at"], repo, f"{repo}#{number_from_url(c['issue_url'])}",
                    len(by_number[number_from_url(c["issue_url"])] - {login}), c["body"])
             for c in comments
-            if c["user"]["login"] == login and in_window(c["created_at"], since, until)]
+            if login_of(c) == login and in_window(c["created_at"], since, until)]
 
 
 def pr_body_records(prs, login, repo, since, until, others_by_number):
     return [record("PR body", pr["created_at"], repo, f"{repo}#{pr['number']}",
                    len(others_by_number.get(pr["number"], set()) - {login}), pr["body"])
             for pr in prs
-            if pr["user"]["login"] == login and pr.get("body") and in_window(pr["created_at"], since, until)]
+            if login_of(pr) == login and pr.get("body") and in_window(pr["created_at"], since, until)]
 
 
 def review_records(reviews, login, repo, number, pr_author, since, until):
     return [record("review summary", r["submitted_at"], repo, f"{repo}#{number}/r{r['id']}",
                    0 if pr_author == login else 1, r["body"])
             for r in reviews
-            if r["user"]["login"] == login and r.get("body") and r.get("submitted_at")
+            if login_of(r) == login and r.get("body") and r.get("submitted_at")
             and in_window(r["submitted_at"], since, until)]
 
 
@@ -118,7 +123,7 @@ def collect(repo, login, since, until, runner):
                         "--limit", SEARCH_LIMIT, "--json", "number,author"], runner)
     for pr in reviewed:
         reviews = pages(f"repos/{repo}/pulls/{pr['number']}/reviews", runner)
-        records += review_records(reviews, login, repo, pr["number"], pr["author"]["login"], since, until)
+        records += review_records(reviews, login, repo, pr["number"], login_of(pr, "author"), since, until)
     return sorted(records, key=lambda r: r["ts"], reverse=True)
 
 

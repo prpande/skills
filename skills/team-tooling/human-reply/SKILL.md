@@ -102,10 +102,10 @@ fits, use the default shape the channel module names.
 ### 4. Write
 
 Aim for the surface's Median from the profile's Surfaces table, counting
-each link and each fenced block as one word. The budget is a ceiling
-for the rare message that needs it, not a length to fill: go past the
-median only for content the reader cannot act without, and never past
-the budget. Use:
+each link, each fenced block, and each table row as one word. The
+budget is a ceiling for the rare message that needs it, not a length to
+fill: go past the median only for content the reader cannot act
+without, and never past the budget. Use:
 
 - the profile's phrasebook, and the hedges, typing habits, disagreement
   pattern, sign-offs, and Borrowed traits from

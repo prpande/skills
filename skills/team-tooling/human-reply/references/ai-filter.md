@@ -11,7 +11,8 @@ no-Python path applies the same definitions by reading each message.
 A message is scanned when all of these hold:
 
 - it is not held out for calibration
-- it is over 60 words, counting each link and each fenced block as one word
+- it is over 60 words, counting each link, each fenced block, and each
+  table row as one word
 - it is the person's own message sent in or after the cutoff month, or it
   is any message in a colleague sample
 

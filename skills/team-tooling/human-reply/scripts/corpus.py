@@ -32,6 +32,7 @@ TS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 FENCED_CODE = re.compile(r"```[\s\S]*?```")
 SLACK_LINK = re.compile(r"<https?://[^>\n]+>")
 MARKDOWN_LINK = re.compile(r"\[[^\]\n]*\]\([^)\s]+\)")
+TABLE_ROW = re.compile(r"^[ \t]*[|].*[|][ \t]*$", re.M)
 CUTOFF = re.compile(r"^\d{4}-(?:0[1-9]|1[0-2])$")
 HOLDOUTS_PER_CHANNEL = 3
 PHRASE_MAX_WORDS = 5
@@ -86,10 +87,11 @@ def load_surfaces(module_path):
 
 
 def word_count(text):
-    """Whitespace tokens, with each fenced block and each link counted as one."""
+    """Whitespace tokens, with each fenced block, link and table row counted as one."""
     text = FENCED_CODE.sub(" CODE ", text)
     text = SLACK_LINK.sub(" LINK ", text)
     text = MARKDOWN_LINK.sub(" LINK ", text)
+    text = TABLE_ROW.sub(" ROW ", text)
     return len(text.split())
 
 
