@@ -88,6 +88,11 @@ class WordCountTests(unittest.TestCase):
                 "then\n```\nline one of a trace\nline two\n```\ndone")
         self.assertEqual(corpus.word_count(text), 7)
 
+    def test_each_table_row_counts_as_one_word(self):
+        text = ("budgets per surface\n| surface | words |\n|---|---|\n"
+                "| outer DM | 50 |\npick one")
+        self.assertEqual(corpus.word_count(text), 8)
+
     def test_inline_code_counts_its_words(self):
         self.assertEqual(corpus.word_count("check `tbl Resource` now"), 4)
 

@@ -18,8 +18,8 @@ markup, this file wins.
 
 The minimum is the smallest budget a measured profile may derive. The
 default is the budget a surface gets when it has fewer than 30 pre-cutoff
-records. Both are word counts with each link and fenced block counted as
-one word.
+records. Both are word counts with each link, fenced block and table row
+counted as one word.
 
 ```surfaces
 # surface | minimum | default
@@ -37,7 +37,7 @@ message in the thread. Slack carries the pointer and the ask.
 ## Markup that survives sending
 
 Drafts are delivered as markdown and pasted into Slack, or sent through the
-Slack tool by the person. Three conversions bite:
+Slack tool by the person. Four conversions bite:
 
 - A `>` line swallows every following line until a blank line. Put a blank
   line after each quoted line, before the answer, and another before the
@@ -49,6 +49,19 @@ Slack tool by the person. Three conversions bite:
 - A bare URL at the end of a line can swallow the newline and the next
   word into the link. End the URL with punctuation or write
   `[title](url)`.
+- A markdown table renders as a table only when the Slack tool sends it.
+  Slack's own composer does not convert markdown, so a pasted table
+  arrives as raw pipes; forwarding a sent message keeps it. A sent table
+  also comes back empty from a read of the message, because its content
+  is not in the message text, so a read-back that looks like it lost the
+  table is not evidence the send failed.
+
+A table earns its place when three or more items are compared on two or
+more attributes, and not otherwise: two items, or one attribute, read
+better as lines. Keep it to four columns and about six rows, with cells
+of a few words, so it stays readable on a phone; past that, write
+sectioned lines instead. Write the table as markdown with `|` column
+separators, escaping `|` only inside a cell.
 
 Mentions are `<@name>` for a person and `<!subteam^id>` for a group; in a
 draft, write `@name` and let the person resolve it when pasting.
@@ -137,7 +150,10 @@ The default shape when none matches is the in-thread reply.
 6. Nothing the thread already says is repeated.
 7. Identifiers in backticks, snippets in fenced blocks, a blank line after
    every `>` line, no bare URL ending a line.
-8. Read once as the recipient: they can act with at most one linked doc
+8. A table, if there is one, compares three or more items on two or more
+   attributes and fits four columns and about six rows; anything wider or
+   longer is sectioned lines instead.
+9. Read once as the recipient: they can act with at most one linked doc
    open.
 
 ## AI-filter patterns

@@ -14,6 +14,7 @@ import corpus  # noqa: E402
 import github_records  # noqa: E402
 
 API = "https://api.github.com/repos/acme/web"
+SINCE = "2025-09-01T00:00:00Z"
 
 
 class FakeGh:
@@ -40,7 +41,7 @@ def comment(cid, login, ts, body="text", reply_to=None, number=7, kind="pulls"):
 
 
 def answers():
-    since = "2025-09-01T00:00:00Z"
+    since = SINCE
     return {
         f"api repos/acme/web/pulls/comments?since={since}&per_page=100&page=1": [
             comment(1, "bot-reviewer", "2026-02-01T09:00:00Z"),
@@ -84,6 +85,22 @@ class CollectTests(unittest.TestCase):
         for item in github_records.collect("acme/web", "me", "2025-09-01", "2026-09-16", FakeGh(answers())):
             with self.subTest(thread=item["thread"]):
                 self.assertEqual(corpus.validate_record(item, surfaces), [])
+
+    def test_a_deleted_account_carries_a_null_user_and_is_still_counted(self):
+        data = answers()
+        for item in data[f"api repos/acme/web/pulls/comments?since={SINCE}&per_page=100&page=1"]:
+            if item["id"] == 1:
+                item["user"] = None
+        data["api repos/acme/web/pulls?state=all&sort=updated&direction=desc&per_page=100&page=1"][1]["user"] = None
+        data["search prs --repo acme/web --reviewed-by me --updated >=2025-09-01 --limit 1000 --json number,author"] = (
+            [{"number": 7, "author": None}])
+        records = github_records.collect("acme/web", "me", "2025-09-01", "2026-09-16", FakeGh(data))
+        self.assertEqual([(r["surface"], r["others"]) for r in records], [
+            ("issue comment", 1),
+            ("PR body", 1),
+            ("review summary", 1),
+            ("review thread reply", 1),
+        ])
 
     def test_the_pull_list_stops_at_the_first_pr_updated_before_the_window(self):
         data = answers()
