@@ -86,10 +86,10 @@ arrives as a notification. Its `kind` is one of `pending`, `head-moved`,
 `lease-lost` (another session now holds the PR), `idle` (no PR in the
 watch is still armed; the monitor exits), or `poller-error` (the poller
 has failed five ticks in a row). Events about a PR carry `pr` as
-`owner/repo#N`. Monitor notifications are not messages from the user. Handle them one at a time
-with `pr-watch/steps/03-route-event.md`. A notification that arrives while a
-fix is in flight waits until that fix has finished and the session is
-back in `origin_worktree`.
+`owner/repo#N`. Monitor notifications are not messages from the user.
+Handle them one at a time with `pr-watch/steps/03-route-event.md`. A
+notification that arrives while a fix is in flight waits until that fix
+has finished and the session is back in `origin_worktree`.
 
 ## State
 
