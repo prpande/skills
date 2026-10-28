@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 
 from pw_io import read_json, write_json_atomic
 from pw_paths import (claim_lock_path, home, iso_utc, lease_path, parse_iso, pr_dir,
@@ -16,6 +17,9 @@ START_TIME_TOLERANCE_SECONDS = 2
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 FILETIME_UNIX_EPOCH = 116444736000000000
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+STILL_ACTIVE = 259
+READ_ATTEMPTS = 3
+READ_RETRY_SECONDS = 0.05
 
 
 def process_started_at(pid: int) -> float | None:
@@ -29,6 +33,7 @@ def process_started_at(pid: int) -> float | None:
         kernel32.OpenProcess.restype = wintypes.HANDLE
         kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
         kernel32.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+        kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
         kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
         handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
         if not handle:
@@ -37,7 +42,10 @@ def process_started_at(pid: int) -> float | None:
             created, exited, kernel, user = (wintypes.FILETIME() for _ in range(4))
             ok = kernel32.GetProcessTimes(handle, ctypes.byref(created), ctypes.byref(exited),
                                           ctypes.byref(kernel), ctypes.byref(user))
-            if not ok:
+            if not ok or exited.dwHighDateTime or exited.dwLowDateTime:
+                return None
+            code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)) or code.value != STILL_ACTIVE:
                 return None
             ticks = (created.dwHighDateTime << 32) | created.dwLowDateTime
             return (ticks - FILETIME_UNIX_EPOCH) / 1e7
@@ -78,7 +86,7 @@ def holder_label(session_id: str, agents=list_agents) -> str:
 def read_lease(owner: str, repo: str, n: int) -> dict | None:
     try:
         data = read_json(lease_path(owner, repo, n))
-    except (OSError, ValueError):
+    except (FileNotFoundError, ValueError):
         return None
     if not isinstance(data, dict) or not isinstance(data.get("holder"), dict):
         return None
@@ -99,7 +107,7 @@ def _holder_dead(data: dict, now: float, started_at) -> bool:
 
 def _refusal(data: dict, now: float, agents) -> str:
     age = _heartbeat_age(data, now)
-    when = "never" if age == float("inf") else f"{int(age)}s ago"
+    when = "never" if age == float("inf") else f"{max(0, int(age))}s ago"
     return f"held by {holder_label(data['holder'].get('session_id', '?'), agents)}, heartbeat {when}"
 
 
@@ -131,7 +139,12 @@ def _take_lock(path, now: float) -> bool:
                 continue
             if age <= CLAIM_LOCK_STALE_SECONDS:
                 return False
-            path.unlink(missing_ok=True)
+            aside = path.with_name(f"{path.name}.{os.getpid()}.{time.monotonic_ns()}.stale")
+            try:
+                os.replace(path, aside)
+            except FileNotFoundError:
+                continue
+            aside.unlink(missing_ok=True)
     return False
 
 
@@ -141,13 +154,16 @@ def claim(owner, repo, n, *, role, holder, explicit, now, started_at=process_sta
     if not _take_lock(lock, now):
         return False, "busy: another claim in progress"
     try:
-        old = read_lease(owner, repo, n)
+        try:
+            old = read_lease(owner, repo, n)
+        except OSError:
+            return False, "lease unreadable"
         ok, why = _decide(old, holder["session_id"], explicit, now, started_at, agents)
         if not ok:
             return False, why
         stamp = iso_utc(now)
         write_json_atomic(lease_path(owner, repo, n), {
-            "schema": 1, "owner": owner.lower(), "repo": repo.lower(), "number": n, "role": role,
+            "schema": 1, "owner": owner, "repo": repo, "number": n, "role": role,
             "holder": {k: holder.get(k) for k in ("session_id", "pid", "pid_started_at", "poller_pid")},
             "heartbeat": stamp, "stale_after_seconds": STALE_AFTER_SECONDS, "status": "armed",
             "last_head_sha": old.get("last_head_sha") if old else None,
@@ -158,8 +174,18 @@ def claim(owner, repo, n, *, role, holder, explicit, now, started_at=process_sta
         lock.unlink(missing_ok=True)
 
 
+def _read_with_retry(owner, repo, n) -> dict | None:
+    for attempt in range(READ_ATTEMPTS):
+        try:
+            return read_lease(owner, repo, n)
+        except OSError:
+            if attempt == READ_ATTEMPTS - 1:
+                raise
+            time.sleep(READ_RETRY_SECONDS)
+
+
 def _held_by(owner, repo, n, session_id) -> dict | None:
-    data = read_lease(owner, repo, n)
+    data = _read_with_retry(owner, repo, n)
     if data is None or data["holder"].get("session_id") != session_id:
         return None
     return data

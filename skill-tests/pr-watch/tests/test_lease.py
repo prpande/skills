@@ -11,6 +11,7 @@ import lease
 import pw_paths
 
 NOW = 1_800_000_000.0
+IMPORTED_AT = time.time()
 AGENTS = [{"sessionId": "s-1", "name": "[Tag]Name"}]
 
 
@@ -168,6 +169,63 @@ class ClaimTests(LeaseCase):
         self.claim(holder("s-2", pid=300), started_at=alive(other))
         self.assertFalse(pw_paths.claim_lock_path("o", "r", 1).exists())
 
+    def test_claim_keeps_github_casing_in_fields_and_lowercases_path(self):
+        ok, _ = lease.claim("O", "R", 1, role="authored", holder=holder(), explicit=False, now=NOW,
+                            started_at=dead, agents=lambda: AGENTS)
+        self.assertTrue(ok)
+        self.assertTrue(pw_paths.lease_path("O", "R", 1).exists())
+        raw = json.loads(pw_paths.lease_path("o", "r", 1).read_text(encoding="utf-8"))
+        self.assertEqual((raw["owner"], raw["repo"]), ("O", "R"))
+
+    def test_rewrites_keep_field_casing(self):
+        lease.claim("O", "R", 1, role="authored", holder=holder(), explicit=False, now=NOW,
+                    started_at=dead, agents=lambda: AGENTS)
+        lease.tick_write("O", "R", 1, session_id="s-1", now=NOW, head="x", pending_since=None,
+                         last_error=None, poller_pid=1)
+        lease.set_status("O", "R", 1, "stopped", "s-1", NOW)
+        raw = json.loads(pw_paths.lease_path("o", "r", 1).read_text(encoding="utf-8"))
+        self.assertEqual((raw["owner"], raw["repo"]), ("O", "R"))
+
+    def test_unreadable_lease_refuses_claim_and_leaves_no_lock(self):
+        with mock.patch.object(lease, "read_json", side_effect=PermissionError("locked")):
+            self.assertEqual(self.claim(holder()), (False, "lease unreadable"))
+        self.assertFalse(pw_paths.claim_lock_path("o", "r", 1).exists())
+
+    def test_missing_lease_file_still_means_unheld(self):
+        with mock.patch.object(lease, "read_json", side_effect=FileNotFoundError):
+            self.assertIsNone(lease.read_lease("o", "r", 1))
+
+    def test_stale_lock_break_loses_race_to_another_claimer_is_busy(self):
+        lock = pw_paths.claim_lock_path("o", "r", 1)
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("", encoding="utf-8")
+        os.utime(lock, (NOW - 61, NOW - 61))
+        real_replace = os.replace
+
+        def other_claimer_wins(src, dst):
+            if str(dst).endswith(".stale"):
+                os.utime(src, (NOW, NOW))
+                raise FileNotFoundError
+            return real_replace(src, dst)
+
+        with mock.patch.object(lease.os, "replace", side_effect=other_claimer_wins):
+            self.assertEqual(self.claim(holder()), (False, "busy: another claim in progress"))
+        self.assertTrue(lock.exists())
+
+    def test_stale_lock_is_renamed_aside_then_removed(self):
+        lock = pw_paths.claim_lock_path("o", "r", 1)
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("", encoding="utf-8")
+        os.utime(lock, (NOW - 61, NOW - 61))
+        self.assertEqual(self.claim(holder()), (True, "claimed"))
+        self.assertEqual(list(lock.parent.glob("*.stale")), [])
+
+    def test_negative_heartbeat_age_is_clamped(self):
+        self.put(heartbeat=NOW + 50)
+        ok, why = self.claim(holder("s-2", pid=300))
+        self.assertFalse(ok)
+        self.assertIn("heartbeat 0s ago", why)
+
 
 class WriteTests(LeaseCase):
     def test_tick_write_updates_heartbeat_side_fields(self):
@@ -212,6 +270,29 @@ class WriteTests(LeaseCase):
 
     def test_set_status_without_lease_is_false(self):
         self.assertFalse(lease.set_status("o", "r", 1, "stopped", "s-1", NOW))
+
+    def test_tick_write_retries_transient_read_error(self):
+        self.put()
+        real = lease.read_json
+        calls = []
+
+        def flaky(path, default=None):
+            calls.append(1)
+            if len(calls) < 3:
+                raise PermissionError("replace in progress")
+            return real(path, default)
+
+        with mock.patch.object(lease, "read_json", side_effect=flaky),                 mock.patch.object(lease.time, "sleep"):
+            ok = lease.tick_write("o", "r", 1, session_id="s-1", now=NOW, head="d", pending_since=None,
+                                  last_error=None, poller_pid=1)
+        self.assertTrue(ok)
+        self.assertEqual(len(calls), 3)
+
+    def test_set_status_propagates_persistent_read_error(self):
+        self.put()
+        with mock.patch.object(lease, "read_json", side_effect=PermissionError("locked")),                 mock.patch.object(lease.time, "sleep"):
+            with self.assertRaises(PermissionError):
+                lease.set_status("o", "r", 1, "stopped", "s-1", NOW)
 
 
 class SweepTests(LeaseCase):
@@ -278,9 +359,17 @@ class LabelAndProcessTests(unittest.TestCase):
     def test_process_started_at_real_process(self):
         started = lease.process_started_at(os.getpid())
         self.assertIsNotNone(started)
-        self.assertLessEqual(time.time() - 300, started)
-        self.assertLessEqual(started, time.time() + 1)
+        self.assertLess(IMPORTED_AT - 3600, started)
+        self.assertLessEqual(started, IMPORTED_AT + 2)
         self.assertIsNone(lease.process_started_at(0x7FFFFFF0))
+
+    @unittest.skipUnless(os.name == "nt", "process creation time is read through kernel32")
+    def test_exited_process_with_open_handle_reads_as_gone(self):
+        import subprocess
+        import sys
+        child = subprocess.Popen([sys.executable, "-c", "pass"])
+        child.wait()
+        self.assertIsNone(lease.process_started_at(child.pid))
 
 
 if __name__ == "__main__":
