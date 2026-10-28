@@ -1106,6 +1106,16 @@ def main(argv=None, gh=run_gh):
                       help="print a local clone of the PR's repo known to this session")
     mode.add_argument("--push-lock", nargs=2, metavar=("ACTION", "REF"),
                       help="take or release the per-repo push lock")
+    mode.add_argument("--migrate-scan", metavar="MAIN",
+                      help="print the state of the old-format watch in a main checkout")
+    mode.add_argument("--migrate-import", metavar="MAIN",
+                      help="import the old-format watch's progress into this session")
+    mode.add_argument("--check-identity", action="store_true",
+                      help="exit 1 when CLAUDE_PID is not this process's claude")
+    mode.add_argument("--end-leftover-monitors", action="store_true",
+                      help="end this session's pollers left by an earlier claude process")
+    mode.add_argument("--monitor-alive", action="store_true",
+                      help="print alive or down for this session's monitor")
     parser.add_argument("--role", choices=("authored", "reviewed"), help="with --claim")
     parser.add_argument("--explicit", action="store_true",
                         help="with --claim: the user named this PR")
@@ -1130,7 +1140,7 @@ def main(argv=None, gh=run_gh):
     if (args.discover or args.find_clone) and not args.session_id:
         parser.error("--discover and --find-clone need --session-id")
     if (args.assert_author is None and args.repo_peers is None and args.session_dir is None
-            and not (args.discover or args.find_clone)):
+            and not (args.discover or args.find_clone or args.check_identity)):
         parser.error("--session-dir is required for this mode")
     try:
         return run_mode(args, gh)
@@ -1199,7 +1209,35 @@ def discover_mode(args, gh):
     return 0
 
 
+def migrate_mode(args):
+    import migrate
+    claude_pid = int(os.environ.get("CLAUDE_PID") or 0) or None
+    procs = migrate.list_processes()
+    now = time.time()
+    if args.check_identity:
+        reason = migrate.identity_ok(claude_pid, os.getpid(), procs, os.environ)
+        if reason:
+            print(f"pr-watch: {reason}", file=sys.stderr)
+            return 1
+        return 0
+    if args.migrate_scan:
+        print(json.dumps(migrate.scan(args.migrate_scan, claude_pid, procs, now)))
+    elif args.migrate_import:
+        print(json.dumps(migrate.import_progress(args.migrate_import, args.session_dir)))
+    elif args.end_leftover_monitors:
+        pids = migrate.leftover_monitors(args.session_dir, claude_pid, procs)
+        for pid in pids:
+            migrate.end_tree(pid)
+        print(json.dumps(pids))
+    else:
+        print("alive" if migrate.monitor_alive(args.session_dir, claude_pid, procs, now) else "down")
+    return 0
+
+
 def run_mode(args, gh):
+    if (args.migrate_scan or args.migrate_import or args.check_identity
+            or args.end_leftover_monitors or args.monitor_alive):
+        return migrate_mode(args)
     if args.discover or args.find_clone:
         return discover_mode(args, gh)
     if args.assert_author is not None:
