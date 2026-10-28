@@ -1097,6 +1097,10 @@ def main(argv=None, gh=run_gh):
                       help="set the status of a lease this session holds")
     mode.add_argument("--repo-peers", metavar="REF",
                       help="print the armed PRs in the same repo as a JSON list")
+    mode.add_argument("--discover", action="store_true",
+                      help="print the open PRs this session wrote to, as JSON")
+    mode.add_argument("--find-clone", metavar="REF",
+                      help="print a local clone of the PR's repo known to this session")
     mode.add_argument("--push-lock", nargs=2, metavar=("ACTION", "REF"),
                       help="take or release the per-repo push lock")
     parser.add_argument("--role", choices=("authored", "reviewed"), help="with --claim")
@@ -1105,6 +1109,7 @@ def main(argv=None, gh=run_gh):
     parser.add_argument("--status", choices=("stopped", "released"), help="with --lease-status")
     parser.add_argument("--session-dir", type=pathlib.Path,
                         help="<pr-watch home>/sessions/<session id>")
+    parser.add_argument("--session-id", help="with --discover and --find-clone")
     parser.add_argument("--repo", help="owner/name; required with --assert-author, --ci-log, --ci-rerun")
     args = parser.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
@@ -1119,7 +1124,9 @@ def main(argv=None, gh=run_gh):
         parser.error("--lease-status needs --status")
     if args.push_lock and args.push_lock[0] not in ("take", "release"):
         parser.error("--push-lock action must be take or release")
-    if args.assert_author is None and args.repo_peers is None and args.session_dir is None:
+    if (args.discover or args.find_clone) and not args.session_id:
+        parser.error("--discover and --find-clone need --session-id")
+    if args.assert_author is None and args.repo_peers is None and args.session_dir is None             and not (args.discover or args.find_clone):
         parser.error("--session-dir is required for this mode")
     try:
         return run_mode(args, gh)
@@ -1168,7 +1175,29 @@ def lease_mode(args):
     return 1
 
 
+def discover_mode(args, gh):
+    import discover
+    if args.find_clone:
+        owner, repo, _ = parse_ref(args.find_clone)
+        found = discover.clone_candidates(args.session_id, owner, repo, discover.origin_of)
+        if not found:
+            print(f"pr-watch: no local clone of {owner}/{repo} known to this session",
+                  file=sys.stderr)
+            return 1
+        print(found[0])
+        return 0
+    if discover.find_transcript(args.session_id) is None:
+        print(f"pr-watch: no transcript for session {args.session_id}", file=sys.stderr)
+        print("[]")
+        return 0
+    me = gh(["api", "user", "--jq", ".login"]).strip()
+    print(json.dumps(discover.discover(gh, args.session_id, me, discover.origin_of), indent=2))
+    return 0
+
+
 def run_mode(args, gh):
+    if args.discover or args.find_clone:
+        return discover_mode(args, gh)
     if args.assert_author is not None:
         return assert_author(gh, args.repo, args.assert_author)
     if args.repo_peers:
