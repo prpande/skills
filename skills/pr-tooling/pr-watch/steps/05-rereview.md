@@ -2,7 +2,7 @@
 
 Entered from a `head-moved` event. Never commits, pushes, checks out, or
 creates a worktree. Under `dry_run`, verdicts, replies, and resolutions go to
-`<scratchpad>/pr-watch-dry-run/<N>.md` instead of GitHub and Slack.
+`<scratchpad>/pr-watch-dry-run/<owner>-<repo>-<N>.md` instead of GitHub and Slack.
 `<key>` is the event's `pr` (`owner/repo#N`); `<owner>/<repo>` and `<N>`
 come from it. `finding_verdicts` and `rereviewed_head` live in the PR's
 progress file (`pr-watch/steps/03-route-event.md`, "State has two homes").
@@ -14,7 +14,8 @@ progress file (`pr-watch/steps/03-route-event.md`, "State has two homes").
    never findings, and are never replied to or resolved.
 2. Resolve `CLONE` as `pr-watch/steps/01-discover.md` section 3 does: the
    current directory's repo when `git remote get-url origin` names
-   `<owner>/<repo>` (compare without case), else the path printed by
+   `<owner>/<repo>` (compare without case), in which case `CLONE` is
+   `git rev-parse --show-toplevel`, else the path printed by
    `POLL --find-clone <key> --session-id <SESSION_ID>`. When that exits
    non-zero, escalate ("needs you, no comment", reason "no local clone to
    read the heads") and stop; the next `head-moved` retries. Make both

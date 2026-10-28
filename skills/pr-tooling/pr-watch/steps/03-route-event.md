@@ -8,11 +8,11 @@ check, and a note about the poller's own state file.
 
 1. Parse the notification line as JSON. A line that does not parse is
    not an event; ignore it.
-2. Re-read `watch.json`. An event names its PR in `pr` as the key
-   `owner/repo#N`; `<N>` and `<owner>/<repo>` below come from it. If that
-   PR is not in `prs`, or its entry's `status` is not `armed`, ignore the
-   event whatever its `kind`: a PR this session no longer acts on gets no
-   action. `idle` names no PR.
+2. Re-read `watch.json`. An event with a `pr` field (every kind except
+   `tick`, `reconciled`, `poller-error`, and `idle`) names its PR as the
+   key `owner/repo#N`; `<N>` and `<owner>/<repo>` below come from it. If
+   that PR is not in `prs`, or its entry's `status` is not `armed`, ignore
+   the event: a PR this session no longer acts on gets no action.
 3. Route:
 
 | `kind` | Go to |
@@ -27,15 +27,16 @@ check, and a note about the poller's own state file.
 | `lease-lost` | section E |
 | `idle` | section F |
 | `reconciled` | post "The daily check picked up work the event stream missed." in each listed `armed` PR's thread (`pr-watch/steps/06-notify.md`) |
-| `poller-error` | post "The watch poller has failed five ticks in a row: <error>. No events are handled until this is fixed." in each PR thread that has a root (`slack_ts` set), with the event's `error` (`pr-watch/steps/06-notify.md`, "poller error") |
+| `poller-error` | post "The watch poller has failed five ticks in a row: <error>. No events are handled until this is fixed." in each PR thread that has a root (`slack_ts` set in its progress file), with the event's `error` (`pr-watch/steps/06-notify.md`, "poller error") |
 
 A monitor that exits with code 3 (its claude process is gone) is never
 seen by a live session; no route handles it.
 
 State has two homes. Every field `pr-watch/references/watch-state-schema.md`
-lists under `<N>.progress.json` (`retry_after`, `settled_ids`,
+lists under `<N>.progress.json` (`slack_ts`, `retry_after`, `settled_ids`,
 `escalated_ids`, `handled_top_level_ids`, `review_fix_pushes`,
-`cap_notified_head`, and the rest) is written to the PR's progress file:
+`cap_notified_head`, and the rest) is read from and written to the PR's
+progress file:
 `<PW_HOME>/prs/<owner>/<repo>/<N>.progress.json`, or under `dry_run`
 `<SESSION_DIR>/progress/<owner>/<repo>/<N>.progress.json`. `status`,
 `push_queue`, and the other session fields are written to `watch.json`.
@@ -104,11 +105,11 @@ Write the file after every numbered action below that changes it.
      `resolveReviewThread` mutation (see `pr-watch/steps/04-fix-path.md`
      section 7), append the tail's last id to `settled_ids`, post
      nothing. Under `dry_run`, write that mutation to
-     `<scratchpad>/pr-watch-dry-run/<N>.md` instead of running it;
+     `<scratchpad>/pr-watch-dry-run/<owner>-<repo>-<N>.md` instead of running it;
    - anything else: escalate with reason "reply to our reply", add the
      tail's ids to `escalated_ids`, post nothing on GitHub.
 8. What remains is the dispatch set. Empty: stop. Otherwise go to
-   `pr-watch/steps/04-fix-path.md` with the PR number, the payload, and
+   `pr-watch/steps/04-fix-path.md` with the PR key, the payload, and
    the dispatch set.
 
 ## B. Reply on a reviewed PR
@@ -151,10 +152,13 @@ every comment after the user's last one on each thread already escalated
 ## E. Lease lost
 
 Another session claimed the PR's lease; the event's `holder` is that
-session's id, or null. Set the entry's `status` to `lost`, remove the
+session's id, or null. Name the holder as the `[Tag]Name` label of the
+`claude agents --json` entry for that session id, as
+`pr-watch/steps/01-discover.md` section 4 does for an owner, else the id
+itself, else "an unidentified session". Set the entry's `status` to `lost`, remove the
 PR's key from `push_queue`, and write `watch.json`. Post one line in the
-PR's thread naming the holder (`pr-watch/steps/06-notify.md`, "lease
-lost"). Do nothing else for this PR; the fix path, re-review and CI never
+PR's thread (when its progress file has a `slack_ts`) naming the holder
+(`pr-watch/steps/06-notify.md`, "lease lost"). Do nothing else for this PR; the fix path, re-review and CI never
 run for a `lost` entry.
 
 ## F. Idle
