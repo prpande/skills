@@ -63,8 +63,8 @@ resume:
   `released` or `closed` is dropped. An entry whose `status` is `armed`
   or `lost` stays, and §5 claims it again. An entry whose `status` is
   `stopped` stays `stopped`, with its lease untouched, unless this is a
-  bare `/pr-watch` or the invocation names it; then it becomes `armed`
-  and §5 claims it.
+  bare `/pr-watch` or the invocation names it; then §5 claims it and §7
+  sets it `armed` once the claim succeeds.
 - `push_queue`, `channel_id`, `serialize_pushes`, and `bot_allowlist`
   are kept. `session_id` stays `SESSION_ID`.
 
@@ -177,25 +177,25 @@ Write `watch.json` per `pr-watch/references/watch-state-schema.md`
   `SELF`, and `origin_worktree` `ORIGIN`;
 - `channel_id` from `--channel` or `C0C15VC8Y0Z`, `serialize_pushes`
   `false` only under `--parallel-pushes`, and `dry_run` from `--dry-run`;
-- `stopped_at` `null`: any arm clears it;
+- `stopped_at` kept as it is; §7 clears it;
 - `push_queue` kept from a resume, else `[]`;
 - `bot_allowlist` `["sonarqube-mbodevme", "mindbody-ado-pipelines", "mergewatch-playlist"]`
   (kept as is on resume);
 - `ado_orgs` `["mindbody"]`; on resume it is written that way only when
   the key is missing, and any other existing value is kept;
-- `prs`: only the entries §2 kept, each with its `status` (`armed`, or
-  `stopped` for an entry §2 left stopped). A candidate PR is added to
-  `prs` in §7, after its claim and baseline, never before: a running
-  monitor reloads `watch.json` every tick and would otherwise act on a PR
-  this session does not hold yet.
+- `prs`: only the entries §2 kept, each with its current `status`
+  unchanged. A candidate PR is added to `prs` in §7, after its claim and
+  baseline, never before, and a kept entry changes to `armed` only there,
+  after its claim: a running monitor reloads `watch.json` every tick and
+  would otherwise act on a PR this session does not hold yet.
 
 The lease needs `session_id` and `claude_pid` from this file, so write it
 before the first claim.
 
 Under `--dry-run` take no lease and go to §6.
 
-Otherwise claim each kept entry whose `status` is `armed` or `lost`, and
-each candidate, one command each:
+Otherwise claim each kept entry whose `status` is `armed` or `lost`, each
+kept `stopped` entry §2 marked for re-arming, and each candidate, one command each:
 `POLL --claim <owner/repo#N> --role <role> --session-dir <SESSION_DIR>`,
 adding `--explicit` for a PR the user named in this invocation. It prints:
 
@@ -208,9 +208,12 @@ adding `--explicit` for a PR the user named in this invocation. It prints:
 
 A non-zero exit refuses the claim. When its stderr line says "lease
 unreadable", run the same claim once more. Any other refusal, and a second
-"lease unreadable", removes a kept entry from `watch.json` or drops a
+"lease unreadable", leaves a kept entry with its old `status` or drops a
 candidate, and lists the PR among the excluded PRs in §7 with the
 command's stderr line.
+
+Wherever this step drops a candidate or removes an entry from `watch.json`,
+it also removes the PR's key from `push_queue`.
 
 ## 6. Baseline
 
@@ -266,7 +269,7 @@ and list it among the excluded PRs in §7 with the command's stderr line.
 
 ## 7. Confirm
 
-For each PR still in play (kept `armed` entries and candidates) run
+For each PR still in play (kept entries being armed, and candidates) run
 `POLL --tails <owner/repo#N>` (authored) or
 `POLL --findings <owner/repo#N>` (reviewed), both with
 `--session-dir <SESSION_DIR>`. Show one table:
@@ -291,11 +294,15 @@ remove a kept entry from `watch.json`, and release its lease with
 §5's claim, and §6, dropping it again and listing it among the excluded
 PRs with the command's stderr line when its baseline fails. Ask again.
 
-Once the set is accepted, add each remaining candidate to `prs` in
-`watch.json` with `role`, `worktree` (authored only), `branch`, `title`,
-`url`, and `status` `armed`, and rewrite the file. When no entry of `prs`
-is `armed` after that, there is nothing to watch: tell the user which PRs
-were excluded, delete `watch.json` if this run created it, and stop.
+Once the set is accepted, set `status` `armed` on each kept entry whose
+claim succeeded (every one under `--dry-run`), add each remaining
+candidate to `prs` in `watch.json` with `role`, `worktree` (authored
+only), `branch`, `title`, `url`, and `status` `armed`, and rewrite the
+file. When at least one entry of `prs` is `armed`, also set `stopped_at`
+to `null`; otherwise the watch stays as it was, so auto-join stays off.
+When no entry of `prs` is `armed`, there is nothing to watch: tell the user
+which PRs were excluded, delete `watch.json` if this run created it, and
+stop.
 
 ## 8. Initialise the library state for authored PRs
 
