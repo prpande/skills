@@ -107,7 +107,8 @@ to equal `sessionId` from `claude agents --json`). `--resume` keeps it.
 (`prs/mindbody/mindbody.clients/14.json`, `mindbody/mindbody.clients#14`).
 GitHub names ignore case; without this, a ref typed by hand and one read
 from a remote could yield two lease files for one PR. The lease's
-`owner`/`repo` fields keep GitHub's casing for display.
+`owner`/`repo` fields hold the same lowercased names; readers compare
+them case-insensitively, and the PR URL carries the display casing.
 
 The library files stay where they are:
 `<worktree>/.pr-autopilot/pr-<N>.json`, `.lock`, `.log`, shared with
