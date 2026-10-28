@@ -339,21 +339,10 @@ and `watch-poller.json`. PRs in the old file that are not in the new set
 are migrated too when this session owns the old watch, so none is left
 unwatched.
 
-### Old-format watches found mid-session
-
-The skill is installed as a junction to the main checkout, so a session
-running an old watch reads the new step files on its next event while
-its poller still runs the old `poll.py`. (None was running when this was
-written.) Two guards route that session into the migration above instead
-of letting the watch fail:
-
-- Step 03: an event whose `pr` has no `/` came from an old poller. Drop
-  it and run step 01 with `--yes` and the old watch's PRs as explicit
-  refs. The new monitor's first tick is a full reconciliation, so the
-  dropped event comes back.
-- Step 02 "stream ended": when this session has no session directory
-  but its repo holds an old `watch.json`, do the same instead of
-  re-arming.
+No old-format watch is running (praty, 28 Oct 2026), so the steps carry
+no guard for a session whose old poller is still running when the new
+step files land. Re-arming is the only migration path. Before merging,
+check that no old-format watch is running.
 
 ## ✏️ Editing files in another repo
 
@@ -481,7 +470,6 @@ praty stopped, nothing happens.
   (measured: the worktree lock covers only the launch repo's checkout).
 - Push serialisation spans sessions within a repo (read from leases).
 - `owner`/`repo` are lowercased in every path and key.
-- Old-format watches found mid-session are migrated from steps 02 and 03.
 - Progress lives in `<N>.progress.json` beside the lease, not inside it,
   so the lease keeps a single writer (`poll.py`) and the progress file a
   single writer (the holder session).
