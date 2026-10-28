@@ -142,7 +142,7 @@ keys in the old `<MAIN>/.pr-autopilot/watch.json`. Act on `state`:
   `--end-leftover-monitors` does not cover it, because the old poller
   was started with `--state-dir`.
 - `foreign`: another session owns it. Run `claude agents --json` and find
-  the entry whose `pid` is `owner_pid`; its label is `[Tag]Name`. When the
+  the entry whose `pid` is `owner_pid`; its `name` is the `[Tag]Name` label. When the
   command fails, lists no match, or `owner_pid` is null, the label is "the
   session running claude pid <owner_pid>" ("an unidentified session" for
   null). Exclude every candidate PR whose key is in `prs` with

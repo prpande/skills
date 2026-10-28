@@ -152,9 +152,8 @@ every comment after the user's last one on each thread already escalated
 ## E. Lease lost
 
 Another session claimed the PR's lease; the event's `holder` is that
-session's id, or null. Name the holder as the `[Tag]Name` label of the
-`claude agents --json` entry for that session id, as
-`pr-watch/steps/01-discover.md` section 4 does for an owner, else the id
+session's id, or null. Name the holder by the `name` (`[Tag]Name`) of the
+`claude agents --json` entry whose `sessionId` is that id, else the id
 itself, else "an unidentified session". Set the entry's `status` to `lost`, remove the
 PR's key from `push_queue`, and write `watch.json`. Post one line in the
 PR's thread (when its progress file has a `slack_ts`) naming the holder
