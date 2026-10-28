@@ -3,7 +3,7 @@ import json
 import pathlib
 import sys
 
-from poll import write_json_atomic
+from pw_io import write_json_atomic
 
 USAGE = "usage: state_put.py <source.json> <destination.json>\n"
 

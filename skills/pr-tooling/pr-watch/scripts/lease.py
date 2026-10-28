@@ -6,7 +6,7 @@ import os
 import subprocess
 import time
 
-from pw_io import read_json, write_json_atomic
+from pw_io import no_window, read_json, write_json_atomic
 from pw_paths import (claim_lock_path, home, iso_utc, lease_path, parse_iso, pr_dir,
                       progress_path, push_lock_path)
 
@@ -15,7 +15,6 @@ CLAIM_LOCK_STALE_SECONDS = 60
 PUSH_LOCK_STALE_SECONDS = 300
 CLOSED_RETENTION_SECONDS = 7 * 24 * 3600
 START_TIME_TOLERANCE_SECONDS = 2
-NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 FILETIME_UNIX_EPOCH = 116444736000000000
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 STILL_ACTIVE = 259
@@ -68,7 +67,7 @@ def holder_alive(holder: dict, started_at=process_started_at) -> bool:
 def list_agents() -> list:
     try:
         done = subprocess.run(["claude", "agents", "--json"], capture_output=True, text=True,
-                              encoding="utf-8", timeout=20, creationflags=NO_WINDOW)
+                              encoding="utf-8", timeout=20, creationflags=no_window())
         if done.returncode != 0:
             return []
         agents = json.loads(done.stdout)

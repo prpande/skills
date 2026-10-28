@@ -7,18 +7,14 @@ import pathlib
 import re
 import subprocess
 
-from pw_io import read_json, write_json_atomic
+from lease import STALE_AFTER_SECONDS
+from pw_io import no_window, read_json, write_json_atomic
 from pw_paths import parse_ref, pr_key, progress_path
 
-STALE_AFTER_SECONDS = 300
 CLAUDE_IMAGE = re.compile(r"^claude\.exe", re.IGNORECASE)
 MONITOR_FLAG = re.compile(r"(?:^|\s)--monitor(?:\s|$)")
 LIST_COMMAND = ("[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-CimInstance Win32_Process | Select ProcessId,ParentProcessId,Name,CommandLine"
                 " | ConvertTo-Json -Compress")
-
-
-def _no_window():
-    return getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 
 def list_processes() -> list[dict]:
@@ -27,7 +23,7 @@ def list_processes() -> list[dict]:
     try:
         done = subprocess.run(["powershell", "-NoProfile", "-Command", LIST_COMMAND],
                               capture_output=True, text=True, encoding="utf-8", timeout=60,
-                              creationflags=_no_window())
+                              creationflags=no_window())
         if done.returncode != 0:
             raise OSError(done.stderr.strip() or f"powershell exited {done.returncode}")
         rows = json.loads(done.stdout)
@@ -112,7 +108,7 @@ def scan(main, claude_pid, procs, now) -> dict:
     return result
 
 
-def import_progress(main, session_dir) -> list[str]:
+def import_progress(main) -> list[str]:
     import poll
 
     state_dir = pathlib.Path(main) / ".pr-autopilot"
@@ -136,7 +132,7 @@ def import_progress(main, session_dir) -> list[str]:
     return covered
 
 
-def identity_ok(claude_pid, my_pid, procs, env) -> str | None:
+def identity_ok(claude_pid, my_pid, procs) -> str | None:
     if not claude_pid:
         return "CLAUDE_PID is not set"
     nearest = claude_ancestor(my_pid, procs)
@@ -162,4 +158,4 @@ def monitor_alive(session_dir, claude_pid, procs) -> bool:
 
 def end_tree(pid: int) -> None:
     subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True,
-                   creationflags=_no_window())
+                   creationflags=no_window())

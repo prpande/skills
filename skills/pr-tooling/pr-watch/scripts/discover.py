@@ -9,8 +9,7 @@ import subprocess
 import sys
 
 import lease
-import poll
-from pw_io import read_json
+from pw_io import GhError, no_window, read_json
 from pw_paths import NAME, parse_ref, pr_key, session_dir
 
 ORIGIN_CACHE: dict[str, str | None] = {}
@@ -70,7 +69,7 @@ def parse_origin(url):
 def git_output(args):
     try:
         out = subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8",
-                             timeout=20, creationflags=poll.no_window())
+                             timeout=20, creationflags=no_window())
     except (OSError, subprocess.TimeoutExpired):
         return None
     return out.stdout.strip() if out.returncode == 0 else None
@@ -264,7 +263,7 @@ def self_authored_open(pr, self_login):
 def gh_json(gh, args):
     try:
         return json.loads(gh(args))
-    except poll.GhError as exc:
+    except GhError as exc:
         print(f"pr-watch: {exc}", file=sys.stderr)
         return None
 

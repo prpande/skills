@@ -25,8 +25,8 @@ if __name__ == "__main__":
     sys.modules.setdefault("poll", sys.modules[__name__])
 
 import lease
-from pw_io import read_json, write_json_atomic  # noqa: F401
-from pw_paths import NAME, iso_utc, parse_ref, pr_key, progress_path  # noqa: F401
+from pw_io import GhError, as_pid, no_window, read_json, write_json_atomic
+from pw_paths import NAME, iso_utc, parse_ref, pr_key, progress_path
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 TICK_SECONDS = 60
@@ -74,12 +74,6 @@ EARLIER_QUERY = {
             + field + "(last: 100, before: $before) { pageInfo { hasPreviousPage startCursor } "
             "nodes { " + fields + " } } } } }")
     for field, fields in (("comments", COMMENT_FIELDS), ("reviews", REVIEW_FIELDS))}
-
-
-class GhError(RuntimeError):
-    def __init__(self, message, stdout=None):
-        super().__init__(message)
-        self.stdout = stdout
 
 
 def classify(author, self_login, allowlist):
@@ -199,10 +193,6 @@ def tails_payload(pr, watch_pr, self_login, allowlist):
         "threads": out,
         "top_level": [comment_record(i, s, self_login, allowlist) for s, i in top],
     }
-
-
-def no_window():
-    return getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 
 def entry_key(entry):
@@ -625,7 +615,7 @@ def claude_identity(session_dir):
         recorded = read_json(session_dir / "watch.json", default={}).get("claude_pid")
     except (OSError, ValueError):
         recorded = None
-    return int(recorded) if recorded else None
+    return as_pid(recorded)
 
 
 def lease_head(owner, repo, number):
@@ -1183,10 +1173,7 @@ def lease_mode(args):
         print(f"pr-watch: {pr_key(owner, repo, number)} is not held by this session",
               file=sys.stderr)
         return 1
-    try:
-        pid = int(watch.get("claude_pid") or 0) or None
-    except (TypeError, ValueError):
-        pid = None
+    pid = as_pid(watch.get("claude_pid"))
     started = lease.process_started_at(pid) if pid else None
     holder = {"session_id": session_id, "pid": pid,
               "pid_started_at": iso_utc(started) if started is not None else None,
@@ -1224,11 +1211,9 @@ def discover_mode(args, gh):
 
 def migrate_mode(args):
     import migrate
-    claude_pid = int(os.environ.get("CLAUDE_PID") or 0) or None
-    procs = migrate.list_processes()
-    now = time.time()
+    claude_pid = as_pid(os.environ.get("CLAUDE_PID"))
     if args.check_identity:
-        reason = migrate.identity_ok(claude_pid, os.getpid(), procs, os.environ)
+        reason = migrate.identity_ok(claude_pid, os.getpid(), migrate.list_processes())
         if reason:
             print(f"pr-watch: {reason}", file=sys.stderr)
             return 1
@@ -1236,10 +1221,12 @@ def migrate_mode(args):
     if not claude_pid:
         print("pr-watch: CLAUDE_PID is not set", file=sys.stderr)
         return 1
+    if args.migrate_import:
+        print(json.dumps(migrate.import_progress(args.migrate_import)))
+        return 0
+    procs = migrate.list_processes()
     if args.migrate_scan:
-        print(json.dumps(migrate.scan(args.migrate_scan, claude_pid, procs, now)))
-    elif args.migrate_import:
-        print(json.dumps(migrate.import_progress(args.migrate_import, args.session_dir)))
+        print(json.dumps(migrate.scan(args.migrate_scan, claude_pid, procs, time.time())))
     elif args.end_leftover_monitors:
         pids = migrate.leftover_monitors(args.session_dir, claude_pid, procs)
         for pid in pids:

@@ -150,7 +150,7 @@ class ImportTests(WatchDirCase):
                                  "title": "not progress"}})
         self.write_heartbeat(5)
         (self.state / "watch-poller.json").write_text("{}", encoding="utf-8")
-        keys = migrate.import_progress(self.main, self.home / "sessions" / "s")
+        keys = migrate.import_progress(self.main)
         self.assertEqual(["acme/widgets#12"], keys)
         written = json.loads(pw_paths.progress_path("acme", "widgets", 12).read_text(encoding="utf-8"))
         self.assertEqual(["s1"], written["settled_ids"])
@@ -167,7 +167,7 @@ class ImportTests(WatchDirCase):
         existing = pw_paths.progress_path("acme", "widgets", 12)
         existing.parent.mkdir(parents=True)
         existing.write_text('{"settled_ids": ["new"]}', encoding="utf-8")
-        keys = migrate.import_progress(self.main, self.home)
+        keys = migrate.import_progress(self.main)
         self.assertEqual(["acme/widgets#12", "acme/widgets#13"], keys)
         self.assertEqual(["new"], json.loads(existing.read_text(encoding="utf-8"))["settled_ids"])
 
@@ -176,7 +176,7 @@ class ImportTests(WatchDirCase):
         self.write_heartbeat(5)
         (self.state / "watch-poller.json").write_text("{}", encoding="utf-8")
         (self.state / "watch.json").replace(self.state / "watch.json.migrated")
-        self.assertEqual([], migrate.import_progress(self.main, self.home))
+        self.assertEqual([], migrate.import_progress(self.main))
         self.assertFalse((self.state / "watch-heartbeat").exists())
         self.assertFalse((self.state / "watch-poller.json").exists())
 
@@ -185,7 +185,7 @@ class ImportTests(WatchDirCase):
         existing = pw_paths.progress_path("acme", "widgets", 12)
         existing.parent.mkdir(parents=True)
         existing.write_text('{"settled_ids": ["new"]}', encoding="utf-8")
-        keys = migrate.import_progress(self.main, self.home)
+        keys = migrate.import_progress(self.main)
         self.assertEqual(["acme/widgets#12", "acme/widgets#13"], keys)
         self.assertEqual(["new"], json.loads(existing.read_text(encoding="utf-8"))["settled_ids"])
         self.assertTrue((self.state / "watch.json.migrated").exists())
@@ -195,7 +195,7 @@ class ImportTests(WatchDirCase):
         self.write_heartbeat(5)
         with mock.patch.object(migrate, "write_json_atomic", side_effect=OSError("disk")):
             with self.assertRaises(OSError):
-                migrate.import_progress(self.main, self.home)
+                migrate.import_progress(self.main)
         self.assertTrue((self.state / "watch.json").exists())
         self.assertTrue((self.state / "watch-heartbeat").exists())
 
@@ -203,21 +203,17 @@ class ImportTests(WatchDirCase):
 class IdentityTests(unittest.TestCase):
     def test_ok_when_claude_is_the_nearest_ancestor(self):
         procs = tree(4242, "claude.exe", "x")
-        self.assertIsNone(migrate.identity_ok(4242, 300, procs, {}))
-
-    def test_child_session_env_is_ignored(self):
-        procs = tree(4242, "claude.exe", "x")
-        self.assertIsNone(migrate.identity_ok(4242, 300, procs, {"CLAUDE_CODE_CHILD_SESSION": "1"}))
+        self.assertIsNone(migrate.identity_ok(4242, 300, procs))
 
     def test_refuses_when_nearest_claude_is_another_pid(self):
         procs = [proc(5000, 1, "claude.exe"), proc(4242, 5000, "claude.exe"),
                  proc(200, 4242, "bash.exe"), proc(300, 200, "python.exe")]
-        reason = migrate.identity_ok(5000, 300, procs, {})
+        reason = migrate.identity_ok(5000, 300, procs)
         self.assertIn("5000", reason)
         self.assertIn("4242", reason)
 
     def test_refuses_a_missing_claude_pid(self):
-        self.assertIsNotNone(migrate.identity_ok(None, 300, tree(4242, "claude.exe", "x"), {}))
+        self.assertIsNotNone(migrate.identity_ok(None, 300, tree(4242, "claude.exe", "x")))
 
     def test_cyclic_chain_terminates_at_the_nearest_claude(self):
         procs = [proc(900, 800, "python.exe"), proc(800, 700, "pwsh.exe"),
@@ -225,7 +221,7 @@ class IdentityTests(unittest.TestCase):
                  proc(3124, 600, "python.exe"), proc(600, 500, "WindowsTerminal.exe"),
                  proc(500, 400, "conhost.exe"), proc(400, 17736, "cmd.exe")]
         self.assertEqual(17736, migrate.claude_ancestor(900, procs))
-        self.assertIsNone(migrate.identity_ok(17736, 900, procs, {}))
+        self.assertIsNone(migrate.identity_ok(17736, 900, procs))
         self.assertIsNone(migrate.claude_ancestor(3124, [p for p in procs if p["pid"] != 17736]))
 
 

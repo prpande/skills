@@ -1,9 +1,27 @@
-"""JSON file helpers shared by the pr-watch scripts."""
+"""File, process and gh helpers shared by the pr-watch scripts."""
 from __future__ import annotations
 
 import json
 import os
+import subprocess
 import time
+
+
+class GhError(RuntimeError):
+    def __init__(self, message, stdout=None):
+        super().__init__(message)
+        self.stdout = stdout
+
+
+def no_window():
+    return getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+
+
+def as_pid(value) -> int | None:
+    try:
+        return int(value or 0) or None
+    except (TypeError, ValueError):
+        return None
 
 
 def read_json(path, default=None):
