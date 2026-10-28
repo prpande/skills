@@ -191,31 +191,39 @@ Status meanings for a reader:
 - `stopped`: praty ran `/pr-watch stop`. The holder keeps the lease; the
   orchestrator does not re-arm it and lists it as stopped-but-open.
 - `released`: nobody is acting; anyone may claim it.
-- `closed`: the PR merged or closed. Final. Files older than 7 days are
+- `closed`: the PR merged or closed. Nobody acts on it; a session may
+  claim it again if the PR is reopened. Files older than 7 days are
   pruned by any monitor's daily reconciliation.
 
 A missing or unparseable lease file means nobody holds the PR.
 
 **Writers.** Only `poll.py` writes a lease, always atomically
 (`write_json_atomic`: temp file in the same directory, replace with
-Windows retry). Two kinds of write, which never overlap for one PR:
+Windows retry). Every lease write holds `<N>.claim.lock` (exclusive
+create; a lock older than 60 s is stale and removed) for its
+read-check-write, so a status change or a takeover never lands between
+a tick's read and its write. Four writers take that lock:
 
 - **Claim and final status** (`POLL --claim`, `POLL --lease-status`):
   run by step 01 before the monitor starts, by `stop` after the monitor
-  is stopped, and by `release` after it updates `watch.json`. Every
-  lease write, a tick's included, holds `<N>.claim.lock` (exclusive
-  create; a lock older than 60 s is stale and removed) for its
-  read-check-write, so a status change or a takeover never lands between
-  a tick's read and its write. A tick that finds the lock held skips that
-  PR until the next tick; a status change waits up to 5 s for it, then
-  fails.
+  is stopped, and by `release` after it updates `watch.json`. Each waits
+  up to 65 s for the lock, longer than the stale window, so a lock left
+  by a writer that died is broken inside the wait. A claim that still
+  finds it held prints `busy: another claim in progress`; a status
+  change exits non-zero. `stop` and `release` retry a failed status
+  change once and, if it fails again, tell the user the lease still
+  reads `armed`: once the monitor is gone its heartbeat goes stale and
+  the orchestrator would nudge the session to re-arm the PR.
 - **Ticks** (`POLL --monitor`): rewrites the lease of every `armed` PR in
   the session's `prs` on each tick: heartbeat, `last_head_sha`,
   `pending_since`, `last_error`. Each write first re-reads the lease and
   writes only when `holder.session_id` is still this session and the
   status is still `armed`. A tick never moves a lease out of `stopped`,
   `released` or `closed`; only a claim does. A PR that closes gets
-  `status: closed`.
+  `status: closed`. A tick that finds the lock held waits 0.1 s, then
+  skips that PR until the next tick.
+- **Prune** (the daily reconciliation): deletes a `closed` lease older
+  than 7 days, skipping it until the next run when the lock is held.
 - **Lost lease.** When the re-read shows another session holds the PR,
   the monitor writes nothing for it, emits `{"kind":"lease-lost","pr":
   ...,"holder":...}` once, and drops it from its ticks. Step 03 marks the

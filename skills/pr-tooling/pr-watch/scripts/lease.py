@@ -20,8 +20,9 @@ PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 STILL_ACTIVE = 259
 READ_ATTEMPTS = 3
 READ_RETRY_SECONDS = 0.05
-TICK_LOCK_ATTEMPTS = 3
-STATUS_LOCK_ATTEMPTS = 100
+TICK_LOCK_WAIT_SECONDS = 0.1
+# Outlasts the stale window, so a lock left by a dead holder is broken inside the wait.
+CLAIM_LOCK_WAIT_SECONDS = CLAIM_LOCK_STALE_SECONDS + 5
 
 
 def process_started_at(pid: int) -> float | None:
@@ -168,8 +169,8 @@ def _take_lock(path, now: float, stale_seconds: float = CLAIM_LOCK_STALE_SECONDS
 
 def claim(owner, repo, n, *, role, holder, explicit, now, started_at=process_started_at,
           agents=list_agents) -> tuple[bool, str]:
-    lock = claim_lock_path(owner, repo, n)
-    if not _take_lock(lock, now):
+    lock = _hold_lock(owner, repo, n, now, CLAIM_LOCK_WAIT_SECONDS)
+    if lock is None:
         return False, "busy: another claim in progress"
     try:
         try:
@@ -232,18 +233,20 @@ def _held_by(owner, repo, n, session_id) -> dict | None:
     return data
 
 
-def _hold_lock(owner, repo, n, now, attempts):
+def _hold_lock(owner, repo, n, now, wait_seconds):
     lock = claim_lock_path(owner, repo, n)
-    for attempt in range(attempts):
-        if _take_lock(lock, now):
+    started = time.monotonic()
+    while True:
+        elapsed = time.monotonic() - started
+        if _take_lock(lock, now + elapsed):
             return lock
-        if attempt < attempts - 1:
-            time.sleep(READ_RETRY_SECONDS)
-    return None
+        if elapsed >= wait_seconds:
+            return None
+        time.sleep(READ_RETRY_SECONDS)
 
 
 def set_status(owner, repo, n, status, session_id, now) -> bool:
-    lock = _hold_lock(owner, repo, n, now, STATUS_LOCK_ATTEMPTS)
+    lock = _hold_lock(owner, repo, n, now, CLAIM_LOCK_WAIT_SECONDS)
     if lock is None:
         raise TimeoutError(f"the lease for {pr_key(owner, repo, n)} stayed locked")
     try:
@@ -259,7 +262,7 @@ def set_status(owner, repo, n, status, session_id, now) -> bool:
 
 def tick_write(owner, repo, n, *, session_id, now, head, pending_since, last_error, poller_pid,
                status="armed") -> str:
-    lock = _hold_lock(owner, repo, n, now, TICK_LOCK_ATTEMPTS)
+    lock = _hold_lock(owner, repo, n, now, TICK_LOCK_WAIT_SECONDS)
     if lock is None:
         return "busy"
     try:
@@ -316,7 +319,7 @@ def _expired(owner, repo, n, now) -> bool:
 def _prune_one(owner, repo, n, now) -> bool:
     if not _expired(owner, repo, n, now):
         return False
-    lock = _hold_lock(owner, repo, n, now, TICK_LOCK_ATTEMPTS)
+    lock = _hold_lock(owner, repo, n, now, TICK_LOCK_WAIT_SECONDS)
     if lock is None:
         return False
     try:
