@@ -324,6 +324,14 @@ class CloneTests(unittest.TestCase):
                                           toplevel_of=self.top)
         self.assertEqual(found, ["D:/a", "D:/c"])
 
+    def test_a_git_dash_c_path_counts_as_a_clone_the_session_used(self):
+        t = Transcript().call('git -C "D:/c" status', cwd="D:/b")
+        t.call("git -C D:/a/sub log -1 && git status", cwd="D:/b")
+        write_transcript(self.tmp.name, "dash", t)
+        found = discover.clone_candidates("dash", "o", "r", origin_of, projects=self.tmp.name,
+                                          toplevel_of=self.top)
+        self.assertEqual(found, ["D:/a", "D:/c"])
+
     def test_no_transcript_or_no_match(self):
         self.assertEqual(discover.clone_candidates("nope", "o", "r", origin_of,
                                                    projects=self.tmp.name), [])

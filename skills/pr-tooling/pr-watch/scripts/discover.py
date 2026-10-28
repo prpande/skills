@@ -258,14 +258,28 @@ def discover(gh, session_id, self_login, origin_of, projects=None):
     return list(prs.values())
 
 
+def dash_c_paths(record):
+    content = (record.get("message") or {}).get("content")
+    paths = []
+    for item in content if isinstance(content, list) else []:
+        if (isinstance(item, dict) and item.get("type") == "tool_use"
+                and item.get("name") in ("Bash", "PowerShell")):
+            for segment in split_segments((item.get("input") or {}).get("command") or ""):
+                tokens = TOKEN.findall(segment)
+                if tokens[:2] == ["git", "-C"] and len(tokens) > 2:
+                    paths.append(tokens[2].strip("\"'"))
+    return paths
+
+
 def clone_candidates(session_id, owner, repo, origin_of, projects=None, toplevel_of=None):
     toplevel_of = toplevel_of or repo_toplevel
     path = find_transcript(session_id, projects)
     if path is None:
         return []
     wanted = f"{owner}/{repo}".lower()
-    newest_first = dict.fromkeys(r["cwd"] for r in reversed(list(read_records(path)))
-                                 if r.get("cwd"))
+    newest_first = dict.fromkeys(
+        p for r in reversed(list(read_records(path)))
+        for p in [*reversed(dash_c_paths(r)), r.get("cwd")] if p)
     found = []
     for cwd in newest_first:
         top = toplevel_of(cwd) if origin_of(cwd) == wanted else None

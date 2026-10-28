@@ -305,8 +305,9 @@ search.
 
 An `authored` PR needs a worktree. For a PR whose head branch already has
 a worktree, that path is used. Otherwise the clone is resolved in order:
-the current directory's repo when its `origin` matches; a `cwd` from this
-session's transcript inside a clone whose `origin` matches. A PR with no
+the current directory's repo when its `origin` matches; a `cwd`, or a
+`git -C <path>` in a Bash or PowerShell call, from this session's
+transcript inside a clone whose `origin` matches. A PR with no
 known clone is excluded with "no local clone of owner/repo known to this
 session". No filesystem-wide search.
 
