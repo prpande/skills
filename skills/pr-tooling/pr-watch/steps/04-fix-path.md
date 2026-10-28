@@ -257,7 +257,12 @@ No returns in section 5: go to section 7, then section 9.
    again, and push once more the same way. Release the push lock
    before the re-verify, and run step 1 again after it, before the
    second push; a queue there ends in section 9 with the merge
-   committed locally and `queued_head` set to the new `HEAD`. Never
+   committed locally and `queued_head` set to the new `HEAD`. Inside
+   the drain that rescan follows drain step 1's rules instead: the hour
+   rule applies and nothing is posted, and a stop there releases the
+   lock, sets `queued_head` to the new `HEAD`, leaves `queued_at`
+   unchanged, and ends in section 9 with `N` still queued, running
+   neither drain step 4 nor step 5. Never
    force. A conflict
    (after `git -C <worktree> merge --abort`), a 04.5 failure, a guard refusal, or a
    second rejection: escalate ("needs you, no comment", with the
@@ -340,9 +345,9 @@ to section 9.
 On a `tick` event, first drop from `push_queue` every key whose entry in
 `watch.json` `prs` is not `armed`, and write `watch.json` when any was
 dropped. Then take the first remaining key; `<owner>/<repo>` and `N` come
-from it. When step 1 stops it, take the next key whose repo is not one
-already stopped in this drain and start again at step 1 (first in line
-within a repo); when none is left, the tick ends. At most one PR is
+from it. When step 1 stops it, or step 3.3 returns, take the next key
+whose repo is not one already stopped in this drain and start again at
+step 1 (first in line within a repo); when none is left, the tick ends. At most one PR is
 drained per `tick`:
 
 1. The pending-check scan of section 6 step 1 as that step defines it
@@ -354,8 +359,9 @@ drained per `tick`:
    "stopped waiting" line (`pr-watch/steps/06-notify.md`; its "stopped
    waiting (busy)" row for `busy`), set
    `wait_notice_at` to `queued_at`, and write the progress file; then
-   continue with step 2. A stop here and a PR lock held by another
-   session (step 3.3) are the only exits that leave `N` in `push_queue`;
+   continue with step 2. A stop here, a PR lock held by another
+   session (step 3.3), and a stop in section 6.3's rescan are the only
+   exits that leave `N` in `push_queue`;
    every other exit below, whatever section it happens in, ends at
    step 5.
 2. Read the live head:
@@ -389,8 +395,8 @@ drained per `tick`:
 
    Inside the drain, any exit that section 1, 6.3, 6, 7, or 10 would
    send to section 9 comes back here: skip the rest of step 3, run steps
-   4 and 5, then section 9. After step 3.6, likewise steps 4 and 5, then
-   section 9.
+   4 and 5, then section 9, except the section 6.3 rescan stop above.
+   After step 3.6, likewise steps 4 and 5, then section 9.
 4. In the entries below, `<check>` is the entry's `name`, or its `link`
    when it has no `name`. When step 3 pushed, `<head>` is stale: treat
    every entry as replaced. Otherwise, for each entry in the PR's
@@ -414,8 +420,8 @@ drained per `tick`:
       or a second push rejection was not resolved): escalate ("needs you,
       no comment", reason "queued fix <sha7> could not be pushed",
       `<sha7>` from `queued_head`).
-   2. Always, except after step 3.3's lock-held return, where `N` stays
-      queued. Whether step 3 pushed, escalated, or did not run: remove
+   2. Always, except after step 3.3's lock-held return and section 6.3's
+      rescan stop, where `N` stays queued. Whether step 3 pushed, escalated, or did not run: remove
       `N`'s key from `push_queue`, set `queued_head`, `queued_at`, and
       `wait_notice_at` to null, write the progress file and `watch.json`,
       and release the push lock when this drain still holds it.
