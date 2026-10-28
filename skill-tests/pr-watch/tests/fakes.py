@@ -10,6 +10,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import poll  # noqa: E402
+import pw_paths  # noqa: E402,F401
 
 SELF = "prpande"
 ALLOW = ["sonarqube-mbodevme", "mindbody-ado-pipelines", "mergewatch-playlist"]
