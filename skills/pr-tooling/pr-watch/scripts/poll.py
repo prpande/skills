@@ -21,6 +21,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+if __name__ == "__main__":
+    sys.modules.setdefault("poll", sys.modules[__name__])
+
 import lease
 from pw_io import read_json, write_json_atomic  # noqa: F401
 from pw_paths import NAME, iso_utc, parse_ref, pr_key, progress_path  # noqa: F401
@@ -1126,7 +1129,8 @@ def main(argv=None, gh=run_gh):
         parser.error("--push-lock action must be take or release")
     if (args.discover or args.find_clone) and not args.session_id:
         parser.error("--discover and --find-clone need --session-id")
-    if args.assert_author is None and args.repo_peers is None and args.session_dir is None             and not (args.discover or args.find_clone):
+    if (args.assert_author is None and args.repo_peers is None and args.session_dir is None
+            and not (args.discover or args.find_clone)):
         parser.error("--session-dir is required for this mode")
     try:
         return run_mode(args, gh)

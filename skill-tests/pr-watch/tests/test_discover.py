@@ -3,6 +3,8 @@ import io
 import json
 import os
 import pathlib
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -23,7 +25,8 @@ class Transcript:
         self.records = []
         self.n = 0
 
-    def call(self, command, cwd="D:/a", branch="feat-1", name="Bash", output=None):
+    def call(self, command, cwd="D:/a", branch="feat-1", name="Bash", output=None,
+             shape="string"):
         self.n += 1
         tid = f"t{self.n}"
         self.records.append({
@@ -31,7 +34,12 @@ class Transcript:
             "message": {"content": [{"type": "tool_use", "id": tid, "name": name,
                                      "input": {"command": command}}]}})
         if output is not None:
-            content = output if self.n % 2 else [{"type": "text", "text": output}]
+            content = {
+                "string": output,
+                "text-list": [{"type": "text", "text": output}],
+                "tool-reference": [{"type": "tool_reference", "tool_name": "Other"},
+                                   {"type": "text", "text": output}],
+            }[shape]
             self.records.append({
                 "type": "user", "cwd": cwd, "gitBranch": branch,
                 "message": {"content": [{"type": "tool_result", "tool_use_id": tid,
@@ -67,20 +75,78 @@ class EvidenceTests(unittest.TestCase):
         ev = kinds(Transcript().call("git push", branch="main", output=out))
         self.assertEqual(ev["branches"][("o", "r", "feat-3")], ["push-output"])
 
-    def test_push_output_with_different_names_does_not_match(self):
-        out = "   1a2b3c4..5d6e7f8  feat-3 -> other\n"
-        ev = kinds(Transcript().call("echo", output=out))
-        self.assertEqual(ev["branches"], {})
+    def push(self, line):
+        ev = kinds(Transcript().call("git push", branch="main", output=line + "\n"))
+        return ev["branches"].get(("o", "r", "feat-3"))
+
+    def test_push_output_forms(self):
+        self.assertEqual(self.push("   1a2b3c4..5d6e7f8  feat-3 -> feat-3"), ["push-output"])
+        self.assertEqual(self.push(" + 1a2b3c4...5d6e7f8 feat-3 -> feat-3 (forced update)"),
+                         ["push-output"])
+        self.assertEqual(self.push(" * [new branch]      feat-3 -> feat-3"), ["push-output"])
+
+    def test_push_output_with_different_sides_does_not_match(self):
+        for line in ("   1a2b3c4..5d6e7f8  feat-3 -> origin/feat-3",
+                     " + 1a2b3c4...5d6e7f8 feat-3 -> origin/feat-3 (forced update)",
+                     " * [new branch]      feat-3 -> origin/feat-3"):
+            ev = kinds(Transcript().call("git push", branch="main", output=line))
+            self.assertNotIn(("o", "r", "feat-3"), ev["branches"], line)
+
+    def test_push_shaped_line_from_a_non_push_command_is_not_evidence(self):
+        line = "   1a2b3c4..5d6e7f8  feat-8 -> feat-8\n"
+        for command in ("cat notes.md", "git fetch origin feat-8:feat-8",
+                        "git push --dry-run origin feat-8", "git -C D:/a pull"):
+            ev = kinds(Transcript().call(command, branch="main", output=line))
+            self.assertNotIn(("o", "r", "feat-8"), ev["branches"], command)
+
+    def test_fast_forward_fetch_is_not_evidence(self):
+        line = " + 1a2b3c4...5d6e7f8 feat-8 -> feat-8 (forced update)\n"
+        ev = kinds(Transcript().call("git fetch -f origin feat-8:feat-8", output=line))
+        self.assertNotIn(("o", "r", "feat-8"), ev["branches"])
+
+    def test_push_output_repo_follows_the_pushes_dash_c(self):
+        line = "   1a2b3c4..5d6e7f8  feat-3 -> feat-3\n"
+        ev = kinds(Transcript().call("git -C D:/a push", cwd="D:/b", branch="main", output=line))
+        self.assertIn(("o", "r", "feat-3"), ev["branches"])
+
+    def test_dash_c_of_another_command_is_not_the_repo(self):
+        line = "   1a2b3c4..5d6e7f8  feat-3 -> feat-3\n"
+        ev = kinds(Transcript().call("grep -C 3 foo; git push", branch="main", output=line))
+        self.assertIn(("o", "r", "feat-3"), ev["branches"])
 
     def test_pr_create_result_adopts_url(self):
         url = "https://github.com/o/r/pull/7"
         ev = kinds(Transcript().call("gh pr create --fill", output=url + "\n"))
         self.assertEqual(ev["urls"], {url: ["pr-create"]})
 
-    def test_pr_create_result_in_text_list_form(self):
+    def test_pr_create_result_in_every_content_shape(self):
         url = "https://github.com/o/r/pull/8"
-        t = Transcript().call("x", output="").call("gh pr create", output=url)
-        self.assertEqual(kinds(t)["urls"], {url: ["pr-create"]})
+        for shape in ("string", "text-list", "tool-reference"):
+            t = Transcript().call("gh pr create", output=url, shape=shape)
+            self.assertEqual(kinds(t)["urls"], {url: ["pr-create"]}, shape)
+
+    def test_viewing_or_checking_out_a_pr_is_not_evidence(self):
+        url = "https://github.com/o/r/pull/8\n"
+        for command in ("gh pr view 8", "gh pr checkout 8", "echo gh pr create"):
+            self.assertEqual(kinds(Transcript().call(command, output=url))["urls"], {}, command)
+
+    def test_redirections_are_not_branch_names(self):
+        for command in ("git push origin feat-2 2>&1", "git push origin feat-2 > out.txt",
+                        "git push origin feat-2 >> out.txt 2>&1",
+                        "git push origin feat-2 | tail -3"):
+            ev = kinds(Transcript().call(command, branch="main"))
+            self.assertEqual(list(ev["branches"]), [("o", "r", "main"), ("o", "r", "feat-2")],
+                             command)
+
+    def test_dry_run_pushes_do_not_count(self):
+        for command in ("git push --dry-run origin feat-2", "git push -n origin feat-2"):
+            self.assertEqual(kinds(Transcript().call(command))["branches"], {}, command)
+
+    def test_separators_inside_quotes_do_not_split(self):
+        self.assertEqual(kinds(Transcript().call('echo "a; git push origin feat-2"'))["branches"],
+                         {})
+        ev = kinds(Transcript().call('git commit -m "fix; tidy | up"'))
+        self.assertEqual(ev["branches"], {("o", "r", "feat-1"): ["commit-on-branch"]})
 
     def test_powershell_calls_count(self):
         ev = kinds(Transcript().call("git commit -m x", name="PowerShell"))
@@ -97,7 +163,6 @@ class EvidenceTests(unittest.TestCase):
 
     def test_cwd_in_unknown_repo_or_non_write_commands_give_nothing(self):
         t = Transcript().call("git commit -m x", cwd="D:/nowhere").call("git status")
-        t.call("git log --oneline", output="a -> a")
         self.assertEqual(kinds(t)["branches"], {})
 
     def test_commit_inside_chained_command(self):
@@ -174,6 +239,11 @@ class DiscoverTests(unittest.TestCase):
 
     def test_closed_pr_is_dropped(self):
         self.view(state="MERGED")
+        self.assertEqual(self.run_discover(Transcript().call("gh pr create", output=self.url)), [])
+
+    def test_missing_author_fails_closed(self):
+        self.view()
+        del self.gh.views[self.url]["author"]
         self.assertEqual(self.run_discover(Transcript().call("gh pr create", output=self.url)), [])
 
     def test_author_comparison_ignores_case(self):
@@ -261,6 +331,30 @@ class CloneTests(unittest.TestCase):
                                                    projects=self.tmp.name), [])
 
 
+DRIVER = '''
+import json, os, runpy, subprocess, sys
+real_run = subprocess.run
+
+def fake_run(cmd, *args, **kwargs):
+    if cmd[0] == "git":
+        return subprocess.CompletedProcess(cmd, 0, stdout="git@github.com:o/r.git\\n", stderr="")
+    if cmd[0] != "gh":
+        return real_run(cmd, *args, **kwargs)
+    if cmd[1:3] == ["api", "user"]:
+        return subprocess.CompletedProcess(cmd, 0, stdout="prpande\\n", stderr="")
+    if cmd[cmd.index("--head") + 1] == "feat-1":
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
+    listed = [{"number": 8, "url": "https://github.com/o/r/pull/8", "headRefName": "feat-2"}]
+    return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(listed), stderr="")
+
+subprocess.run = fake_run
+poll_py = sys.argv[1]
+sys.path.insert(0, os.path.dirname(poll_py))
+sys.argv = ["poll.py", "--discover", "--session-id", "sess-1"]
+runpy.run_path(poll_py, run_name="__main__")
+'''
+
+
 def run_cli(*argv, gh=None):
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -295,6 +389,20 @@ class CliTests(unittest.TestCase):
         code, out, _ = run_cli("--discover", "--session-id", "sess-1", gh=routed)
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out)[0]["ref"], "o/r#7")
+
+    def test_run_as_a_script_survives_a_failing_candidate(self):
+        poll_py = pathlib.Path(poll.__file__)
+        write_transcript(pathlib.Path(self.tmp.name) / ".claude" / "projects", "sess-1",
+                         Transcript().call("git commit -m a", branch="feat-1")
+                         .call("git commit -m b", branch="feat-2"))
+        driver = pathlib.Path(self.tmp.name) / "driver.py"
+        driver.write_text(DRIVER, encoding="utf-8")
+        env = {**os.environ, "USERPROFILE": self.tmp.name, "HOME": self.tmp.name}
+        out = subprocess.run([sys.executable, str(driver), str(poll_py)], capture_output=True,
+                             text=True, env=env, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("boom", out.stderr)
+        self.assertEqual([p["ref"] for p in json.loads(out.stdout)], ["o/r#8"])
 
     def test_find_clone_prints_first_candidate(self):
         write_transcript(self.tmp.name, "sess-1", Transcript().call("x", cwd="D:/a"))

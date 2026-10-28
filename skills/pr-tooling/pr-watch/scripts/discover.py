@@ -14,12 +14,15 @@ ORIGIN_CACHE: dict[str, str | None] = {}
 
 GITHUB_REMOTE = re.compile(r"^(?:https://github\.com/|git@github\.com:)([^/\s]+)/([^/\s]+?)(?:\.git)?/?$",
                            re.IGNORECASE)
-GIT_WRITE = re.compile(r"""^\s*git\s+((?:-C\s+(?:"[^"]*"|'[^']*'|\S+)\s+|-c\s+\S+\s+)*)"""
-                       r"""(commit|push)\b(.*)$""", re.DOTALL)
-DASH_C = re.compile(r"""-C\s+("[^"]*"|'[^']*'|\S+)""")
-PUSH_LINE = re.compile(r"^[0-9a-f]+\.\.[0-9a-f]+\s+(\S+) -> \1$")
+TOKEN = re.compile(r"""\"[^\"]*\"|'[^']*'|\S+""")
+REDIRECT = re.compile(r"^\d*>")
+BARE_REDIRECT = re.compile(r"^\d*>>?$")
+PUSH_LINES = (
+    re.compile(r"^[0-9a-f]+\.\.[0-9a-f]+\s+(\S+) -> \1$"),
+    re.compile(r"^\+\s+[0-9a-f]+\.\.\.[0-9a-f]+\s+(\S+) -> \1(?: \(forced update\))?$"),
+    re.compile(r"^\*\s+\[new branch\]\s+(\S+) -> \1$"),
+)
 PR_URL = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/pull/\d+")
-SEGMENT_BREAK = re.compile(r"&&|\|\||[;|\n]")
 
 
 def projects_root():
@@ -74,12 +77,65 @@ def result_text(content):
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return "\n".join(i.get("text", "") for i in content if isinstance(i, dict))
+        return "\n".join(i["text"] for i in content
+                         if isinstance(i, dict) and isinstance(i.get("text"), str))
     return ""
 
 
-def pushed_branches(rest):
-    positional = [t.strip("\"'") for t in rest.split() if not t.startswith("-")]
+def split_segments(command):
+    segments, current, quote, i = [], [], None, 0
+    while i < len(command):
+        ch = command[i]
+        if quote:
+            quote = None if ch == quote else quote
+        elif ch in "\"'":
+            quote = ch
+        elif command.startswith(("&&", "||"), i):
+            segments.append("".join(current))
+            current, i = [], i + 2
+            continue
+        elif ch in ";|\n":
+            segments.append("".join(current))
+            current, i = [], i + 1
+            continue
+        current.append(ch)
+        i += 1
+    segments.append("".join(current))
+    return segments
+
+
+def without_redirects(tokens):
+    kept, skip = [], False
+    for token in tokens:
+        if skip:
+            skip = False
+        elif BARE_REDIRECT.match(token):
+            skip = True
+        elif not REDIRECT.match(token):
+            kept.append(token)
+    return kept
+
+
+def parse_git_write(segment):
+    """(verb, -C path or None, argument tokens) for a real git commit or push, else None."""
+    tokens = TOKEN.findall(segment)
+    if not tokens or tokens[0] != "git":
+        return None
+    dash_c, i = None, 1
+    while i + 1 < len(tokens) and tokens[i] in ("-C", "-c"):
+        if tokens[i] == "-C":
+            dash_c = tokens[i + 1].strip("\"'")
+        i += 2
+    if i >= len(tokens) or tokens[i] not in ("commit", "push"):
+        return None
+    args = without_redirects(tokens[i + 1:])
+    if "--dry-run" in args or (tokens[i] == "push" and "-n" in args):
+        return None
+    return tokens[i], dash_c, args
+
+
+def pushed_branches(args):
+    positional = [t.strip("\"'") for t in args if not t.startswith("-")]
     names = []
     for spec in positional[1:]:
         name = spec.lstrip("+").rsplit(":", 1)[-1]
@@ -120,51 +176,50 @@ def evidence(records, origin_of):
         for item in content:
             if not isinstance(item, dict):
                 continue
-            if kind == "assistant" and item.get("type") == "tool_use" \
-                    and item.get("name") in ("Bash", "PowerShell"):
+            if kind == "assistant" and item.get("type") == "tool_use"                     and item.get("name") in ("Bash", "PowerShell"):
                 command = (item.get("input") or {}).get("command") or ""
-                calls[item.get("id")] = {"command": command, "cwd": cwd}
-                for segment in SEGMENT_BREAK.split(command):
-                    git_call(segment, cwd, branch_now, repo_for, branches)
+                calls[item.get("id")] = call = {"creates_pr": False, "push_repos": []}
+                for segment in split_segments(command):
+                    if TOKEN.findall(segment)[:3] == ["gh", "pr", "create"]:
+                        call["creates_pr"] = True
+                    parsed = parse_git_write(segment)
+                    if parsed:
+                        git_call(parsed, cwd, branch_now, repo_for, branches, call)
             elif kind == "user" and item.get("type") == "tool_result":
                 call = calls.get(item.get("tool_use_id"))
                 if call:
-                    call_result(call, result_text(item.get("content")), repo_for, branches, urls)
+                    call_result(call, result_text(item.get("content")), branches, urls)
     return {"branches": branches, "urls": urls, "hints": hints}
 
 
-def git_call(segment, cwd, git_branch, repo_for, branches):
-    match = GIT_WRITE.match(segment)
-    if not match:
-        return
-    options, verb, rest = match.groups()
-    dash_c = DASH_C.search(options)
-    repo = repo_for(dash_c.group(1).strip("\"'") if dash_c else cwd)
+def git_call(parsed, cwd, git_branch, repo_for, branches, call):
+    verb, dash_c, args = parsed
+    repo = repo_for(dash_c or cwd)
     if not repo:
         return
     if git_branch and not dash_c:
         add(branches, (*repo, git_branch), f"{verb}-on-branch")
     if verb == "push":
-        for name in pushed_branches(rest):
+        call["push_repos"].append(repo)
+        for name in pushed_branches(args):
             add(branches, (*repo, name), "push-names-branch")
 
 
-def call_result(call, text, repo_for, branches, urls):
-    dash_c = DASH_C.search(call["command"])
-    repo = repo_for(dash_c.group(1).strip("\"'") if dash_c else call["cwd"])
-    if repo:
-        for line in text.splitlines():
-            match = PUSH_LINE.match(line.strip())
+def call_result(call, text, branches, urls):
+    for line in text.splitlines():
+        for pattern in PUSH_LINES:
+            match = pattern.match(line.strip())
             if match:
-                add(branches, (*repo, match.group(1)), "push-output")
-    if "gh pr create" in call["command"]:
+                for repo in call["push_repos"]:
+                    add(branches, (*repo, match.group(1)), "push-output")
+    if call["creates_pr"]:
         for url in PR_URL.findall(text):
             add(urls, url, "pr-create")
 
 
 def self_authored_open(pr, self_login):
-    return (str(pr.get("state", "OPEN")).upper() == "OPEN"
-            and (pr.get("author") or {}).get("login", self_login).lower() == self_login.lower())
+    login = (pr.get("author") or {}).get("login") or ""
+    return str(pr.get("state", "")).upper() == "OPEN" and login.lower() == self_login.lower()
 
 
 def gh_json(gh, args):
