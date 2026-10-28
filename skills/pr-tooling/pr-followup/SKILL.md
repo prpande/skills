@@ -89,7 +89,17 @@ Flags:
    `~/.claude/skills/pr-loop-lib/steps/01-wait-cycle.md`. Step 01 will
    short-circuit past the wait because of the `no_wait_first_iteration`
    flag, and the loop proceeds normally.
-6. When the loop exits and step 11 (final report) completes, end the skill.
+6. When the loop exits and step 11 (final report) completes, go to step 7.
+7. Join this session's running `pr-watch`. Skip this step under `--dry-run`. Run:
+   ```bash
+   python -c "import json,os;h=os.environ.get('PR_WATCH_HOME') or os.path.expanduser('~/.claude/pr-watch');f=os.path.join(h,'sessions',os.environ.get('CLAUDE_CODE_SESSION_ID','x'),'watch.json');print('join' if os.path.isfile(f) and (lambda w:not w.get('dry_run') and w.get('stopped_at') is None)(json.load(open(f))) else 'skip')"
+   ```
+   Anything other than `join` (a missing or unreadable `watch.json`, `dry_run`
+   true, `stopped_at` set, or a crash) means do nothing. On `join`, invoke the
+   `pr-watch` skill with `owner/repo#N --yes` for this PR, taking owner and repo
+   from its URL. An idle watch with every PR closed still takes it. If the join
+   fails, report the failure in one line and finish; it never fails this run.
+   Then end the skill.
 
 ## Hard rules
 

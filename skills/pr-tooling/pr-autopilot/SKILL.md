@@ -101,7 +101,17 @@ Phase 5 — Report (and optional UI-deferred approval)
    interactive approval phase (per-item apply / reject / skip via
    `AskUserQuestion`). Approved items re-enter step 04 with
    `UI_DEFERRAL_OVERRIDE=true` and go through step 06 for commit +
-   push. Then end.
+   push.
+10. Join this session's running `pr-watch`. Skip this step under `--dry-run`. Run:
+   ```bash
+   python -c "import json,os;h=os.environ.get('PR_WATCH_HOME') or os.path.expanduser('~/.claude/pr-watch');f=os.path.join(h,'sessions',os.environ.get('CLAUDE_CODE_SESSION_ID','x'),'watch.json');print('join' if os.path.isfile(f) and (lambda w:not w.get('dry_run') and w.get('stopped_at') is None)(json.load(open(f))) else 'skip')"
+   ```
+   Anything other than `join` (a missing or unreadable `watch.json`, `dry_run`
+   true, `stopped_at` set, or a crash) means do nothing. On `join`, invoke the
+   `pr-watch` skill with `owner/repo#N --yes` for this PR, taking owner and repo
+   from its URL. An idle watch with every PR closed still takes it. If the join
+   fails, report the failure in one line and finish; it never fails this run.
+   Then end.
 
 ## Hard rules (from user global CLAUDE.md)
 
