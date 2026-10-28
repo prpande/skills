@@ -44,9 +44,10 @@ session doing the work, so fixes are made with that session's context.
 - `status`: run `POLL --report --session-dir <SESSION_DIR>` and show its
   output, then say whether `POLL --monitor-alive --session-dir
   <SESSION_DIR>` prints `alive`.
-- `stop`: `TaskStop` the monitor, set each PR's lease to `stopped` with
-  `POLL --lease-status <ref> --status stopped --session-dir
-  <SESSION_DIR>`, post one closing reply per PR thread
+- `stop`: write `watch.json` (`stopped_at`, every entry `stopped`), set
+  each PR's lease to `stopped` with `POLL --lease-status <ref> --status
+  stopped --session-dir <SESSION_DIR>`, `TaskStop` the monitor when its
+  task id is known, post one closing reply per PR thread
   (`pr-watch/steps/06-notify.md`), and keep the state files so a later
   `/pr-watch` resumes without replaying settled threads.
 - `release`: set the PR's `watch.json` status to `released`, then its lease
