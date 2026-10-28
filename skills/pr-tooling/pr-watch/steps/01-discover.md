@@ -134,7 +134,9 @@ For every repo in the candidate set that has a `CLONE`, run
 `{state, monitor_pid, owner_pid, heartbeat_age, prs}`; `prs` lists the
 keys in the old `<MAIN>/.pr-autopilot/watch.json`. Act on `state`:
 
-- `none`: nothing to migrate.
+- `none`: nothing to migrate. When an earlier import renamed the old
+  watch but no session claimed some of its PRs (the session ended before
+  §5), `prs` lists those PRs; add them as the import paragraph below says.
 - `stale`: no old poller runs and its heartbeat is over 300 s old. Import.
 - `owned`: the old poller runs under this session's claude process. End
   it, then import. `TaskStop` the monitor when its task id is still in
@@ -161,7 +163,8 @@ It copies each old PR's progress into its `<N>.progress.json`, keeps a
 progress file that already exists, renames the old `watch.json` to
 `watch.json.migrated`, and deletes the old heartbeat and poller files.
 Its output is not the PR list: a re-run after a crash prints `[]`. Take
-the PR set from the scan's `prs`. Add each key in `prs` that is not
+the PR set from the scan's `prs`, for an import and for a `none` scan
+alike. Add each key in `prs` that is not
 already a candidate and that is still open (resolve it as in §3, with its
 role from the live author), so no PR of the old watch is left unwatched.
 
@@ -205,6 +208,8 @@ adding `--explicit` for a PR the user named in this invocation. It prints:
   `<N>.progress.json`. When `queued_head` is set or `ci_rerun_queued` is
   non-empty, add the PR's key to `push_queue` in `watch.json`, so the
   next drain handles a fix the dead session committed but did not push.
+  That commit exists only in the dead session's clone; when §3 resolved
+  another clone, the drain escalates it instead of pushing.
 
 A non-zero exit refuses the claim. When its stderr line says "lease
 unreadable", run the same claim once more. Any other refusal, and a second

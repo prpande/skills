@@ -26,7 +26,11 @@ and the same command on `<worktree>` print the same path; otherwise it is
 an other-repo PR. An other-repo PR is never relocated to: the session
 stays where it is, its files are edited with absolute paths under
 `<worktree>`, and every git command names `git -C <worktree>`. They are
-written that way below for both cases.
+written that way below for both cases. `origin_worktree` is where the
+session stood when it armed, which is not always the repo it was
+launched in; when `EnterWorktree` refuses a launch-repo PR's worktree
+(section 2 step 1), handle the PR as an other-repo PR for the rest of
+this pass.
 
 ## 1. Gate
 
@@ -85,6 +89,7 @@ To skip with a reason:
 ## 2. Relocate and lock
 
 1. A launch-repo PR: `EnterWorktree` with `path` = the PR's worktree.
+   When it refuses, the PR is an other-repo PR from here on.
    An other-repo PR: nothing; the session stays where it is.
 2. Acquire `<worktree>/.pr-autopilot/pr-<N>.lock` per "Acquiring the
    lock" in `pr-loop-lib/references/state-protocol.md`, using
@@ -378,9 +383,16 @@ drained per `tick`:
    it is not set, skip this step entirely: push nothing and run nothing
    in the worktree. Otherwise:
    1. `git -C <worktree> rev-parse HEAD`. When it is not `queued_head`,
-      push nothing: escalate ("needs you, no comment", reason "the
-      worktree has commits the watch did not make; queued fix <sha7 of
-      queued_head> not pushed") and continue at step 4.
+      push nothing: escalate ("needs you, no comment") and continue at
+      step 4. The reason depends on
+      `git -C <worktree> cat-file -e <queued_head>^{commit}`: when it
+      fails, the fix was committed in another clone, by the session that
+      held this PR before a takeover (`pr-watch/steps/01-discover.md`
+      §5), so the reason is "queued fix <sha7 of queued_head> was
+      committed in another clone by the session that held this PR
+      before; it is not in <worktree> and was not pushed"; otherwise it is
+      "the worktree has commits the watch did not make; queued fix <sha7
+      of queued_head> not pushed".
    2. `git -C <worktree> fetch origin`.
    3. Section 2 steps 1, 2, and 3a. If another session holds the lock,
       release the push lock when step 1 took it, then return as

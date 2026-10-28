@@ -66,6 +66,15 @@ class ScanTests(WatchDirCase):
     def test_none_without_a_watch(self):
         self.assertEqual("none", migrate.scan(self.main, 4242, [], NOW)["state"])
 
+    def test_after_an_interrupted_import_lists_the_unclaimed_old_prs(self):
+        self.write_watch({"12": {}, "13": {}})
+        (self.state / "watch.json").replace(self.state / "watch.json.migrated")
+        claimed = pw_paths.lease_path("acme", "widgets", 13)
+        claimed.parent.mkdir(parents=True)
+        claimed.write_text("{}", encoding="utf-8")
+        result = migrate.scan(self.main, 4242, [], NOW)
+        self.assertEqual(("none", ["acme/widgets#12"]), (result["state"], result["prs"]))
+
     def test_owned_when_monitor_ancestor_is_my_claude_even_if_renamed(self):
         self.write_watch()
         self.write_heartbeat(10)

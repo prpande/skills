@@ -9,7 +9,7 @@ import subprocess
 
 from lease import STALE_AFTER_SECONDS
 from pw_io import no_window, read_json, write_json_atomic
-from pw_paths import parse_ref, pr_key, progress_path
+from pw_paths import lease_path, parse_ref, pr_key, progress_path
 
 CLAUDE_IMAGE = re.compile(r"^claude\.exe", re.IGNORECASE)
 MONITOR_FLAG = re.compile(r"(?:^|\s)--monitor(?:\s|$)")
@@ -89,6 +89,12 @@ def _heartbeat_age(path, now: float) -> float:
         return float("inf")
 
 
+def _old_prs(watch) -> list[tuple[tuple[str, str, int], dict]]:
+    owner, repo = watch.get("owner", ""), watch.get("repo", "")
+    return [(parse_ref(f"{owner}/{repo}#{n}"), entry)
+            for n, entry in watch.get("prs", {}).items() if str(n).isdigit()]
+
+
 def scan(main, claude_pid, procs, now) -> dict:
     state_dir = pathlib.Path(main) / ".pr-autopilot"
     result = {"state": "none", "monitor_pid": None, "owner_pid": None,
@@ -96,9 +102,11 @@ def scan(main, claude_pid, procs, now) -> dict:
     try:
         watch = read_json(state_dir / "watch.json")
     except FileNotFoundError:
+        migrated = read_json(state_dir / "watch.json.migrated", default={})
+        result["prs"] = [pr_key(*ref) for ref, _ in _old_prs(migrated)
+                         if not lease_path(*ref).exists()]
         return result
-    owner, repo = str(watch.get("owner", "")), str(watch.get("repo", ""))
-    result["prs"] = [pr_key(owner, repo, int(n)) for n in watch.get("prs", {}) if str(n).isdigit()]
+    result["prs"] = [pr_key(*ref) for ref, _ in _old_prs(watch)]
     age = _heartbeat_age(state_dir / "watch-heartbeat", now)
     result["heartbeat_age"] = None if age == float("inf") else int(age)
     monitor = old_monitor(main, procs)
@@ -121,10 +129,7 @@ def import_progress(main) -> list[str]:
     covered = []
     if watch_path.exists():
         watch = read_json(watch_path)
-        for number, entry in watch.get("prs", {}).items():
-            if not str(number).isdigit():
-                continue
-            owner, repo, n = parse_ref(f"{watch.get('owner', '')}/{watch.get('repo', '')}#{number}")
+        for (owner, repo, n), entry in _old_prs(watch):
             target = progress_path(owner, repo, n)
             if not target.exists():
                 target.parent.mkdir(parents=True, exist_ok=True)
