@@ -144,6 +144,19 @@ def _take_lock(path, now: float) -> bool:
                 os.replace(path, aside)
             except FileNotFoundError:
                 continue
+            except OSError:
+                return False
+            try:
+                caught_fresh = now - os.stat(aside).st_mtime <= CLAIM_LOCK_STALE_SECONDS
+            except FileNotFoundError:
+                continue
+            if caught_fresh:
+                try:
+                    os.link(aside, path)
+                except OSError:
+                    pass
+                aside.unlink(missing_ok=True)
+                return False
             aside.unlink(missing_ok=True)
     return False
 
@@ -223,7 +236,10 @@ def _lease_numbers(owner, repo) -> list[int]:
 def armed_peers(owner, repo, exclude_n) -> list[int]:
     peers = []
     for number in _lease_numbers(owner, repo):
-        data = read_lease(owner, repo, number)
+        try:
+            data = _read_with_retry(owner, repo, number)
+        except OSError:
+            continue
         if number != exclude_n and data is not None and data.get("status") == "armed":
             peers.append(number)
     return peers
@@ -237,7 +253,10 @@ def prune_closed(now) -> int:
     for repo_dir in (d for owner_dir in root.iterdir() if owner_dir.is_dir()
                      for d in owner_dir.iterdir() if d.is_dir()):
         for number in _lease_numbers(repo_dir.parent.name, repo_dir.name):
-            data = read_lease(repo_dir.parent.name, repo_dir.name, number)
+            try:
+                data = _read_with_retry(repo_dir.parent.name, repo_dir.name, number)
+            except OSError:
+                continue
             if data is None or data.get("status") != "closed":
                 continue
             try:

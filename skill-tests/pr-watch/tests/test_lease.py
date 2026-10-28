@@ -212,6 +212,40 @@ class ClaimTests(LeaseCase):
             self.assertEqual(self.claim(holder()), (False, "busy: another claim in progress"))
         self.assertTrue(lock.exists())
 
+    def test_stale_lock_break_that_catches_a_fresh_lock_puts_it_back(self):
+        lock = pw_paths.claim_lock_path("o", "r", 1)
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("", encoding="utf-8")
+        os.utime(lock, (NOW - 61, NOW - 61))
+        real_replace = os.replace
+
+        def claimer_a_recreated_it(src, dst):
+            if str(dst).endswith(".stale"):
+                os.utime(src, (NOW, NOW))
+            return real_replace(src, dst)
+
+        with mock.patch.object(lease.os, "replace", side_effect=claimer_a_recreated_it):
+            self.assertEqual(self.claim(holder()), (False, "busy: another claim in progress"))
+        self.assertTrue(lock.exists())
+        self.assertEqual(os.stat(lock).st_mtime, NOW)
+        self.assertEqual(list(lock.parent.glob("*.stale")), [])
+
+    def test_stale_lock_held_open_is_busy_not_an_error(self):
+        lock = pw_paths.claim_lock_path("o", "r", 1)
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("", encoding="utf-8")
+        os.utime(lock, (NOW - 61, NOW - 61))
+        real_replace = os.replace
+
+        def refused(src, dst):
+            if str(dst).endswith(".stale"):
+                raise PermissionError("held open")
+            return real_replace(src, dst)
+
+        with mock.patch.object(lease.os, "replace", side_effect=refused):
+            self.assertEqual(self.claim(holder()), (False, "busy: another claim in progress"))
+        self.assertTrue(lock.exists())
+
     def test_stale_lock_is_renamed_aside_then_removed(self):
         lock = pw_paths.claim_lock_path("o", "r", 1)
         lock.parent.mkdir(parents=True, exist_ok=True)
@@ -311,6 +345,43 @@ class SweepTests(LeaseCase):
         self.assertTrue(pw_paths.progress_path("o", "r", 2).exists())
         self.assertIsNotNone(lease.read_lease("o", "r", 3))
         self.assertIsNotNone(lease.read_lease("o", "r", 4))
+
+    def test_armed_peers_retries_then_skips_unreadable(self):
+        self.put(2)
+        self.put(3)
+        real = lease.read_json
+        failures = {"left": 2}
+
+        def flaky(path, default=None):
+            if path.stem == "2" and failures["left"]:
+                failures["left"] -= 1
+                raise PermissionError("replace in progress")
+            if path.stem == "3":
+                raise PermissionError("locked")
+            return real(path, default)
+
+        with mock.patch.object(lease, "read_json", side_effect=flaky),                 mock.patch.object(lease.time, "sleep"):
+            self.assertEqual(lease.armed_peers("o", "r", 1), [2])
+
+    def test_prune_closed_retries_then_skips_unreadable(self):
+        week = 7 * 24 * 3600
+        self.put(1, status="closed", updated=NOW - week - 1)
+        self.put(2, status="closed", updated=NOW - week - 1)
+        real = lease.read_json
+        failures = {"left": 2}
+
+        def flaky(path, default=None):
+            if path.stem == "1" and failures["left"]:
+                failures["left"] -= 1
+                raise PermissionError("replace in progress")
+            if path.stem == "2":
+                raise PermissionError("locked")
+            return real(path, default)
+
+        with mock.patch.object(lease, "read_json", side_effect=flaky),                 mock.patch.object(lease.time, "sleep"):
+            self.assertEqual(lease.prune_closed(NOW), 1)
+        self.assertTrue(pw_paths.lease_path("o", "r", 2).exists())
+        self.assertFalse(pw_paths.lease_path("o", "r", 1).exists())
 
     def test_prune_closed_without_state_dir_is_zero(self):
         self.assertEqual(lease.prune_closed(NOW), 0)
