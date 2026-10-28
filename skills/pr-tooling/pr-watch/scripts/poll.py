@@ -20,11 +20,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from pw_io import read_json, write_json_atomic  # noqa: F401
+from pw_paths import NAME  # noqa: F401
+
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 TICK_SECONDS = 60
 RECONCILE_SECONDS = 24 * 60 * 60
 TICK_EVENT_RETRY_SECONDS = 600
-NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
 CHECK_FIELDS = "name,state,bucket,link,workflow,completedAt"
 FAILED_ROLLUP = ("FAILURE", "ERROR")
 FAILED_BASE = ("failure", "error", "timed_out")
@@ -510,31 +512,6 @@ def tick_once(gh, watch, poller, now, force=False):
         poller["last_tick_queue"] = queue
         poller["last_tick_event"] = now
     return events
-
-
-def read_json(path, default=None):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        if default is None:
-            raise
-        return default
-
-
-def write_json_atomic(path, data, attempts=5, sleep=time.sleep):
-    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
-    with tmp.open("w", encoding="utf-8", newline="\n") as handle:
-        handle.write(json.dumps(data, indent=2) + "\n")
-    for attempt in range(attempts):
-        try:
-            os.replace(tmp, path)
-            return
-        except PermissionError:
-            # Windows refuses a replace while any reader or scanner holds the target open.
-            if attempt == attempts - 1:
-                tmp.unlink(missing_ok=True)
-                raise
-            sleep(0.1)
 
 
 def missed_prs(before, after, events):

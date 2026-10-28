@@ -6,7 +6,7 @@ import os
 import pathlib
 import re
 
-from poll import NAME
+NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 REF = re.compile(r"^([^/#\s]+)/([^/#\s]+)#(\d+)$")
 URL = re.compile(r"^https://github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)/?$")
