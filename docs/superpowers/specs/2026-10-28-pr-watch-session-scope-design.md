@@ -303,6 +303,10 @@ A PR joins a bare arm only when both hold:
      update, or `[new branch]`; or
    - a `gh pr create` call whose output carries the PR's URL.
 
+   A `cd`, `Set-Location` or `pushd` earlier in the same call sets the
+   repo for the git commands after it, as `git -C <path>` does; a
+   `gitBranch` then says nothing about them.
+
 `pr-link` records are hints for which PRs to check, never evidence: they
 appear for PRs a session only viewed and are missing from most sessions
 that did create PRs.
@@ -318,7 +322,8 @@ search.
 An `authored` PR needs a worktree. For a PR whose head branch already has
 a worktree, that path is used. Otherwise the clone is resolved in order:
 the current directory's repo when its `origin` matches; a `cwd`, or a
-`git -C <path>` in a Bash or PowerShell call, from this session's
+`git -C <path>` or a `cd`/`Set-Location`/`pushd` target in a Bash or
+PowerShell call (an MSYS `/d/...` path read as `D:/...`), from this session's
 transcript inside a clone whose `origin` matches; then the `worktree` the
 PR's lease holder recorded in its own `watch.json`, when that path is
 still a clone of the repo, so a takeover session needs no history in the

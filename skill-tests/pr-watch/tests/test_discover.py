@@ -114,6 +114,31 @@ class EvidenceTests(unittest.TestCase):
         ev = kinds(Transcript().call("grep -C 3 foo; git push", branch="main", output=line))
         self.assertIn(("o", "r", "feat-3"), ev["branches"])
 
+    def test_cd_sets_the_repo_for_later_git_segments(self):
+        line = "   1a2b3c4..5d6e7f8  feat-3 -> feat-3\n"
+        for command in ("cd D:/b && git push origin feat-1",
+                        "Set-Location -Path 'D:/b'; git push origin feat-1",
+                        "pushd D:/b && git push origin feat-1"):
+            ev = kinds(Transcript().call(command, cwd="D:/a", branch="feat-1"))
+            self.assertEqual(ev["branches"], {("o", "other", "feat-1"): ["push-names-branch"]},
+                             command)
+        ev = kinds(Transcript().call("cd D:/b; git push", cwd="D:/a", branch="main", output=line))
+        self.assertEqual(ev["branches"], {("o", "other", "feat-3"): ["push-output"]})
+
+    def test_relative_and_msys_cd_targets_resolve(self):
+        ev = kinds(Transcript().call("cd sub && git push origin feat-4", cwd="D:/a", branch="main"))
+        self.assertEqual(ev["branches"], {("o", "r", "feat-4"): ["push-names-branch"]})
+        with mock.patch.object(discover, "WINDOWS", True):
+            ev = kinds(Transcript().call("cd /d/b && git push origin feat-5", cwd="D:/a",
+                                         branch="main"))
+        self.assertEqual(ev["branches"], {("o", "other", "feat-5"): ["push-names-branch"]})
+
+    def test_a_cd_with_no_target_changes_nothing(self):
+        for command in ("cd && git push origin feat-1", "cd - && git push origin feat-1"):
+            ev = kinds(Transcript().call(command, cwd="D:/a", branch="feat-1"))
+            self.assertEqual(ev["branches"], {("o", "r", "feat-1"):
+                                              ["push-on-branch", "push-names-branch"]}, command)
+
     def test_pr_create_result_adopts_url(self):
         url = "https://github.com/o/r/pull/7"
         ev = kinds(Transcript().call("gh pr create --fill", output=url + "\n"))
@@ -330,6 +355,15 @@ class CloneTests(unittest.TestCase):
         write_transcript(self.tmp.name, "dash", t)
         found = discover.clone_candidates("dash", "o", "r", origin_of, projects=self.tmp.name,
                                           toplevel_of=self.top)
+        self.assertEqual(found, ["D:/a", "D:/c"])
+
+    def test_a_cd_target_counts_as_a_clone_the_session_used(self):
+        t = Transcript().call("Set-Location 'D:/c'; git status", cwd="D:/b")
+        t.call("cd /d/a/sub && git log -1", cwd="D:/b")
+        write_transcript(self.tmp.name, "cd", t)
+        with mock.patch.object(discover, "WINDOWS", True):
+            found = discover.clone_candidates("cd", "o", "r", origin_of, projects=self.tmp.name,
+                                              toplevel_of=self.top)
         self.assertEqual(found, ["D:/a", "D:/c"])
 
     def test_no_transcript_or_no_match(self):

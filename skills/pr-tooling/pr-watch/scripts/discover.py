@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -25,6 +26,10 @@ PUSH_LINES = (
     re.compile(r"^\*\s+\[new branch\]\s+(\S+) -> \1$"),
 )
 PR_URL = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/pull/\d+")
+CD_COMMANDS = {"cd", "chdir", "pushd", "set-location", "sl", "push-location"}
+MSYS_DRIVE = re.compile(r"^/([a-zA-Z])(?=/|$)")
+ABSOLUTE = re.compile(r"^(?:[a-zA-Z]:)?[/\\]")
+WINDOWS = os.name == "nt"
 
 
 def projects_root():
@@ -118,6 +123,35 @@ def without_redirects(tokens):
     return kept
 
 
+def native_path(path, base):
+    """`path` as git here can open it: MSYS `/d/x` becomes `D:/x` on Windows; relative joins `base`."""
+    path = os.path.expanduser(path.strip("\"'"))
+    if WINDOWS:
+        path = MSYS_DRIVE.sub(lambda m: f"{m.group(1).upper()}:", path)
+    if base and not ABSOLUTE.match(path):
+        path = f"{str(base).rstrip('/')}/{path}"
+    return path
+
+
+def cd_target(tokens):
+    """The directory a `cd`, `Set-Location` or `pushd` segment moves to, or None."""
+    if not tokens or tokens[0].lower() not in CD_COMMANDS:
+        return None
+    args = [t for t in without_redirects(tokens[1:]) if not t.startswith("-")]
+    return args[0] if args else None
+
+
+def segment_dirs(command, cwd):
+    """(segment, tokens, directory a `cd` earlier in the call moved to, else None) per segment."""
+    here = None
+    for segment in split_segments(command):
+        tokens = TOKEN.findall(segment)
+        target = cd_target(tokens)
+        if target:
+            here = native_path(target, here or cwd)
+        yield segment, tokens, here
+
+
 def parse_git_write(segment):
     """(verb, -C path or None, argument tokens) for a real git commit or push, else None."""
     tokens = TOKEN.findall(segment)
@@ -182,12 +216,14 @@ def evidence(records, origin_of):
                     and item.get("name") in ("Bash", "PowerShell")):
                 command = (item.get("input") or {}).get("command") or ""
                 calls[item.get("id")] = call = {"creates_pr": False, "push_repos": []}
-                for segment in split_segments(command):
-                    if TOKEN.findall(segment)[:3] == ["gh", "pr", "create"]:
+                for segment, tokens, here in segment_dirs(command, cwd):
+                    if tokens[:3] == ["gh", "pr", "create"]:
                         call["creates_pr"] = True
                     parsed = parse_git_write(segment)
                     if parsed:
-                        git_call(parsed, cwd, branch_now, repo_for, branches, call)
+                        verb, dash_c, args = parsed
+                        where = native_path(dash_c, here or cwd) if dash_c else here
+                        git_call((verb, where, args), cwd, branch_now, repo_for, branches, call)
             elif kind == "user" and item.get("type") == "tool_result":
                 call = calls.get(item.get("tool_use_id"))
                 if call:
@@ -266,10 +302,12 @@ def dash_c_paths(record):
     for item in content if isinstance(content, list) else []:
         if (isinstance(item, dict) and item.get("type") == "tool_use"
                 and item.get("name") in ("Bash", "PowerShell")):
-            for segment in split_segments((item.get("input") or {}).get("command") or ""):
-                tokens = TOKEN.findall(segment)
-                if tokens[:2] == ["git", "-C"] and len(tokens) > 2:
-                    paths.append(tokens[2].strip("\"'"))
+            command = (item.get("input") or {}).get("command") or ""
+            for _, tokens, here in segment_dirs(command, record.get("cwd")):
+                if cd_target(tokens):
+                    paths.append(here)
+                elif tokens[:2] == ["git", "-C"] and len(tokens) > 2:
+                    paths.append(native_path(tokens[2], here or record.get("cwd")))
     return paths
 
 
