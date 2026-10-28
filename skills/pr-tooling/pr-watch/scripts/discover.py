@@ -24,6 +24,7 @@ SSH_HOST = r"(?P<host>(?!-)[A-Za-z0-9_.-]+)"
 SSH_ALIAS_REMOTE = re.compile(r"^ssh://(?:[^@/\s]+@)?" + SSH_HOST + r"(?::\d+)?/" + REMOTE_PATH)
 SCP_ALIAS_REMOTE = re.compile(r"^(?:[^@/\s:]+@)?" + SSH_HOST + ":" + REMOTE_PATH)
 GITHUB_SSH_HOSTS = ("github.com", "ssh.github.com")
+PR_LIST_LIMIT = 1000
 GIT_OPTIONS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"}
 TOKEN = re.compile(r"""\"[^\"]*\"|'[^']*'|\S+""")
 REDIRECT = re.compile(r"^\d*>")
@@ -319,10 +320,14 @@ def discover(gh, session_id, self_login, origin_of, projects=None):
     for (owner, repo, branch), kinds in found["branches"].items():
         by_repo.setdefault((owner, repo), {})[branch] = kinds
     for (owner, repo), branches in by_repo.items():
-        listed = gh_json(gh, ["pr", "list", "--repo", repo_slug(owner, repo), "--author", self_login,
-                              "--state", "open", "--limit", "1000",
-                              "--json", "number,url,headRefName"])
-        for pr in listed or []:
+        slug = repo_slug(owner, repo)
+        listed = gh_json(gh, ["pr", "list", "--repo", slug, "--author", self_login,
+                              "--state", "open", "--limit", str(PR_LIST_LIMIT),
+                              "--json", "number,url,headRefName"]) or []
+        if len(listed) >= PR_LIST_LIMIT:
+            print(f"pr-watch: {slug} lists {PR_LIST_LIMIT}+ open PRs by {self_login}; "
+                  "PRs past that are not discovered", file=sys.stderr)
+        for pr in listed:
             if pr["headRefName"] in branches:
                 keep(pr, branches[pr["headRefName"]])
     for url, kinds in found["urls"].items():

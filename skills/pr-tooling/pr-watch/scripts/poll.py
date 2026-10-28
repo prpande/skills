@@ -351,7 +351,7 @@ def replies_after_me(thread, self_login, allowlist):
 
 
 def changed_files(gh, owner, repo, old, new):
-    out = gh(["api", f"repos/{owner}/{repo}/compare/{old}...{new}", "--paginate",
+    out = gh(["api", f"repos/{repo_slug(owner, repo)}/compare/{old}...{new}", "--paginate",
               "--jq", "(.files // [])[].filename"])
     return sorted({line.strip() for line in out.splitlines() if line.strip()})
 
@@ -445,8 +445,8 @@ def compare_capped(files):
     return len(files) >= COMPARE_FILE_CAP
 
 
-def evaluate_reviewed(gh, view, pr, entry, prev, compare=None):
-    """`compare(old, new)` returns the changed paths; it defaults to one compare call."""
+def evaluate_reviewed(view, pr, entry, prev, compare):
+    """`compare(old, new)` returns the paths changed between the two heads."""
     me, allow = view["self_login"], view["bot_allowlist"]
     key = entry_key(entry)
     threads = my_threads(pr, me, allow)
@@ -466,8 +466,7 @@ def evaluate_reviewed(gh, view, pr, entry, prev, compare=None):
     author_replied = any((c["author"] or {}).get("login") == author for c in replies)
     if old and old != new:
         signature = f"head:{new}:" + ",".join(reply_ids)
-        files = set((compare or (lambda a, b: changed_files(
-            gh, entry["owner"], entry["repo"], a, b)))(old, new))
+        files = set(compare(old, new))
         touches = compare_capped(files) or any(t["path"] in files for t in threads)
         review_pending = touches or author_replied or not answered
         if signature == prev.get("last_signature") or not (touches or author_replied):
@@ -505,7 +504,7 @@ def retry_spend(retry_after, retry, failed, prev, key):
 
 
 def pr_fault(poller, key, exc):
-    warn(f"PR {key}: {exc}" if isinstance(exc, GhError) else f"PR {key}: {type(exc).__name__}: {exc}")
+    warn(f"PR {key}: {type(exc).__name__}: {exc}")
     poller["errors"][key] = "check failed"
 
 
@@ -553,15 +552,15 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
                 review_event, signature, review_pending = evaluate_authored(view, pr, entry, seen)
             else:
                 review_event, signature, review_pending = evaluate_reviewed(
-                    gh, view, pr, entry, seen, compare)
-        except PR_FAULTS as exc:
+                    view, pr, entry, seen, compare)
+        except GhError as exc:
             pr_fault(poller, key, exc)
             review_failed = True
     if authored and (ci_moved or ci_forced):
         try:
             ci_event, ci_signature, ci_pending = evaluate_ci(
                 gh, entry, node, ci_seen, ci_signature)
-        except PR_FAULTS as exc:
+        except GhError as exc:
             pr_fault(poller, key, exc)
             ci_failed = True
     events += [e for e in (review_event, ci_event) if e]
@@ -610,7 +609,7 @@ def tick_once(gh, view, poller, now, force=False):
         for alias, (owner, repo) in aliases.items():
             nodes = heads.get(alias)
             if nodes is None:
-                warn(f"{owner}/{repo}: repository missing from the heads query; "
+                warn(f"{repo_slug(owner, repo)}: repository missing from the heads query; "
                      "skipping its PRs this tick")
                 errors.update(dict.fromkeys(
                     (pr_key(owner, repo, n) for n in groups[(owner, repo)]), "repo unreachable"))

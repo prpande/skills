@@ -251,7 +251,7 @@ class FakeDiscoverGh:
         self.calls.append(list(args))
         if args[:2] == ["pr", "list"]:
             repo = args[args.index("--repo") + 1]
-            return json.dumps([pr for (r, _), prs in self.lists.items() if r == repo for pr in prs])
+            return json.dumps(self.lists.get(repo, []))
         if args[:2] == ["pr", "view"]:
             return json.dumps(self.views[args[2]])
         raise AssertionError(args)
@@ -278,8 +278,8 @@ class DiscoverTests(unittest.TestCase):
         return discover.discover(self.gh, "sess", SELF, origin_of, projects=self.projects)
 
     def listed(self):
-        self.gh.lists[("o/r", "feat-1")] = [
-            {"number": 7, "url": self.url, "headRefName": "feat-1"}]
+        self.gh.lists.setdefault("o/r", []).append(
+            {"number": 7, "url": self.url, "headRefName": "feat-1"})
 
     def view(self, state="OPEN", login=SELF, branch="feat-1"):
         self.gh.views[self.url] = {"number": 7, "url": self.url, "state": state,
@@ -296,14 +296,21 @@ class DiscoverTests(unittest.TestCase):
 
     def test_one_list_call_per_repo_keeps_only_branches_the_session_wrote(self):
         self.listed()
-        self.gh.lists[("o/r", "feat-2")] = [
-            {"number": 8, "url": "https://github.com/o/r/pull/8", "headRefName": "feat-2"}]
-        self.gh.lists[("o/r", "other")] = [
+        self.gh.lists["o/r"] += [
+            {"number": 8, "url": "https://github.com/o/r/pull/8", "headRefName": "feat-2"},
             {"number": 9, "url": "https://github.com/o/r/pull/9", "headRefName": "other"}]
         found = self.run_discover(Transcript().call("git commit -m a", branch="feat-1")
                                   .call("git commit -m b", branch="feat-2"))
         self.assertEqual([p["ref"] for p in found], ["o/r#7", "o/r#8"])
         self.assertEqual(sum(1 for c in self.gh.calls if c[:2] == ["pr", "list"]), 1)
+
+    def test_a_full_pr_list_warns_that_later_prs_are_missed(self):
+        self.gh.lists["o/r"] = [{"number": n, "url": f"https://github.com/o/r/pull/{n}",
+                                 "headRefName": f"b{n}"} for n in range(discover.PR_LIST_LIMIT)]
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.run_discover(Transcript().call("git commit -m x"))
+        self.assertIn("PRs past that are not discovered", err.getvalue())
 
     def test_no_pr_for_branch_means_empty(self):
         self.assertEqual(self.run_discover(Transcript().call("git commit -m x")), [])
