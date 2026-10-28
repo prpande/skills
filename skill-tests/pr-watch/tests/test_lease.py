@@ -343,6 +343,38 @@ class WriteTests(LeaseCase):
         self.assertEqual(ok, "written")
         self.assertEqual(len(calls), 3)
 
+    def test_tick_write_skips_while_a_claim_holds_the_lock(self):
+        self.put()
+        before = pw_paths.lease_path("o", "r", 1).read_bytes()
+        lock = pw_paths.claim_lock_path("o", "r", 1)
+        lock.touch()
+        os.utime(lock, (NOW, NOW))
+        with mock.patch.object(lease.time, "sleep"):
+            result = lease.tick_write("o", "r", 1, session_id="s-1", now=NOW, head="x",
+                                      pending_since=None, last_error=None, poller_pid=1)
+        self.assertEqual(result, "busy")
+        self.assertEqual(pw_paths.lease_path("o", "r", 1).read_bytes(), before)
+
+    def test_set_status_raises_when_the_lock_stays_held(self):
+        self.put()
+        lock = pw_paths.claim_lock_path("o", "r", 1)
+        lock.touch()
+        os.utime(lock, (NOW, NOW))
+        with mock.patch.object(lease.time, "sleep"), self.assertRaises(TimeoutError):
+            lease.set_status("o", "r", 1, "stopped", "s-1", NOW)
+        self.assertEqual(lease.read_lease("o", "r", 1)["status"], "armed")
+
+    def test_lease_writes_release_the_lock(self):
+        self.put()
+        lease.tick_write("o", "r", 1, session_id="s-1", now=NOW, head="x", pending_since=None,
+                         last_error=None, poller_pid=1)
+        lease.set_status("o", "r", 1, "stopped", "s-1", NOW)
+        self.assertFalse(pw_paths.claim_lock_path("o", "r", 1).exists())
+
+    def test_lock_create_refused_by_a_pending_delete_counts_as_busy(self):
+        with mock.patch.object(lease.os, "open", side_effect=PermissionError("delete pending")):
+            self.assertFalse(lease._take_lock(pw_paths.claim_lock_path("o", "r", 1), NOW))
+
     def test_set_status_propagates_persistent_read_error(self):
         self.put()
         with mock.patch.object(lease, "read_json", side_effect=PermissionError("locked")),                 mock.patch.object(lease.time, "sleep"):

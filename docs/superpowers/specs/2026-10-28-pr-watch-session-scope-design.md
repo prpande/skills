@@ -100,7 +100,7 @@ checkout any more, except the library files below.
   prs/<owner>/<repo>/
     <N>.json              the lease; written only by poll.py (rules below)
     <N>.progress.json     the PR's progress; written only by the lease holder's session
-    <N>.claim.lock        transient; exclusive-create lock around a claim
+    <N>.claim.lock        transient; exclusive-create lock around every lease write
 ```
 
 `<session-id>` is `CLAUDE_CODE_SESSION_ID` (verified by `[OrchDev]PrAuto`
@@ -202,9 +202,13 @@ Windows retry). Two kinds of write, which never overlap for one PR:
 
 - **Claim and final status** (`POLL --claim`, `POLL --lease-status`):
   run by step 01 before the monitor starts, by `stop` after the monitor
-  is stopped, and by `release` after it updates `watch.json`. A claim
-  holds `<N>.claim.lock` (exclusive create; a lock older than 60 s is
-  stale and removed) for its read-check-write.
+  is stopped, and by `release` after it updates `watch.json`. Every
+  lease write, a tick's included, holds `<N>.claim.lock` (exclusive
+  create; a lock older than 60 s is stale and removed) for its
+  read-check-write, so a status change or a takeover never lands between
+  a tick's read and its write. A tick that finds the lock held skips that
+  PR until the next tick; a status change waits up to 5 s for it, then
+  fails.
 - **Ticks** (`POLL --monitor`): rewrites the lease of every `armed` PR in
   the session's `prs` on each tick: heartbeat, `last_head_sha`,
   `pending_since`, `last_error`. Each write first re-reads the lease and

@@ -14,7 +14,7 @@ PW_HOME/
   prs/<owner>/<repo>/
     <N>.json                    the lease; written only by poll.py
     <N>.progress.json           the PR's progress; written only by the lease holder's session
-    <N>.claim.lock              transient lock around a claim
+    <N>.claim.lock              transient lock around every lease write
     push.lock                   transient lock around a push
 ```
 

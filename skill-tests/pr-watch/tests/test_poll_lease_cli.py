@@ -122,6 +122,11 @@ class PushLockCliTests(LeaseCliCase):
         self.assertTrue(lease.take_push_lock("o", "r", "s-b", 1_301.0))
         self.assertEqual(path.read_text(encoding="utf-8"), "s-b")
 
+    def test_holder_retaking_its_own_push_lock_succeeds(self):
+        self.assertTrue(lease.take_push_lock("o", "r", "s-a", 1_000.0))
+        self.assertTrue(lease.take_push_lock("o", "r", "s-a", 1_010.0))
+        self.assertFalse(lease.take_push_lock("o", "r", "s-b", 1_010.0))
+
 
 if __name__ == "__main__":
     unittest.main()

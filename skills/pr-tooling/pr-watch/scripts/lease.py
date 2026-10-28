@@ -7,7 +7,7 @@ import subprocess
 import time
 
 from pw_io import no_window, read_json, write_json_atomic
-from pw_paths import (claim_lock_path, home, iso_utc, lease_path, parse_iso, pr_dir,
+from pw_paths import (claim_lock_path, home, iso_utc, lease_path, parse_iso, pr_dir, pr_key,
                       progress_path, push_lock_path)
 
 STALE_AFTER_SECONDS = 300
@@ -20,6 +20,8 @@ PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 STILL_ACTIVE = 259
 READ_ATTEMPTS = 3
 READ_RETRY_SECONDS = 0.05
+TICK_LOCK_ATTEMPTS = 3
+STATUS_LOCK_ATTEMPTS = 100
 
 
 def process_started_at(pid: int) -> float | None:
@@ -132,6 +134,9 @@ def _take_lock(path, now: float, stale_seconds: float = CLAIM_LOCK_STALE_SECONDS
         try:
             os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
             return True
+        except PermissionError:
+            # Windows refuses the create while the previous lock's delete is still pending.
+            continue
         except FileExistsError:
             try:
                 age = now - os.stat(path).st_mtime
@@ -189,6 +194,12 @@ def claim(owner, repo, n, *, role, holder, explicit, now, started_at=process_sta
 
 def take_push_lock(owner, repo, session_id, now) -> bool:
     path = push_lock_path(owner, repo)
+    try:
+        if path.read_text(encoding="utf-8") == session_id:
+            os.utime(path)
+            return True
+    except OSError:
+        pass
     if not _take_lock(path, now, PUSH_LOCK_STALE_SECONDS):
         return False
     path.write_text(session_id, encoding="utf-8")
@@ -221,30 +232,52 @@ def _held_by(owner, repo, n, session_id) -> dict | None:
     return data
 
 
+def _hold_lock(owner, repo, n, now, attempts):
+    lock = claim_lock_path(owner, repo, n)
+    for attempt in range(attempts):
+        if _take_lock(lock, now):
+            return lock
+        if attempt < attempts - 1:
+            time.sleep(READ_RETRY_SECONDS)
+    return None
+
+
 def set_status(owner, repo, n, status, session_id, now) -> bool:
-    data = _held_by(owner, repo, n, session_id)
-    if data is None:
-        return False
-    data.update(status=status, updated_at=iso_utc(now))
-    write_json_atomic(lease_path(owner, repo, n), data)
-    return True
+    lock = _hold_lock(owner, repo, n, now, STATUS_LOCK_ATTEMPTS)
+    if lock is None:
+        raise TimeoutError(f"the lease for {pr_key(owner, repo, n)} stayed locked")
+    try:
+        data = _held_by(owner, repo, n, session_id)
+        if data is None:
+            return False
+        data.update(status=status, updated_at=iso_utc(now))
+        write_json_atomic(lease_path(owner, repo, n), data)
+        return True
+    finally:
+        lock.unlink(missing_ok=True)
 
 
 def tick_write(owner, repo, n, *, session_id, now, head, pending_since, last_error, poller_pid,
                status="armed") -> str:
-    data = _read_with_retry(owner, repo, n)
-    if data is None:
-        return "missing"
-    if data["holder"].get("session_id") != session_id:
-        return "lost"
-    if data.get("status") != "armed":
-        return "inactive"
-    stamp = iso_utc(now)
-    data["holder"]["poller_pid"] = poller_pid
-    data.update(heartbeat=stamp, last_head_sha=head, pending_since=pending_since,
-                last_error=last_error, status=status, updated_at=stamp)
-    write_json_atomic(lease_path(owner, repo, n), data)
-    return "written"
+    lock = _hold_lock(owner, repo, n, now, TICK_LOCK_ATTEMPTS)
+    if lock is None:
+        return "busy"
+    try:
+        data = _read_with_retry(owner, repo, n)
+        if data is None:
+            return "missing"
+        if data["holder"].get("session_id") != session_id:
+            return "lost"
+        if data.get("status") != "armed":
+            return "inactive"
+        stamp = iso_utc(now)
+        data["holder"]["poller_pid"] = poller_pid
+        data.update(heartbeat=stamp, last_head_sha=head, pending_since=pending_since,
+                    last_error=last_error, status=status, updated_at=stamp)
+        write_json_atomic(lease_path(owner, repo, n), data)
+        return "written"
+    finally:
+        lock.unlink(missing_ok=True)
 
 
 def _lease_numbers(owner, repo) -> list[int]:

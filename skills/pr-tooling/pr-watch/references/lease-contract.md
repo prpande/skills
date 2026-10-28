@@ -80,7 +80,8 @@ its creation time is within 2 seconds of `holder.pid_started_at`.
 ## Writers
 
 Only pr-watch's `poll.py` writes a lease. Two kinds of write exist and
-they do not overlap for one PR:
+they do not overlap for one PR; each holds a per-PR lock for its
+read-check-write:
 
 - A claim, and a final status (`stopped`, `released`). These run in the
   session that holds, or is claiming, the PR. A claim takes the lease
@@ -101,7 +102,7 @@ These files sit beside the lease and may change without notice:
 
 - `<N>.progress.json`: the PR's progress, written by the holder's
   session.
-- `<N>.claim.lock`: a transient lock around a claim.
+- `<N>.claim.lock`: a transient lock held around every lease write.
 - `push.lock` in the repo directory: serialises pushes within a repo.
 
 Do not read them for decisions and do not delete them.
