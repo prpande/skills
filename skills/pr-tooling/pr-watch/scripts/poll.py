@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import copy
 import http.client
 import json
 import os
@@ -17,6 +16,7 @@ import re
 import subprocess
 import sys
 import time
+from typing import NamedTuple
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -26,7 +26,8 @@ if __name__ == "__main__":
 
 import lease
 from pw_io import GhError, as_pid, no_window, read_json, write_json_atomic
-from pw_paths import NAME, iso_utc, parse_ref, pr_key, progress_path
+from pw_paths import NAME, iso_utc, parse_ref, pr_key, progress_path, repo_slug
+from pw_progress import starting_progress
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 TICK_SECONDS = 60
@@ -48,14 +49,6 @@ IS_WINDOWS = os.name == "nt"
 PROGRESS_SIGNATURE_FIELDS = ("settled_ids", "handled_top_level_ids", "posted_reply_ids",
                              "escalated_ids", "rereviewed_head", "ci_handled")
 REPORTED_STATUSES = ("armed", "stopped")
-COMMON_START = {"posted_reply_ids": [], "settled_ids": [], "escalated_ids": [],
-                "handled_top_level_ids": {}, "slack_ts": None}
-AUTHORED_START = {"ci_reruns": [], "ci_rerun_queued": [], "ci_handled": [], "ci_log_retries": [],
-                  "ci_log_occurrence": None, "cap_notified_head": None, "ci_fix_pushes": 0,
-                  "review_fix_pushes": 0, "last_pushed_head": None, "queued_head": None,
-                  "queued_at": None, "wait_notice_at": None, "retry_after": None,
-                  "skip_reason": None}
-REVIEWED_START = {"finding_verdicts": {}, "rereviewed_head": None, "retry_after": None}
 LOG_LINES = 2000
 FAILURE_MARK = re.compile(
     r"##\[error\]|\berror [A-Z]{2,5}\d{3,5}\b|\bFailed [\w.]+ \[|\bTest Run Failed\b|npm ERR!")
@@ -202,11 +195,6 @@ def entry_key(entry):
 
 def pr_key_of(pr):
     return pr_key(*parse_ref(pr["url"]))
-
-
-def starting_progress(role):
-    start = dict(COMMON_START, **(AUTHORED_START if role == "authored" else REVIEWED_START))
-    return copy.deepcopy(start)
 
 
 def progress_signature(entry):
@@ -402,15 +390,21 @@ def check_key(check):
     return f"{check.get('workflow') or ''}|{check['name']}"
 
 
+class Evaluation(NamedTuple):
+    event: dict | None
+    signature: str
+    pending: bool
+
+
 def evaluate_ci(gh, entry, node, seen, stored):
     """`seen` dedupes (empty on a forced pass); `stored` is kept when nothing is red."""
     if rollup_state(node) not in FAILED_ROLLUP:
-        return None, stored, False
-    slug = f"{entry['owner']}/{entry['repo']}"
+        return Evaluation(None, stored, False)
+    slug = repo_slug(entry["owner"], entry["repo"])
     red = sorted((c for c in required_checks(gh, slug, entry["number"]) if c.get("bucket") == "fail"),
                  key=check_key)
     if not red:
-        return None, stored, False
+        return Evaluation(None, stored, False)
     head = node["headRefOid"]
     handled = set(entry.get("ci_handled") or [])
     unhandled = any(f"{head}|{c.get('workflow') or ''}|{c['name']}|{c.get('completedAt') or ''}"
@@ -418,24 +412,26 @@ def evaluate_ci(gh, entry, node, seen, stored):
     signature = f"ci:{head}:" + ",".join(
         f"{check_key(c)}|{c.get('completedAt') or ''}" for c in red)
     if signature == seen.get("last_ci_signature"):
-        return None, signature, unhandled
-    return {"pr": entry_key(entry), "role": "authored", "kind": "ci-red", "head": head,
-            "checks": [{"name": c["name"], "workflow": c.get("workflow") or "",
-                        "completed_at": c.get("completedAt")} for c in red]}, signature, unhandled
+        return Evaluation(None, signature, unhandled)
+    event = {"pr": entry_key(entry), "role": "authored", "kind": "ci-red", "head": head,
+             "checks": [{"name": c["name"], "workflow": c.get("workflow") or "",
+                         "completed_at": c.get("completedAt")} for c in red]}
+    return Evaluation(event, signature, unhandled)
 
 
 def evaluate_authored(view, pr, entry, prev):
     threads, top = pending(pr, entry, view["self_login"], view["bot_allowlist"])
     ids = sorted([c["id"] for _, tail in threads for c in tail] + [i["id"] for _, i in top])
     if not ids:
-        return None, "", False
+        return Evaluation(None, "", False)
     signature = "pending:" + ",".join(ids)
     if signature == prev.get("last_signature"):
-        return None, signature, True
-    return {"pr": entry_key(entry), "role": "authored", "kind": "pending",
-            "threads": [t["id"] for t, _ in threads],
-            "comments": [i["id"] for s, i in top if s == "issue"],
-            "reviews": [i["id"] for s, i in top if s == "review"]}, signature, True
+        return Evaluation(None, signature, True)
+    event = {"pr": entry_key(entry), "role": "authored", "kind": "pending",
+             "threads": [t["id"] for t, _ in threads],
+             "comments": [i["id"] for s, i in top if s == "issue"],
+             "reviews": [i["id"] for s, i in top if s == "review"]}
+    return Evaluation(event, signature, True)
 
 
 def review_start(view, pr, entry):
@@ -455,15 +451,15 @@ def evaluate_reviewed(gh, view, pr, entry, prev, compare=None):
     key = entry_key(entry)
     threads = my_threads(pr, me, allow)
     if not threads:
-        return None, "", False
+        return Evaluation(None, "", False)
     replied = {t["id"]: replies_after_me(t, me, allow) for t in threads}
     replies = [c for thread_replies in replied.values() for c in thread_replies]
     escalated = set(entry.get("escalated_ids") or [])
     answered = all(c["id"] in escalated for c in replies)
     if answered and all(t["isResolved"] for t in threads):
         if prev.get("last_signature") == "settled":
-            return None, "settled", False
-        return {"pr": key, "role": "reviewed", "kind": "settled"}, "settled", False
+            return Evaluation(None, "settled", False)
+        return Evaluation({"pr": key, "role": "reviewed", "kind": "settled"}, "settled", False)
     old, new = review_start(view, pr, entry), pr["headRefOid"]
     author = (pr.get("author") or {}).get("login")
     reply_ids = sorted(c["id"] for c in replies)
@@ -475,19 +471,20 @@ def evaluate_reviewed(gh, view, pr, entry, prev, compare=None):
         touches = compare_capped(files) or any(t["path"] in files for t in threads)
         review_pending = touches or author_replied or not answered
         if signature == prev.get("last_signature") or not (touches or author_replied):
-            return None, signature, review_pending
-        return {"pr": key, "role": "reviewed", "kind": "head-moved",
-                "old_head": old, "new_head": new, "touches_my_findings": touches,
-                "author_replied": author_replied}, signature, review_pending
+            return Evaluation(None, signature, review_pending)
+        event = {"pr": key, "role": "reviewed", "kind": "head-moved",
+                 "old_head": old, "new_head": new, "touches_my_findings": touches,
+                 "author_replied": author_replied}
+        return Evaluation(event, signature, review_pending)
     review_pending = not answered
     if not replies:
-        return None, "", review_pending
+        return Evaluation(None, "", review_pending)
     signature = "reply:" + ",".join(reply_ids)
     if signature == prev.get("last_signature"):
-        return None, signature, review_pending
-    return {"pr": key, "role": "reviewed", "kind": "reply",
-            "threads": [tid for tid, thread_replies in replied.items() if thread_replies]
-            }, signature, review_pending
+        return Evaluation(None, signature, review_pending)
+    event = {"pr": key, "role": "reviewed", "kind": "reply",
+             "threads": [tid for tid, thread_replies in replied.items() if thread_replies]}
+    return Evaluation(event, signature, review_pending)
 
 
 def warn(message):
@@ -995,7 +992,7 @@ def base_conclusion(on_base, workflow, name):
 
 
 def checks_payload(gh, owner, repo, number):
-    slug = f"{owner}/{repo}"
+    slug = repo_slug(owner, repo)
     base, head = gh(["api", f"repos/{slug}/pulls/{number}",
                      "--jq", '.base.ref + " " + .head.sha']).split()
     on_base = base_conclusions(gh, slug, base)

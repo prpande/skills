@@ -10,6 +10,7 @@ import subprocess
 from lease import STALE_AFTER_SECONDS
 from pw_io import no_window, read_json, write_json_atomic
 from pw_paths import lease_path, parse_ref, pr_key, progress_path
+from pw_progress import FIELDS as PROGRESS_FIELDS
 
 CLAUDE_IMAGE = re.compile(r"^claude\.exe", re.IGNORECASE)
 MONITOR_FLAG = re.compile(r"(?:^|\s)--monitor(?:\s|$)")
@@ -121,11 +122,8 @@ def scan(main, claude_pid, procs, now) -> dict:
 
 
 def import_progress(main) -> list[str]:
-    import poll
-
     state_dir = pathlib.Path(main) / ".pr-autopilot"
     watch_path = state_dir / "watch.json"
-    fields = {*poll.COMMON_START, *poll.AUTHORED_START, *poll.REVIEWED_START}
     covered = []
     if watch_path.exists():
         watch = read_json(watch_path)
@@ -133,7 +131,7 @@ def import_progress(main) -> list[str]:
             target = progress_path(owner, repo, n)
             if not target.exists():
                 target.parent.mkdir(parents=True, exist_ok=True)
-                write_json_atomic(target, {k: v for k, v in entry.items() if k in fields})
+                write_json_atomic(target, {k: v for k, v in entry.items() if k in PROGRESS_FIELDS})
             covered.append(pr_key(owner, repo, n))
         os.replace(watch_path, state_dir / "watch.json.migrated")
     for name in ("watch-heartbeat", "watch-poller.json"):

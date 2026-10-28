@@ -10,7 +10,7 @@ import sys
 
 import lease
 from pw_io import GhError, no_window, read_json
-from pw_paths import NAME, parse_ref, pr_key, session_dir
+from pw_paths import NAME, parse_ref, pr_key, repo_slug, session_dir
 
 ORIGIN_CACHE: dict[str, str | None] = {}
 
@@ -77,7 +77,7 @@ def parse_origin(url, resolve_host=None):
         match = SSH_ALIAS_REMOTE.match(url) or SCP_ALIAS_REMOTE.match(url)
         if not match or (resolve_host or ssh_hostname)(match.group("host")) not in GITHUB_SSH_HOSTS:
             return None
-    return f"{match.group('owner')}/{match.group('repo')}".lower()
+    return repo_slug(match.group("owner"), match.group("repo"))
 
 
 def ssh_hostname(alias):
@@ -319,7 +319,7 @@ def discover(gh, session_id, self_login, origin_of, projects=None):
     for (owner, repo, branch), kinds in found["branches"].items():
         by_repo.setdefault((owner, repo), {})[branch] = kinds
     for (owner, repo), branches in by_repo.items():
-        listed = gh_json(gh, ["pr", "list", "--repo", f"{owner}/{repo}", "--author", self_login,
+        listed = gh_json(gh, ["pr", "list", "--repo", repo_slug(owner, repo), "--author", self_login,
                               "--state", "open", "--limit", "1000",
                               "--json", "number,url,headRefName"])
         for pr in listed or []:
@@ -356,7 +356,7 @@ def holder_clone(owner, repo, number, origin_of, toplevel_of=None):
         return None
     entry = (watch.get("prs") or {}).get(pr_key(owner, repo, number)) or {}
     worktree = entry.get("worktree")
-    if not worktree or origin_of(worktree) != f"{owner}/{repo}".lower():
+    if not worktree or origin_of(worktree) != repo_slug(owner, repo):
         return None
     return (toplevel_of or repo_toplevel)(worktree)
 
@@ -370,7 +370,7 @@ def find_clone(session_id, owner, repo, origin_of, projects=None, toplevel_of=No
     used = []
     for record in read_records(path):
         used += [p for p in [record.get("cwd"), *dash_c_paths(record)] if p]
-    wanted = f"{owner}/{repo}".lower()
+    wanted = repo_slug(owner, repo)
     for cwd in dict.fromkeys(reversed(used)):
         top = toplevel_of(cwd) if origin_of(cwd) == wanted else None
         if top:
