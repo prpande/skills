@@ -176,7 +176,8 @@ def evidence(records, origin_of):
         for item in content:
             if not isinstance(item, dict):
                 continue
-            if kind == "assistant" and item.get("type") == "tool_use"                     and item.get("name") in ("Bash", "PowerShell"):
+            if (kind == "assistant" and item.get("type") == "tool_use"
+                    and item.get("name") in ("Bash", "PowerShell")):
                 command = (item.get("input") or {}).get("command") or ""
                 calls[item.get("id")] = call = {"creates_pr": False, "push_repos": []}
                 for segment in split_segments(command):
