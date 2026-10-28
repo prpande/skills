@@ -436,11 +436,12 @@ fix path that assumes the cwd takes the worktree root explicitly:
   `last_error: "repo unreachable"`, so the orchestrator does not nudge a
   session that a re-arm cannot help.
 - A `--dry-run` monitor writes no leases.
-- Whether the monitor runs is read from disk (`watch-poller.json`
-  `poller_pid` alive under this session's claude pid, and a heartbeat
-  under 300 s), not from a task id compaction may have dropped.
-- `watch-poller.json` records `poller_pid` and `claude_pid` for the
-  ancestry check.
+- Whether the monitor runs is read from the process list (a
+  `poll.py --monitor --session-dir <this session's dir>` process under this
+  session's claude pid), not from a task id compaction may have dropped.
+  The heartbeat does not count: it goes stale across a laptop sleep while
+  the poller lives on, and a gate on it would arm a second poller. `gh`
+  calls time out, so a running poller is ticking.
 - The per-PR modes (`--baseline`, `--tails`, `--findings`, `--checks`)
   take `owner/repo#N`, and `--report` covers the whole set; `--assert-author`, `--ci-log` and
   `--ci-rerun` keep `--repo` but step files fill it from the key.

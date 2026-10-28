@@ -36,7 +36,7 @@ The file is UTF-8 JSON, one object.
 | `stale_after_seconds` | integer | `300`. Age after which `heartbeat` no longer shows a live monitor |
 | `status` | string | `armed`, `stopped`, `released` or `closed` |
 | `last_head_sha` | string or null | The PR head at the last tick |
-| `pending_since` | string or null | ISO-8601 UTC. The first tick that saw work not yet handled: an unreplied thread tail, an unhandled red required check, or for a `reviewed` PR a push past the user's review. Null when there is none, and on a `closed` lease |
+| `pending_since` | string or null | ISO-8601 UTC. The first tick that saw work not yet handled: an unreplied thread tail, an unhandled red required check, or for a `reviewed` PR a reply on the user's threads not yet answered, or a push since the review that touches a file one of the user's findings is on or comes with an author reply. A push that does neither does not set it. Null when there is none, and on a `closed` lease |
 | `last_error` | string or null | Null when the last tick was healthy. The monitor writes it on every tick, so it returns to null on the first good tick; a claim also resets it. A string on an `armed` lease means the monitor is running but could not reach GitHub for this PR. The only value today is `repo unreachable`; treat any string as a fault. `status` stays `armed` |
 | `updated_at` | string | ISO-8601 UTC of the last write |
 

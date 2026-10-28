@@ -3,8 +3,8 @@
 ## Arm
 
 Run `POLL --monitor-alive --session-dir <SESSION_DIR>`. When it prints
-`alive`, do not arm a second one. It reads the running process and the
-heartbeat from disk, so it holds after the task id is lost to compaction.
+`alive`, do not arm a second one. It reads the running processes, so it
+holds after the task id is lost to compaction.
 
 Call `Monitor` with:
 
@@ -62,6 +62,9 @@ re-arming and tell the user what the notice said; the watch is down
 until they fix it.
 
 ## Stop
+
+Under `dry_run` the watch holds no leases, so `stop` and `release` skip
+every `POLL --lease-status` call below.
 
 `/pr-watch stop` writes `watch.json` first: `stopped_at` is the current
 epoch seconds and every `armed` entry's `status` becomes `stopped`; a

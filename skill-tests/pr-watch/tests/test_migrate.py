@@ -234,8 +234,8 @@ class LeftoverAndAliveTests(WatchDirCase):
         (self.tmp / "watch-heartbeat").write_text(str(NOW - 5), encoding="utf-8")
         orphan = [proc(7001, 1, "python.exe", session_cmd(self.tmp))]
         self.assertEqual([], migrate.leftover_monitors(self.tmp, None, orphan))
-        self.assertFalse(migrate.monitor_alive(self.tmp, None, orphan, NOW))
-        self.assertFalse(migrate.monitor_alive(self.tmp, 4242, orphan, NOW))
+        self.assertFalse(migrate.monitor_alive(self.tmp, None, orphan))
+        self.assertFalse(migrate.monitor_alive(self.tmp, 4242, orphan))
 
     def test_leftover_is_the_poller_under_a_dead_claude_only(self):
         mine = tree(4242, "claude.exe", session_cmd(), python_pid=300)
@@ -243,20 +243,17 @@ class LeftoverAndAliveTests(WatchDirCase):
         other_session = [proc(7002, 1, "python.exe", session_cmd(SESSION + "-2"))]
         self.assertEqual([7001], migrate.leftover_monitors(SESSION, 4242, mine + old + other_session))
 
-    def test_alive_with_same_ancestor_and_fresh_heartbeat(self):
-        (self.tmp / "watch-heartbeat").write_text(str(NOW - 30), encoding="utf-8")
+    def test_alive_with_same_ancestor_whatever_the_heartbeat_says(self):
         procs = tree(4242, "claude.exe.old.1.4242", session_cmd(self.tmp))
-        self.assertTrue(migrate.monitor_alive(self.tmp, 4242, procs, NOW))
+        self.assertTrue(migrate.monitor_alive(self.tmp, 4242, procs))
+        (self.tmp / "watch-heartbeat").write_text(str(NOW - 3600), encoding="utf-8")
+        self.assertTrue(migrate.monitor_alive(self.tmp, 4242, procs))
 
-    def test_down_with_stale_heartbeat_no_heartbeat_or_other_ancestor(self):
+    def test_down_with_no_process_or_other_ancestor(self):
         procs = tree(4242, "claude.exe", session_cmd(self.tmp))
-        (self.tmp / "watch-heartbeat").write_text(str(NOW - 300), encoding="utf-8")
-        self.assertFalse(migrate.monitor_alive(self.tmp, 4242, procs, NOW))
         (self.tmp / "watch-heartbeat").write_text(str(NOW - 5), encoding="utf-8")
-        self.assertFalse(migrate.monitor_alive(self.tmp, 9999, procs, NOW))
-        self.assertFalse(migrate.monitor_alive(self.tmp, 4242, [], NOW))
-        (self.tmp / "watch-heartbeat").unlink()
-        self.assertFalse(migrate.monitor_alive(self.tmp, 4242, procs, NOW))
+        self.assertFalse(migrate.monitor_alive(self.tmp, 9999, procs))
+        self.assertFalse(migrate.monitor_alive(self.tmp, 4242, []))
 
 
 class ListProcessesTests(unittest.TestCase):

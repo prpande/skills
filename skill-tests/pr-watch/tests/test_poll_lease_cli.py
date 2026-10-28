@@ -46,6 +46,14 @@ class ClaimCliTests(LeaseCliCase):
                          (0, "reclaimed"))
         self.assertEqual(lease.read_lease("o", "r", 1)["holder"]["session_id"], "s-a")
 
+    def test_a_claude_pid_stored_as_text_is_written_as_an_integer(self):
+        d = self.session("s-a")
+        view = json.loads((d / "watch.json").read_text(encoding="utf-8"))
+        view["claude_pid"] = str(os.getpid())
+        (d / "watch.json").write_text(json.dumps(view), encoding="utf-8")
+        run("--claim", REF, "--session-dir", d, "--role", "authored")
+        self.assertEqual(lease.read_lease("o", "r", 1)["holder"]["pid"], os.getpid())
+
     def test_claim_of_another_sessions_dead_lease_prints_taken_over(self):
         self.put_lease("s-old")
         code, out, _ = run("--claim", REF, "--session-dir", self.session("s-new"),

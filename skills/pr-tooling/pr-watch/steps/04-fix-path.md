@@ -137,8 +137,8 @@ Run `pr-loop-lib/steps/04-dispatch-fixers.md` as written, except:
   does not match `git -C`.
 - An other-repo PR: also append "The repository is at `<worktree>`, not
   your working directory. Read it with Read, Grep, and Glob on absolute
-  paths under it. Run no git command; check b uses the PR diff stat
-  above."
+  paths under it. Run no git command, whatever the prompt above says
+  about `git -C`; check b uses the PR diff stat above."
 - A `ui-deferred` return is demoted to `needs-human` with its reason.
 - A `partial` or `not-addresses` verifier judgement rolls the fixer's
   `files_changed` back with section 10, in place of the library's own
@@ -235,7 +235,7 @@ No returns in section 5: go to section 7, then section 9.
      keys `POLL --repo-peers <key>` prints, without this PR and without
      duplicates. Never a PR in another repo.
    - For each such PR `M`:
-     `gh pr checks <M> --repo <owner>/<repo> --required --json bucket --jq 'map(select(.bucket=="pending")) | length'`.
+     `gh pr checks <M's number> --repo <owner>/<repo> --required --json bucket --jq 'map(select(.bucket=="pending")) | length'`.
    A non-zero exit counts as 0. When its stderr says neither "no
    required checks reported" nor "no checks reported", also post "Could
    not read #<M>'s checks: <first stderr line>." in the PR thread, once

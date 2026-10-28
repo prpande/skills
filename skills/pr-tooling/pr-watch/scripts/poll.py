@@ -706,6 +706,9 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
         try:
             view = load_view(session_dir)
             poller = read_json(session_dir / "watch-poller.json", default={})
+            if ticks == 1:
+                # a PR closed under an earlier monitor may have been reopened and re-armed
+                poller["closed"] = []
             now = int(clock())
             last = poller.get("last_reconciliation", 0)
             due = now - last >= RECONCILE_SECONDS
@@ -1180,7 +1183,10 @@ def lease_mode(args):
         print(f"pr-watch: {pr_key(owner, repo, number)} is not held by this session",
               file=sys.stderr)
         return 1
-    pid = watch.get("claude_pid")
+    try:
+        pid = int(watch.get("claude_pid") or 0) or None
+    except (TypeError, ValueError):
+        pid = None
     started = lease.process_started_at(pid) if pid else None
     holder = {"session_id": session_id, "pid": pid,
               "pid_started_at": iso_utc(started) if started is not None else None,
@@ -1240,7 +1246,7 @@ def migrate_mode(args):
             migrate.end_tree(pid)
         print(json.dumps(pids))
     else:
-        print("alive" if migrate.monitor_alive(args.session_dir, claude_pid, procs, now) else "down")
+        print("alive" if migrate.monitor_alive(args.session_dir, claude_pid, procs) else "down")
     return 0
 
 

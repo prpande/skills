@@ -133,8 +133,8 @@ branch, so each `retry_after` forces one re-emit of it; kept across later
 writes of the entry), and, `authored` PRs only, `ci_retried_at` (the same,
 for the CI branch; spent independently, so a standing CI-only failure does
 not keep forcing the pending set too). Deleting the file makes the next
-tick a full reconciliation. `poller_pid` and `claude_pid` are what the
-ancestry check reads.
+tick a full reconciliation. `poller_pid` and `claude_pid` are recorded
+for diagnosis; the ancestry checks read the live process list.
 
 ## `watch-heartbeat`: written only by `POLL --monitor`
 
@@ -142,9 +142,10 @@ The epoch seconds of the monitor's last sign of life, as a bare integer.
 Written at the start of every tick, before every `gh` call, and after
 every sleep, so the longest gap on a live monitor is one 120-second `gh`
 timeout plus the 60-second sleep. A failed write is logged and never
-stops the loop. `POLL --monitor-alive` reads it: the monitor is alive
-when a `poll.py --monitor --session-dir <SESSION_DIR>` process runs under
-this session's claude process and the heartbeat is under 300 seconds old.
+stops the loop. The leases' `heartbeat` is what other sessions read.
+`POLL --monitor-alive` does not read this file: the monitor is alive when
+a `poll.py --monitor --session-dir <SESSION_DIR>` process runs under this
+session's claude process.
 
 ## `watch-seen.json`: written only by `POLL --report` and `--reseed`
 

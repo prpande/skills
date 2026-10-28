@@ -46,13 +46,13 @@ session doing the work, so fixes are made with that session's context.
   <SESSION_DIR>` prints `alive`.
 - `stop`: write `watch.json` (`stopped_at`, every `armed` entry
   `stopped`), set each of those PRs' leases to `stopped` with `POLL --lease-status <ref> --status
-  stopped --session-dir <SESSION_DIR>`, `TaskStop` the monitor when its
+  stopped --session-dir <SESSION_DIR>` (not under `dry_run`, which holds no leases), `TaskStop` the monitor when its
   task id is known, post one closing reply per PR thread
   (`pr-watch/steps/06-notify.md`), and keep the state files so a later
   `/pr-watch` resumes without replaying settled threads.
 - `release`: set the PR's `watch.json` status to `released`, then its lease
   with `POLL --lease-status <ref> --status released --session-dir
-  <SESSION_DIR>`. Another session may then claim it.
+  <SESSION_DIR>` (not under `dry_run`). Another session may then claim it.
 
 `--channel` defaults to `C0C15VC8Y0Z`. Passing a channel id is the user's
 authorisation to post there; post nowhere else. `--parallel-pushes` turns

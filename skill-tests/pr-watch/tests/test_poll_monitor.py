@@ -348,6 +348,12 @@ class MonitorLoopTests(HomeCase):
         poller = json.loads((self.state / "watch-poller.json").read_text(encoding="utf-8"))
         self.assertEqual(poller["last_reconciliation"], NOW)
 
+    def test_a_closed_key_saved_by_an_earlier_monitor_is_ticked_again(self):
+        (self.state / "watch-poller.json").write_text(
+            json.dumps({"closed": [rk(1411)]}), encoding="utf-8")
+        events, _ = self.run_monitor(1)
+        self.assertEqual([e["kind"] for e in events], ["pending"])
+
     def test_quiet_ticks_emit_nothing_and_fetch_no_threads(self):
         events, _ = self.run_monitor(4)
         self.assertEqual([e["kind"] for e in events], ["pending"])

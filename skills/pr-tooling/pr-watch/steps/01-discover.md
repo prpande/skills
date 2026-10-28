@@ -224,7 +224,8 @@ or under `--dry-run` at
 written with `state_put.py` as `watch-state-schema.md` "Writing" shows.
 
 For every claimed PR (kept entry or candidate) whose progress file does
-not exist, write one with the starting keys for its role:
+not exist, write one with the starting keys for its role, in a single
+write that already holds an `authored` PR's baseline (below):
 
 - all PRs: `posted_reply_ids`, `settled_ids`, and `escalated_ids` as
   `[]`, `handled_top_level_ids` as `{}`, `slack_ts` as `null`;
@@ -240,15 +241,16 @@ A progress file that exists (a resume, a takeover, an import) is never
 re-baselined. A key it lacks for its role gets the starting value; every
 key it has is kept.
 
-For every `authored` PR that got a new progress file in this run, run
-`POLL --baseline <owner/repo#N> --session-dir <SESSION_DIR>`. Merge its
-`settled_ids` and `handled_top_level_ids` into the PR's progress file.
-When it exits non-zero, drop the PR (remove a kept entry from
-`watch.json`), release its lease with `POLL --lease-status
-<owner/repo#N> --status released --session-dir <SESSION_DIR>`, delete the
-progress file just written, and list the PR among the excluded PRs in §7
-with the command's stderr line. A PR left in without its baseline would
-be resumed next run with every old thread pending.
+For every `authored` PR without a progress file, run
+`POLL --baseline <owner/repo#N> --session-dir <SESSION_DIR>` before
+writing it, and put its `settled_ids` and `handled_top_level_ids` into
+that one write. When it exits non-zero, write no progress file, drop the
+PR (remove a kept entry from `watch.json`), release its lease with
+`POLL --lease-status <owner/repo#N> --status released --session-dir
+<SESSION_DIR>`, and list the PR among the excluded PRs in §7 with the
+command's stderr line. A progress file is shared by every later holder
+and never re-baselined, so one written without its baseline would replay
+every old thread.
 
 The baseline holds back one kind of existing item: a bot review submitted
 against the PR's current head. That is feedback on the code as it stands,

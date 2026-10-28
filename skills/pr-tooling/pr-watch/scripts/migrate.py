@@ -152,13 +152,12 @@ def leftover_monitors(session_dir, claude_pid, procs) -> list[int]:
             if claude_ancestor(proc["pid"], procs) != claude_pid]
 
 
-def monitor_alive(session_dir, claude_pid, procs, now) -> bool:
+def monitor_alive(session_dir, claude_pid, procs) -> bool:
+    """True when this claude runs a poller for `session_dir`; the heartbeat goes stale across a sleep."""
     if not claude_pid:
         return False
-    mine = [proc for proc in _monitors_for(procs, "--session-dir", session_dir)
-            if claude_ancestor(proc["pid"], procs) == claude_pid]
-    heartbeat = pathlib.Path(session_dir) / "watch-heartbeat"
-    return bool(mine) and _heartbeat_age(heartbeat, now) < STALE_AFTER_SECONDS
+    return any(claude_ancestor(proc["pid"], procs) == claude_pid
+               for proc in _monitors_for(procs, "--session-dir", session_dir))
 
 
 def end_tree(pid: int) -> None:
