@@ -3,6 +3,15 @@
 Spawn parallel subagents to address each actionable item from step 03.
 Conflict-avoidance and clustering rules apply.
 
+## Worktree root
+
+The caller may pass the worktree root: the absolute path of the repository
+the fixes are made in. `{{WORKTREE_ROOT}}` is that path. When the caller
+passes none it is the absolute path of the current working directory, which
+is how this step always ran. Read every `git` command in this step as
+`git -C {{WORKTREE_ROOT}} ...`, and resolve every path a fixer returns in
+`files_changed` against the root.
+
 ## Cluster-analysis gate
 
 Gate signals (either fires the gate):
@@ -56,7 +65,7 @@ For each unit:
    `{{PR_TITLE}}`, `{{BASE_BRANCH}}`, `{{HEAD_SHA}}`, `{{SURFACE_TYPE}}`,
    `{{FILE_PATH}}`, `{{LINE_NUMBER}}`, `{{AUTHOR_LOGIN}}`, `{{AUTHOR_TYPE}}`,
    `{{CREATED_AT}}`, `{{COMMENT_BODY_VERBATIM}}`, `{{FEEDBACK_ID}}`,
-   `{{UI_DEFERRAL_OVERRIDE}}`. `{{UI_DEFERRAL_OVERRIDE}}` is the
+   `{{UI_DEFERRAL_OVERRIDE}}`, `{{WORKTREE_ROOT}}`. `{{UI_DEFERRAL_OVERRIDE}}` is the
    literal string `false` during the normal loop and `true` only when
    step 11's UI-deferred approval phase re-enters this step for items
    the user explicitly approved.
@@ -73,8 +82,8 @@ Collect all returns into `context.agent_returns`.
 Validate each return:
 - `verdict` is in the allowed set; otherwise coerce to `needs-human` and
   log a warning.
-- `files_changed` paths exist and are inside the repo; reject absolute paths
-  outside the repo root.
+- `files_changed` paths exist under `{{WORKTREE_ROOT}}` and are inside it;
+  reject absolute paths outside the worktree root.
 - `reply_text` is non-empty when verdict is not `not-addressing` of the
   `suspicious` flavor (those have canned replies from step 03).
 - **`ui-deferred` guard:** if `verdict == "ui-deferred"` AND
@@ -131,6 +140,7 @@ For each fixer return where `verdict ∈ {fixed, fixed-differently}`:
    - `{{FIXER_VERDICT}}` → `fixer_return.verdict`
    - `{{FIXER_REASON}}` → `fixer_return.reason`
    - `{{FIXER_DIFF}}` → the diff from step 1
+   - `{{WORKTREE_ROOT}}` → the worktree root
 5. Log a `subagent_dispatch` event with `role: "fixer-verifier"`,
    `model: "haiku"`, prompt first 200 chars, `feedback_id:
    <fixer_return.feedback_id>`, `timeout_s: 60`.
