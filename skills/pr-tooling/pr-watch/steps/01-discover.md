@@ -208,12 +208,13 @@ adding `--explicit` for a PR the user named in this invocation. It prints:
 
 A non-zero exit refuses the claim. When its stderr line says "lease
 unreadable", run the same claim once more. Any other refusal, and a second
-"lease unreadable", leaves a kept entry with its old `status` or drops a
-candidate, and lists the PR among the excluded PRs in §7 with the
-command's stderr line.
+"lease unreadable", drops a candidate or refuses a kept entry, and lists
+the PR among the excluded PRs in §7 with the command's stderr line. A
+refused kept entry becomes `lost` when the stderr line names another
+holder, and otherwise keeps its old `status`.
 
-Wherever this step drops a candidate or removes an entry from `watch.json`,
-it also removes the PR's key from `push_queue`.
+Wherever this step drops a candidate, refuses a kept entry, or removes an
+entry from `watch.json`, it also removes the PR's key from `push_queue`.
 
 ## 6. Baseline
 
@@ -295,7 +296,7 @@ remove a kept entry from `watch.json`, and release its lease with
 PRs with the command's stderr line when its baseline fails. Ask again.
 
 Once the set is accepted, set `status` `armed` on each kept entry whose
-claim succeeded (every one under `--dry-run`), add each remaining
+claim succeeded (under `--dry-run`, every one §5 would have claimed), add each remaining
 candidate to `prs` in `watch.json` with `role`, `worktree` (authored
 only), `branch`, `title`, `url`, and `status` `armed`, and rewrite the
 file. When at least one entry of `prs` is `armed`, also set `stopped_at`
