@@ -7,7 +7,7 @@ import pathlib
 import re
 import subprocess
 
-from lease import STALE_AFTER_SECONDS
+from lease import CLOSED_RETENTION_SECONDS, STALE_AFTER_SECONDS
 from pw_io import no_window, read_json, write_json_atomic
 from pw_paths import lease_path, parse_ref, pr_key, progress_path
 from pw_progress import FIELDS as PROGRESS_FIELDS
@@ -92,8 +92,26 @@ def _heartbeat_age(path, now: float) -> float:
 
 def _old_prs(watch) -> list[tuple[tuple[str, str, int], dict]]:
     owner, repo = watch.get("owner", ""), watch.get("repo", "")
-    return [(parse_ref(f"{owner}/{repo}#{n}"), entry)
-            for n, entry in watch.get("prs", {}).items() if str(n).isdigit()]
+    found = []
+    for n, entry in watch.get("prs", {}).items():
+        try:
+            found.append((parse_ref(f"{owner}/{repo}#{n}"), entry))
+        except ValueError:
+            continue
+    return found
+
+
+def _unclaimed_after_import(migrated, now) -> list[str]:
+    # A lease is pruned only after 7 days closed, so an older import cannot be mistaken for an interrupted one.
+    try:
+        if now - migrated.stat().st_mtime > CLOSED_RETENTION_SECONDS:
+            return []
+        watch = read_json(migrated)
+    except (OSError, ValueError):
+        return []
+    if not isinstance(watch, dict):
+        return []
+    return [pr_key(*ref) for ref, _ in _old_prs(watch) if not lease_path(*ref).exists()]
 
 
 def scan(main, claude_pid, procs, now) -> dict:
@@ -103,9 +121,7 @@ def scan(main, claude_pid, procs, now) -> dict:
     try:
         watch = read_json(state_dir / "watch.json")
     except FileNotFoundError:
-        migrated = read_json(state_dir / "watch.json.migrated", default={})
-        result["prs"] = [pr_key(*ref) for ref, _ in _old_prs(migrated)
-                         if not lease_path(*ref).exists()]
+        result["prs"] = _unclaimed_after_import(state_dir / "watch.json.migrated", now)
         return result
     result["prs"] = [pr_key(*ref) for ref, _ in _old_prs(watch)]
     age = _heartbeat_age(state_dir / "watch-heartbeat", now)
@@ -134,6 +150,7 @@ def import_progress(main) -> list[str]:
                 write_json_atomic(target, {k: v for k, v in entry.items() if k in PROGRESS_FIELDS})
             covered.append(pr_key(owner, repo, n))
         os.replace(watch_path, state_dir / "watch.json.migrated")
+        os.utime(state_dir / "watch.json.migrated")
     for name in ("watch-heartbeat", "watch-poller.json"):
         (state_dir / name).unlink(missing_ok=True)
     return covered

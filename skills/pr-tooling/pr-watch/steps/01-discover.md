@@ -136,7 +136,8 @@ keys in the old `<MAIN>/.pr-autopilot/watch.json`. Act on `state`:
 
 - `none`: nothing to migrate. When an earlier import renamed the old
   watch but no session claimed some of its PRs (the session ended before
-  §5), `prs` lists those PRs; add them as the import paragraph below says.
+  §5), `prs` lists those PRs for 7 days after that import; add them as
+  the import paragraph below says.
 - `stale`: no old poller runs and its heartbeat is over 300 s old. Import.
 - `owned`: the old poller runs under this session's claude process. End
   it, then import. `TaskStop` the monitor when its task id is still in
