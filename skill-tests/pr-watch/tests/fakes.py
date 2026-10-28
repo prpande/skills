@@ -1,14 +1,27 @@
 """Builders and a fake gh runner for the pr-watch poller tests."""
+import atexit
 import json
+import os
 import pathlib
+import re
+import shutil
 import sys
+import tempfile
+import unittest
 import urllib.parse
+from unittest import mock
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / "skills" / "pr-tooling" / "pr-watch" / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+if "PR_WATCH_HOME" not in os.environ:
+    _SAFETY_HOME = tempfile.mkdtemp(prefix="pr-watch-tests-")
+    os.environ["PR_WATCH_HOME"] = _SAFETY_HOME
+    atexit.register(shutil.rmtree, _SAFETY_HOME, ignore_errors=True)
+
+import lease  # noqa: E402
 import poll  # noqa: E402
 import pw_paths  # noqa: E402,F401
 
@@ -59,16 +72,72 @@ def pull(number=1411, threads=(), comments=(), reviews=(), head="h2",
     }
 
 
-def watch(prs, push_queue=(), owner="o", repo="r"):
-    return {
-        "session_id": "s-1", "owner": owner, "repo": repo, "self_login": SELF,
-        "channel_id": "C0C15VC8Y0Z", "origin_worktree": "D:/src/r",
-        "serialize_pushes": True, "bot_allowlist": list(ALLOW), "ado_orgs": ["mindbody"],
-        "prs": {str(n): {"role": role, "posted_reply_ids": [], "settled_ids": [],
-                         "escalated_ids": [], "handled_top_level_ids": {}}
-                for n, role in prs.items()},
-        "push_queue": list(push_queue),
+def pk(number, owner="o", repo="r"):
+    return (owner.lower(), repo.lower(), number)
+
+
+def rk(number, owner="o", repo="r"):
+    return pw_paths.pr_key(owner, repo, number)
+
+
+PR_FIELDS = ("role", "worktree", "branch", "title", "url", "status")
+
+
+def watch(prs, push_queue=(), owner="o", repo="r", dry_run=False):
+    """The view poll.load_view returns; an int key means `owner/repo#N` of the defaults."""
+    view = {
+        "session_id": "s-1", "claude_pid": None, "self_login": SELF,
+        "bot_allowlist": list(ALLOW), "ado_orgs": ["mindbody"], "dry_run": dry_run,
+        "push_queue": list(push_queue), "prs": {},
     }
+    for ref, role in prs.items():
+        o, r, n = pw_paths.parse_ref(ref if isinstance(ref, str) else f"{owner}/{repo}#{ref}")
+        view["prs"][pw_paths.pr_key(o, r, n)] = {
+            **poll.starting_progress(role), "role": role, "status": "armed",
+            "branch": f"branch-{n}", "title": f"AB#1552495: slice {n}",
+            "url": f"https://github.com/{o}/{r}/pull/{n}", "owner": o, "repo": r, "number": n}
+    return view
+
+
+def write_session(directory, view):
+    """Write `view` as a session directory: watch.json plus one progress file per PR."""
+    assert os.environ.get("PR_WATCH_HOME"), "tests must not write to the real pr-watch home"
+    directory = pathlib.Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    top = {k: v for k, v in view.items() if k != "prs"}
+    top.update(channel_id="C0C15VC8Y0Z", origin_worktree="D:/src/r", serialize_pushes=True,
+               prs={})
+    for key, entry in view["prs"].items():
+        top["prs"][key] = {k: entry[k] for k in PR_FIELDS if k in entry}
+        progress = {k: v for k, v in entry.items()
+                    if k not in PR_FIELDS and k not in ("owner", "repo", "number")}
+        path = poll.progress_file(directory, entry["owner"], entry["repo"], entry["number"],
+                                  view["dry_run"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(progress), encoding="utf-8")
+    (directory / "watch.json").write_text(json.dumps(top), encoding="utf-8")
+    return directory
+
+
+def claim_leases(view, session_id="s-1", now=None):
+    now = now if now is not None else NOW
+    holder = {"session_id": session_id, "pid": 1, "pid_started_at": pw_paths.iso_utc(now),
+              "poller_pid": None}
+    for entry in view["prs"].values():
+        ok, why = lease.claim(entry["owner"], entry["repo"], entry["number"], role=entry["role"],
+                              holder=holder, explicit=True, now=now)
+        assert ok, why
+
+
+class HomeCase(unittest.TestCase):
+    """A fresh pr-watch home per test, so leases and progress files never leak between tests."""
+
+    def setUp(self):
+        self.home = tempfile.TemporaryDirectory()
+        self.addCleanup(self.home.cleanup)
+        patcher = mock.patch.dict(os.environ, {"PR_WATCH_HOME": self.home.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
 
 class FakeGh:
@@ -82,6 +151,7 @@ class FakeGh:
         self.fail = set()
         self.fail_heads = False
         self.partial_heads = set()
+        self.null_repos = set()
         self.calls = []
         self.rollup = {}
         self.checks = {}
@@ -98,6 +168,10 @@ class FakeGh:
     def thread_fetches(self):
         return sum(1 for a in self.calls
                    if a[:2] == ["api", "graphql"] and "reviewThreads" in a[3])
+
+    def heads_requests(self):
+        return sum(1 for a in self.calls
+                   if a[:2] == ["api", "graphql"] and 'repository(owner: "' in a[3])
 
     def checks_calls(self):
         return sum(1 for a in self.calls if a[:2] == ["pr", "checks"])
@@ -117,38 +191,54 @@ class FakeGh:
                 return json.dumps({"data": {"repository": {"pullRequest": page and {field: page}}}})
             if "$n" in query:
                 n = int(variables["n"])
-                if n in self.fail:
+                key = (variables["owner"].lower(), variables["repo"].lower(), n)
+                if key in self.fail:
                     raise poll.GhError(f"fetch of {n} failed")
-                if n in self.pages:
-                    page = self.pages[n][int(variables.get("after", 0))]
+                if key in self.pages:
+                    page = self.pages[key][int(variables.get("after", 0))]
                 else:
-                    page = self.prs[n]
+                    page = self.prs[key]
                 return json.dumps({"data": {"repository": {"pullRequest": page}}})
             if self.fail_heads:
                 raise poll.GhError("heads query failed")
-            nodes = {}
-            for n, p in self.prs.items():
-                if f"p{n}:" in query:
-                    node = None if p is None or n in self.partial_heads else {
+            data, errors = {}, []
+            for chunk in re.split(r"(?=\br\d+: repository\()", query)[1:]:
+                alias, owner, name = re.match(
+                    r'(r\d+): repository\(owner: "([^"]+)", name: "([^"]+)"\)', chunk).groups()
+                owner, name = owner.lower(), name.lower()
+                if (owner, name) in self.null_repos:
+                    data[alias] = None
+                    errors.append({"path": [alias], "message": "Could not resolve to a Repository"})
+                    continue
+                nodes = {}
+                for n in map(int, re.findall(r"\bp(\d+): pullRequest", chunk)):
+                    key = (owner, name, n)
+                    if key not in self.prs:
+                        continue
+                    p = self.prs[key]
+                    node = None if p is None or key in self.partial_heads else {
                         "number": n, "updatedAt": p["updatedAt"],
                         "headRefOid": p["headRefOid"], "state": p["state"]}
-                    if node is not None and n in self.rollup:
+                    if node is not None and key in self.rollup:
                         node["commits"] = {"nodes": [{"commit": {
-                            "statusCheckRollup": {"state": self.rollup[n]}}}]}
+                            "statusCheckRollup": {"state": self.rollup[key]}}}]}
+                    if key in self.partial_heads:
+                        errors.append({"path": [alias, f"p{n}"], "message": "not found"})
                     nodes[f"p{n}"] = node
-            if self.partial_heads:
-                body = {"data": {"repository": nodes},
-                        "errors": [{"path": ["repository", f"p{n}"], "message": "not found"}
-                                   for n in sorted(self.partial_heads)]}
-                raise poll.GhError("GraphQL: not found", stdout=json.dumps(body))
-            return json.dumps({"data": {"repository": nodes}})
+                data[alias] = nodes
+            if errors:
+                raise poll.GhError("GraphQL: not found",
+                                   stdout=json.dumps({"data": data, "errors": errors}))
+            return json.dumps({"data": data})
         if args[:2] == ["pr", "checks"]:
             n = int(args[2])
-            if n in self.fail_checks:
+            owner, name = args[args.index("--repo") + 1].lower().split("/")
+            key = (owner, name, n)
+            if key in self.fail_checks:
                 raise poll.GhError("HTTP 502: checks unavailable")
-            if n in self.no_checks:
+            if key in self.no_checks:
                 raise poll.GhError("no required checks reported on the 'main' branch")
-            return json.dumps(self.checks.get(n, []))
+            return json.dumps(self.checks.get(key, []))
         if args[:2] == ["run", "rerun"]:
             return ""
         path = args[1]
@@ -178,7 +268,8 @@ class FakeGh:
             return "".join(f"{name}\t{value}\n"
                            for name, value in self.base_statuses.get(ref, []))
         if "/pulls/" in path:
-            p = self.prs[int(path.rsplit("/", 1)[1])]
+            owner, name = path.split("/")[1:3]
+            p = self.prs[(owner.lower(), name.lower(), int(path.rsplit("/", 1)[1]))]
             if any(".base.ref" in a for a in args):
                 return f"{p['baseRefName']} {p['headRefOid']}\n"
             return p["author"]["login"] + "\n"
