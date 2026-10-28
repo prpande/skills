@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from fakes import SELF, poll
+from fakes import SELF, HomeCase, poll, pw_paths
 
 import discover
 
@@ -421,6 +421,45 @@ class CliTests(unittest.TestCase):
         code, out, err = run_cli("--find-clone", "o/r#7", "--session-id", "sess-1")
         self.assertEqual((code, out), (1, ""))
         self.assertEqual(err, "pr-watch: no local clone of o/r known to this session")
+
+
+class HolderCloneTests(HomeCase):
+    def setUp(self):
+        super().setUp()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        for patcher in (mock.patch.object(discover, "projects_root",
+                                          return_value=pathlib.Path(self.tmp.name)),
+                        mock.patch.object(discover, "origin_of", origin_of),
+                        mock.patch.object(discover, "repo_toplevel", lambda p: p)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def hold(self, worktree, holder="dead-1"):
+        path = pw_paths.lease_path("o", "r", 7)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"schema": 1, "holder": {"session_id": holder}}),
+                        encoding="utf-8")
+        watch_dir = pw_paths.session_dir(holder)
+        watch_dir.mkdir(parents=True, exist_ok=True)
+        (watch_dir / "watch.json").write_text(
+            json.dumps({"prs": {"o/r#7": {"worktree": worktree}}}), encoding="utf-8")
+
+    def test_falls_back_to_the_lease_holders_recorded_worktree(self):
+        self.hold("D:/a")
+        code, out, _ = run_cli("--find-clone", "o/r#7", "--session-id", "sess-1")
+        self.assertEqual((code, out), (0, "D:/a"))
+
+    def test_a_holder_worktree_of_another_repo_is_ignored(self):
+        self.hold("D:/b")
+        code, out, _ = run_cli("--find-clone", "o/r#7", "--session-id", "sess-1")
+        self.assertEqual((code, out), (1, ""))
+
+    def test_a_clone_this_session_used_wins_over_the_holders(self):
+        self.hold("D:/a")
+        write_transcript(self.tmp.name, "sess-1", Transcript().call("x", cwd="D:/c"))
+        code, out, _ = run_cli("--find-clone", "o/r#7", "--session-id", "sess-1")
+        self.assertEqual((code, out), (0, "D:/c"))
 
 
 if __name__ == "__main__":

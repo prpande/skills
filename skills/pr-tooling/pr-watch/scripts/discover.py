@@ -7,8 +7,10 @@ import re
 import subprocess
 import sys
 
+import lease
 import poll
-from pw_paths import NAME, parse_ref, pr_key
+from pw_io import read_json
+from pw_paths import NAME, parse_ref, pr_key, session_dir
 
 ORIGIN_CACHE: dict[str, str | None] = {}
 
@@ -269,6 +271,20 @@ def dash_c_paths(record):
                 if tokens[:2] == ["git", "-C"] and len(tokens) > 2:
                     paths.append(tokens[2].strip("\"'"))
     return paths
+
+
+def holder_clone(owner, repo, number, origin_of, toplevel_of=None):
+    """The worktree the PR's last lease holder recorded, when it is still a clone of the repo."""
+    try:
+        held = lease.read_lease(owner, repo, number) or {}
+        watch = read_json(session_dir(held["holder"]["session_id"]) / "watch.json")
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    entry = (watch.get("prs") or {}).get(pr_key(owner, repo, number)) or {}
+    worktree = entry.get("worktree")
+    if not worktree or origin_of(worktree) != f"{owner}/{repo}".lower():
+        return None
+    return (toplevel_of or repo_toplevel)(worktree)
 
 
 def clone_candidates(session_id, owner, repo, origin_of, projects=None, toplevel_of=None):

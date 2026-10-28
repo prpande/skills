@@ -102,8 +102,8 @@ its head branch. Resolve the clone first:
   `git remote get-url origin` names `<owner>/<repo>` (compare without
   case). `CLONE` is `ORIGIN`.
 - Otherwise run `POLL --find-clone <owner/repo#N> --session-id <SESSION_ID>`.
-  It prints the top level of a clone this session worked in. `CLONE` is
-  that path.
+  It prints the top level of a clone this session worked in, else the
+  worktree the PR's lease holder recorded. `CLONE` is that path.
 - A non-zero exit excludes the PR with the command's stderr line. Search
   nowhere else.
 

@@ -1197,8 +1197,10 @@ def lease_mode(args):
 def discover_mode(args, gh):
     import discover
     if args.find_clone:
-        owner, repo, _ = parse_ref(args.find_clone)
-        found = discover.clone_candidates(args.session_id, owner, repo, discover.origin_of)
+        owner, repo, number = parse_ref(args.find_clone)
+        found = (discover.clone_candidates(args.session_id, owner, repo, discover.origin_of)
+                 or [p for p in [discover.holder_clone(owner, repo, number, discover.origin_of)]
+                     if p])
         if not found:
             print(f"pr-watch: no local clone of {owner}/{repo} known to this session",
                   file=sys.stderr)
