@@ -15,6 +15,11 @@ progress file (`pr-watch/steps/03-route-event.md`, "State has two
 homes"); "write the progress file" means placing it with `state_put.py`.
 `status` and `push_queue` are written to `watch.json`.
 
+`<key>` is the PR key `owner/repo#N`. The library's state file and lock
+are `<worktree>/.pr-autopilot/pr-<N>.json` and
+`<worktree>/.pr-autopilot/pr-<N>.lock`; `pr-<N>.json` below means that
+file.
+
 The PR is a launch-repo PR when
 `git -C <origin_worktree> rev-parse --path-format=absolute --git-common-dir`
 and the same command on `<worktree>` print the same path; otherwise it is
@@ -126,13 +131,14 @@ Run `pr-loop-lib/steps/04-dispatch-fixers.md` as written, except:
   prompts, the `files_changed` check, and the local build and test all
   resolve to it.
 - Fixers run with `model: "sonnet"`; the verifier with `model: "haiku"`.
-- An other-repo PR: append to the fixer brief "The repository is at
-  `<worktree>`, not your working directory. Read it with Read, Grep, and
-  Glob on absolute paths under it. Your git helpers run in your working
-  directory, which is another repository, so do not use them here."
-  followed by the output of
-  `git -C <worktree> diff origin/<base>...HEAD --stat`, which stands in
-  for the addendum's check b.
+- Append to every fixer brief a block headed `PR diff stat:` holding the
+  output of `git -C <worktree> diff origin/<base>...HEAD --stat`. The
+  addendum's check b reads it, because a fixer's `git diff *` permission
+  does not match `git -C`.
+- An other-repo PR: also append "The repository is at `<worktree>`, not
+  your working directory. Read it with Read, Grep, and Glob on absolute
+  paths under it. Run no git command; check b uses the PR diff stat
+  above."
 - A `ui-deferred` return is demoted to `needs-human` with its reason.
 - A `partial` or `not-addresses` verifier judgement rolls the fixer's
   `files_changed` back with section 10, in place of the library's own
@@ -224,7 +230,7 @@ No returns in section 5: go to section 7, then section 9.
      Exit 0 prints `taken`. A non-zero exit prints `busy`: another push
      or rerun in `<owner>/<repo>` holds it. `busy` queues the PR exactly
      as a pending check does.
-   - The PR set: the `authored` entries of `watch.json` `prs` whose
+   - The PR set: the entries of `watch.json` `prs`, of either role, whose
      `status` is `armed` and whose repo is `<owner>/<repo>`, plus the
      keys `POLL --repo-peers <key>` prints, without this PR and without
      duplicates. Never a PR in another repo.
@@ -238,10 +244,9 @@ No returns in section 5: go to section 7, then section 9.
    `git -C <worktree> rev-parse HEAD` and `queued_at` to now (epoch
    seconds) in the progress file, add `<key>` to `push_queue`, write the
    progress file and `watch.json`, release the lock when this step took
-   it (`POLL --push-lock release <key> --session-dir <SESSION_DIR>`), post "Fix committed as <sha7>, queued behind
-   #<M> while its checks run." (for `busy`: "Fix committed as <sha7>,
-   queued behind another push in <owner>/<repo>."), and go to section 9.
-   The replies wait for the drain.
+   it (`POLL --push-lock release <key> --session-dir <SESSION_DIR>`), post the "queued" line
+   (`pr-watch/steps/06-notify.md`; its "queued (busy)" row for `busy`),
+   and go to section 9. The replies wait for the drain.
 2. `POLL --assert-author <N> --repo <owner>/<repo>`. Non-zero: do not push;
    escalate ("needs you, no comment", reason "push guard refused"),
    go to section 9.
@@ -249,7 +254,11 @@ No returns in section 5: go to section 7, then section 9.
    non-fast-forward rejection: `git -C <worktree> fetch origin`,
    `git -C <worktree> merge --no-edit origin/<branch>`,
    then rerun `pr-loop-lib/steps/04.5-local-verify.md`, run the guard
-   again, and push once more the same way. Never force. A conflict
+   again, and push once more the same way. Release the push lock
+   before the re-verify, and run step 1 again after it, before the
+   second push; a queue there ends in section 9 with the merge
+   committed locally and `queued_head` set to the new `HEAD`. Never
+   force. A conflict
    (after `git -C <worktree> merge --abort`), a 04.5 failure, a guard refusal, or a
    second rejection: escalate ("needs you, no comment", with the
    conflicting paths for a conflict, or otherwise the specific reason),
@@ -262,13 +271,16 @@ No returns in section 5: go to section 7, then section 9.
    `pr-<N>.json` (placed with `state_put.py`).
 5. Post "Pushed <sha7>: <what changed>." in the PR thread.
 6. Release the push lock when this section or the drain's scan took it:
-   one foreground `python` loop reads
-   `gh api repos/<owner>/<repo>/commits/<pushed sha>/check-runs --jq .total_count`
+   one foreground `python` loop, run with a timeout of at least 180000
+   ms, reads
+   `gh pr checks <N> --repo <owner>/<repo> --required --json bucket --jq 'map(select(.bucket=="pending")) | length'`
    every 10 seconds (a failed read counts as 0) and ends when the count
-   is above 0 or 120 seconds have passed since the push; then
-   `POLL --push-lock release <key> --session-dir <SESSION_DIR>`. A rerun that took the lock is held and
-   released the same way. Every exit that took the lock and pushed
-   nothing releases it at once, through section 9.
+   is above 0 or 120 seconds have passed since the push or rerun; then
+   `POLL --push-lock release <key> --session-dir <SESSION_DIR>`. That count is the one other sessions'
+   scans read, and it turns on for a rerun as it does for a push. A
+   rerun that took the lock is held and released the same way. Every
+   exit that took the lock and pushed nothing releases it at once,
+   through section 9.
 
 ## 7. Reply and resolve
 
@@ -328,16 +340,19 @@ to section 9.
 On a `tick` event, first drop from `push_queue` every key whose entry in
 `watch.json` `prs` is not `armed`, and write `watch.json` when any was
 dropped. Then take the first remaining key; `<owner>/<repo>` and `N` come
-from it:
+from it. When step 1 stops it, take the next key whose repo is not one
+already stopped in this drain and start again at step 1 (first in line
+within a repo); when none is left, the tick ends. At most one PR is
+drained per `tick`:
 
 1. The pending-check scan of section 6 step 1 as that step defines it
    (its PR set, its push lock, its `busy` rule), with a non-zero exit
-   counted as 0 and nothing posted. Any pending check on PR `M`, or
+   of a `gh pr checks` count counted as 0 and nothing posted. Any pending check on PR `M`, or
    `busy`: when now - `queued_at` is below 3600, release the lock when
-   the scan took it and stop; the next `tick` retries. At 3600 or more:
-   when the PR's `wait_notice_at` is not `queued_at`, post "Stopped
-   waiting for #<M>'s checks after an hour." (for `busy`: "Stopped
-   waiting for another push in <owner>/<repo> after an hour."), set
+   the scan took it and stop this key; the next `tick` retries. At 3600
+   or more: when the PR's `wait_notice_at` is not `queued_at`, post the
+   "stopped waiting" line (`pr-watch/steps/06-notify.md`; its "stopped
+   waiting (busy)" row for `busy`), set
    `wait_notice_at` to `queued_at`, and write the progress file; then
    continue with step 2. A stop here and a PR lock held by another
    session (step 3.3) are the only exits that leave `N` in `push_queue`;
@@ -355,8 +370,9 @@ from it:
       queued_head> not pushed") and continue at step 4.
    2. `git -C <worktree> fetch origin`.
    3. Section 2 steps 1, 2, and 3a. If another session holds the lock,
-      return as section 2.2 says, without its skip; `N` stays queued and
-      the next `tick` retries.
+      release the push lock when step 1 took it, then return as
+      section 2.2 says, without its skip; `N` stays queued and the next
+      `tick` retries.
    4. Run section 1's branch checks and its `status --porcelain` check
       before either branch below. Then
       `git -C <worktree> merge-base --is-ancestor <head> HEAD`. On
@@ -376,8 +392,9 @@ from it:
    4 and 5, then section 9. After step 3.6, likewise steps 4 and 5, then
    section 9.
 4. In the entries below, `<check>` is the entry's `name`, or its `link`
-   when it has no `name`. For each entry in the PR's `ci_rerun_queued`
-   whose `head` is `<head>`, run
+   when it has no `name`. When step 3 pushed, `<head>` is stale: treat
+   every entry as replaced. Otherwise, for each entry in the PR's
+   `ci_rerun_queued` whose `head` is `<head>`, run
    `POLL --ci-rerun "<link>" --repo <owner>/<repo> --session-dir <SESSION_DIR>` and
    post the "CI rerun" line (`pr-watch/steps/06-notify.md`) with its
    output; a non-zero exit escalates ("CI needs you") with its stderr
@@ -389,8 +406,8 @@ from it:
    `<scratchpad>/pr-watch-dry-run/<owner>-<repo>-<N>.md` instead of running it. Every
    other entry's head has been replaced: post "Rerun of <check> dropped:
    the PR head moved before it ran." (the "CI rerun dropped" line) for
-   each. Set `ci_rerun_queued` to `[]`. A rerun that started holds the
-   push lock as section 6 step 6 says.
+   each. Set `ci_rerun_queued` to `[]`. After a rerun that started, wait
+   and release the push lock as section 6 step 6 does.
 5. Finish the drain:
    1. Only when step 3 got past step 3.1 and did not reach a completed
       push (the gate skipped, a merge conflicted, the push guard refused,
@@ -401,8 +418,7 @@ from it:
       queued. Whether step 3 pushed, escalated, or did not run: remove
       `N`'s key from `push_queue`, set `queued_head`, `queued_at`, and
       `wait_notice_at` to null, write the progress file and `watch.json`,
-      and release the push lock when this drain still holds it and
-      neither a push nor a rerun is waiting on it.
+      and release the push lock when this drain still holds it.
 
 One drained PR per `tick`. Section 9 runs only when step 3.3 took the
 lock.

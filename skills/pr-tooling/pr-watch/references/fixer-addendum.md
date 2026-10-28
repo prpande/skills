@@ -11,8 +11,8 @@ Before editing anything, answer these in order and cite what you found:
 a. Does a shipped surface already return this? Look for the REST mapper,
    response model, or existing resolver for the same domain field. If one
    does, this PR inherits its semantics; match them.
-b. Is the flagged code in this PR's diff
-   (`git -C {{WORKTREE_ROOT}} diff origin/{{BASE_BRANCH}}...HEAD --stat`)? Pre-existing code
+b. Is the flagged code in this PR's diff (the PR diff stat in the
+   brief)? Pre-existing code
    the PR only made reachable is not this PR's decision; say so rather
    than changing it.
 c. When the comment says the code is unlike its siblings, count both

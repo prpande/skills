@@ -27,10 +27,12 @@ check the link rendered. Never post a second root for a PR.
 |---|---|
 | pushed | `Pushed <sha7>: <what changed>.` |
 | queued | `Fix committed as <sha7>, queued behind #<M> while its checks run.` |
+| queued (busy) | `Fix committed as <sha7>, queued behind another push in <owner>/<repo>.` |
 | needs you | `Needs you: <author> on <path>:<line> (<reason>).` then the quoted comment in a code block, then `Code says: <one line>.` then a link to the comment |
 | needs you, no comment | `Needs you on #<N>: <reason>.` then the short sha if a local commit exists |
 | skipped | `Skipped: <reason>. Retrying in 10 minutes.` (only when the PR's `skip_reason` differs; `pr-watch/steps/04-fix-path.md` section 1) |
 | stopped waiting | `Stopped waiting for #<M>'s checks after an hour.` (once per `queued_at`; `pr-watch/steps/04-fix-path.md` section 8 step 1) |
+| stopped waiting (busy) | `Stopped waiting for another push in <owner>/<repo> after an hour.` (same rule) |
 | resolve failed | `Could not resolve the thread at <path>:<line>; it stays open.` |
 | voice fallback | `Replied plainly on <where>: the drafted reply failed the contract audit twice.`, where `<where>` is `<path>:<line>` for a thread reply and `PR #<n>` for a top-level reply |
 | checks unreadable | `Could not read #<M>'s checks: <first stderr line>.` |
@@ -40,6 +42,7 @@ check the link rendered. Never post a second root for a PR.
 | CI fixed | `Pushed <sha7> for <check name>: <what changed>.` |
 | CI rerun | `Reran <check name>: <the output line of POLL --ci-rerun>.` |
 | CI rerun queued | `Rerun of <check name> queued behind #<M> while its checks run.` |
+| CI rerun queued (busy) | `Rerun of <check name> queued behind another push in <owner>/<repo>.` |
 | CI rerun dropped | `Rerun of <check name> dropped: the PR head moved before it ran.` |
 | CI pre-existing | `<check name> is red on <base> too; leaving it.` |
 | CI needs you | `Needs you: [<check name>](<link>) is red at <head7> (<reason>).` — then, only when the PR's `ci_log_occurrence` is this check's occurrence key and `pr-watch/steps/07-ci.md` rule 3's destination check passes again over the file now, up to 20 lines from `grep -m 20 -E -e '##\[error\]' -e 'error [A-Z]+[0-9]+' -e 'Failed ' -e 'Test Run Failed'` over it, put through "Quoting someone else's text", in a code block; the session never reads the whole file |
