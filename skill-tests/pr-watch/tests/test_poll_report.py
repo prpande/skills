@@ -110,6 +110,15 @@ class ReportTests(HomeCase):
         _, text = self.run_report()
         self.assertEqual(len(text.strip().splitlines()), 1)
 
+    def test_prs_are_listed_in_numeric_order(self):
+        self.watch = watch({10: "authored", 2: "authored"})
+        self.save_watch()
+        self.gh.prs[pk(10)] = pull(10)
+        self.gh.prs[pk(2)] = pull(2)
+        _, text = self.run_report()
+        standing = [line for line in text.splitlines() if line.startswith("  PR")]
+        self.assertEqual([line.split()[1] for line in standing], [rk(2), rk(10)])
+
     def test_reseed_accepts_everything(self):
         self.gh.prs[pk(1411)] = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
         code, text = self.run_report(reseed=True)

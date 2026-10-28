@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from fakes import (NOW, T0, T1, FakeGh, HomeCase, claim_leases, comment, lease, pk, poll, pull,
-                   pw_paths, thread, watch, write_session)
+from fakes import (NOW, SELF, T0, T1, FakeGh, HomeCase, claim_leases, comment, lease, pk, poll,
+                   pull, pw_paths, review, thread, watch, write_session)
 
 A1 = "o/a#1"
 B2 = "p/b#2"
@@ -81,16 +81,46 @@ class MultiRepoTickTests(unittest.TestCase):
         self.assertEqual(self.tick(view, now=NOW + 60), [])
         self.assertTrue(self.poller["prs"][A1]["review_pending"])
 
+    def test_changed_progress_alone_re_evaluates_and_clears_pending(self):
+        view = watch({1: "authored"}, owner="o", repo="a")
+        self.gh.prs[pk(1, "o", "a")] = pending_pr(1)
+        self.tick(view)
+        self.assertEqual(self.poller["prs"][A1]["pending_since"], NOW)
+        view["prs"][A1]["settled_ids"] = ["c1"]
+        self.tick(view, now=NOW + 60)
+        entry = self.poller["prs"][A1]
+        self.assertEqual((entry["review_pending"], entry["pending_since"]), (False, None))
+
+    def reviewed_push(self, changed):
+        view = watch({2: "reviewed"}, owner="o", repo="a")
+        self.gh.prs[pk(2, "o", "a")] = pull(
+            2, author_login="author-b", head="h2",
+            threads=[thread("T9", [comment("m1", SELF, T0)], path="src/B.cs")],
+            reviews=[review("r1", SELF, T0, oid="h1")])
+        self.gh.compare["h1...h2"] = changed
+        self.tick(view)
+        return self.poller["prs"]["o/a#2"]["review_pending"]
+
+    def test_reviewed_push_touching_a_thread_is_pending(self):
+        self.assertTrue(self.reviewed_push(["src/B.cs"]))
+
+    def test_reviewed_push_touching_no_thread_is_not_pending(self):
+        self.assertFalse(self.reviewed_push(["src/Z.cs"]))
+
     def test_pending_flags_from_live_data(self):
         view = watch({1: "authored", 2: "reviewed"}, owner="o", repo="a")
         self.gh.prs[pk(1, "o", "a")] = pull(1)
-        self.gh.prs[pk(2, "o", "a")] = pull(2, author_login="author-b", head="h1")
+        self.gh.prs[pk(2, "o", "a")] = pull(
+            2, author_login="author-b", head="h1",
+            threads=[thread("T9", [comment("m1", SELF, T0)], resolved=True)],
+            reviews=[review("r1", SELF, T0, oid="h1")])
         self.gh.rollup[pk(1, "o", "a")] = "SUCCESS"
         self.poller["prs"] = {A1: {"last_ci_signature": "ci:h2:old|x|2026", "ci_pending": True}}
         self.tick(view)
         self.assertEqual(self.poller["prs"][A1]["ci_pending"], False)
         reviewed = self.poller["prs"]["o/a#2"]
         self.assertEqual((reviewed["review_pending"], reviewed["ci_pending"]), (False, False))
+        self.assertEqual(reviewed["last_signature"], "settled")
 
     def test_red_check_is_ci_pending_until_it_is_handled(self):
         view = watch({1: "authored"}, owner="o", repo="a")
@@ -115,6 +145,39 @@ class RunGhTests(unittest.TestCase):
                 mock.patch.object(poll.subprocess, "run", return_value=done) as run:
             poll.run_gh(["api", "user"])
         self.assertEqual(run.call_args.kwargs["creationflags"], 134217728)
+
+
+class LoadViewTests(HomeCase):
+    def session(self, dry_run=False):
+        directory = pathlib.Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (directory / "watch.json").write_text(json.dumps({
+            "session_id": "s-1", "self_login": SELF, "dry_run": dry_run,
+            "prs": {A1: {"role": "authored", "status": "armed"},
+                    B2: {"role": "reviewed", "status": "armed"}}}), encoding="utf-8")
+        return directory
+
+    def test_a_missing_progress_file_reads_as_the_starting_values_for_the_role(self):
+        view = poll.load_view(self.session())
+        authored, reviewed = view["prs"][A1], view["prs"][B2]
+        self.assertEqual((authored["ci_handled"], authored["ci_fix_pushes"], authored["queued_head"]),
+                         ([], 0, None))
+        self.assertEqual((reviewed["finding_verdicts"], reviewed["rereviewed_head"]), ({}, None))
+        self.assertNotIn("ci_handled", reviewed)
+        self.assertEqual((authored["owner"], authored["repo"], authored["number"]), ("o", "a", 1))
+
+    def test_dry_run_reads_progress_from_the_session_directory(self):
+        directory = self.session(dry_run=True)
+        local = directory / "progress" / "o" / "a" / "1.progress.json"
+        local.parent.mkdir(parents=True)
+        local.write_text(json.dumps({"settled_ids": ["x"]}), encoding="utf-8")
+        shared = pw_paths.progress_path("o", "a", 1)
+        shared.parent.mkdir(parents=True)
+        shared.write_text(json.dumps({"settled_ids": ["shared"]}), encoding="utf-8")
+        view = poll.load_view(directory)
+        self.assertEqual(view["prs"][A1]["settled_ids"], ["x"])
+        shared.unlink()
+        directory2 = self.session(dry_run=False)
+        self.assertEqual(poll.load_view(directory2)["prs"][A1]["settled_ids"], [])
 
 
 class MonitorCase(HomeCase):
@@ -221,8 +284,59 @@ class MonitorLeaseTests(MonitorCase):
         before = self.lease_bytes()
         events, err, _ = self.run_monitor(2, clock=NOW + 60)
         self.assertEqual(self.lease_bytes(), before)
-        self.assertEqual(events, [])
+        self.assertEqual(events, [{"kind": "idle"}])
         self.assertEqual(err, "")
+
+    def test_inactive_pr_is_dropped_from_ticks(self):
+        view = two_repos(self.gh)
+        self.start(view)
+        lease.set_status("o", "a", 1, "released", "s-1", NOW)
+        events, _, _ = self.run_monitor(3)
+        self.assertEqual([e["pr"] for e in events if e["kind"] == "pending"], [B2])
+        later = [c[3] for c in self.gh.calls if c[:2] == ["api", "graphql"]
+                 and 'repository(owner: "' in c[3]][1:]
+        self.assertTrue(later)
+        self.assertFalse(any("pullRequest(number: 1)" in q and '"a"' in q for q in later))
+
+    def test_unreadable_lease_after_a_loss_still_prints_the_tick(self):
+        view = watch({A1: "authored"})
+        self.gh.prs[pk(1, "o", "a")] = pending_pr(1)
+        self.start(view)
+        with mock.patch.object(lease, "_read_with_retry", side_effect=PermissionError("locked")):
+            events, _, _ = self.run_monitor(1, write_lease=lambda *a, **k: "lost")
+        self.assertIn({"pr": A1, "kind": "lease-lost", "holder": None}, events)
+
+    def test_claude_pid_is_read_from_watch_json_only(self):
+        view = watch({A1: "authored"})
+        self.gh.prs[pk(1, "o", "a")] = pending_pr(1)
+        self.start(view)
+
+        def never(pid):
+            raise AssertionError("the environment must not name the claude process")
+        with mock.patch.dict(os.environ, {"CLAUDE_PID": "4242"}):
+            events, _, code = self.run_monitor(1, started_at=never)
+        self.assertEqual((code, [e["kind"] for e in events]), (0, ["pending"]))
+
+    def test_monitor_exits_before_any_write_when_claude_was_gone_at_start_on_windows(self):
+        view = watch({A1: "authored"})
+        view["claude_pid"] = 4242
+        self.gh.prs[pk(1, "o", "a")] = pending_pr(1)
+        self.start(view)
+        before = self.lease_bytes()
+        with mock.patch.object(poll, "IS_WINDOWS", True):
+            events, _, code = self.run_monitor(2, clock=NOW + 500, started_at=lambda pid: None)
+        self.assertEqual((code, events), (3, []))
+        self.assertEqual(self.lease_bytes(), before)
+        self.assertFalse((self.state / "watch-heartbeat").exists())
+
+    def test_the_start_time_check_is_skipped_off_windows(self):
+        view = watch({A1: "authored"})
+        view["claude_pid"] = 4242
+        self.gh.prs[pk(1, "o", "a")] = pending_pr(1)
+        self.start(view)
+        with mock.patch.object(poll, "IS_WINDOWS", False):
+            events, _, code = self.run_monitor(1, started_at=lambda pid: None)
+        self.assertEqual((code, [e["kind"] for e in events]), (0, ["pending"]))
 
     def test_lost_lease_pr_is_reported_once(self):
         view = two_repos(self.gh)

@@ -138,6 +138,8 @@ class HomeCase(unittest.TestCase):
         patcher = mock.patch.dict(os.environ, {"PR_WATCH_HOME": self.home.name})
         patcher.start()
         self.addCleanup(patcher.stop)
+        for name in ("CLAUDE_PID", "CLAUDE_CODE_SESSION_ID"):
+            os.environ.pop(name, None)
 
 
 class FakeGh:

@@ -40,6 +40,9 @@ ADO_ORG = re.compile(r"^[A-Za-z0-9._-]+$")
 ADO_PROJECT = re.compile(r"^[A-Za-z0-9._ %!&()@~-]+$")
 POLLER_ERROR_AFTER = 5
 CLAUDE_GONE_EXIT = 3
+IS_WINDOWS = os.name == "nt"
+PROGRESS_SIGNATURE_FIELDS = ("settled_ids", "handled_top_level_ids", "posted_reply_ids",
+                             "escalated_ids", "rereviewed_head", "ci_handled")
 REPORTED_STATUSES = ("armed", "stopped")
 COMMON_START = {"posted_reply_ids": [], "settled_ids": [], "escalated_ids": [],
                 "handled_top_level_ids": {}, "slack_ts": None}
@@ -210,6 +213,10 @@ def pr_key_of(pr):
 def starting_progress(role):
     start = dict(COMMON_START, **(AUTHORED_START if role == "authored" else REVIEWED_START))
     return copy.deepcopy(start)
+
+
+def progress_signature(entry):
+    return json.dumps([entry.get(field) for field in PROGRESS_SIGNATURE_FIELDS], sort_keys=True)
 
 
 def progress_file(session_dir, owner, repo, number, dry_run):
@@ -451,21 +458,20 @@ def evaluate_reviewed(gh, view, pr, entry, prev):
             return None, "settled", False
         return {"pr": key, "role": "reviewed", "kind": "settled"}, "settled", False
     old, new = review_start(view, pr, entry), pr["headRefOid"]
-    review_pending = bool(old and old != new) or not answered
     author = (pr.get("author") or {}).get("login")
     reply_ids = sorted(c["id"] for c in replies)
     author_replied = any((c["author"] or {}).get("login") == author for c in replies)
     if old and old != new:
         signature = f"head:{new}:" + ",".join(reply_ids)
-        if signature == prev.get("last_signature"):
-            return None, signature, review_pending
         files = set(changed_files(gh, entry["owner"], entry["repo"], old, new))
         touches = compare_capped(files) or any(t["path"] in files for t in threads)
-        if not (touches or author_replied):
+        review_pending = touches or author_replied or not answered
+        if signature == prev.get("last_signature") or not (touches or author_replied):
             return None, signature, review_pending
         return {"pr": key, "role": "reviewed", "kind": "head-moved",
                 "old_head": old, "new_head": new, "touches_my_findings": touches,
                 "author_replied": author_replied}, signature, review_pending
+    review_pending = not answered
     if not replies:
         return None, "", review_pending
     signature = "reply:" + ",".join(reply_ids)
@@ -507,8 +513,10 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
     retry_after = entry.get("retry_after")
     forced, seen, retry_review = retry_gate(retry_after, "retried_at", prev, now, force)
     ci_forced, ci_seen, retry_ci = retry_gate(retry_after, "ci_retried_at", prev, now, force)
+    progress_sig = progress_signature(entry)
     moved = (node["updatedAt"] != prev.get("updated_at")
-             or node["headRefOid"] != prev.get("last_head"))
+             or node["headRefOid"] != prev.get("last_head")
+             or progress_sig != prev.get("progress_sig"))
     ci_moved = (node["headRefOid"] != prev.get("last_head")
                 or rollup != prev.get("last_rollup") or rollup in FAILED_ROLLUP)
     if not (moved or ci_moved or forced or ci_forced):
@@ -547,7 +555,8 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
     new_entry = {"updated_at": node["updatedAt"], "last_head": node["headRefOid"],
                  "last_signature": signature, "last_rollup": rollup,
                  "last_ci_signature": ci_signature, "review_pending": review_pending,
-                 "ci_pending": ci_pending, "pending_since": pending_since}
+                 "ci_pending": ci_pending, "pending_since": pending_since,
+                 "progress_sig": progress_sig}
     # Spent independently per branch, so a standing CI-only failure does not
     # keep re-forcing the unchanged review branch too.
     retried_at = retry_spend(retry_after, retry_review, review_failed, prev, "retried_at")
@@ -613,7 +622,6 @@ def claude_identity(session_dir):
         recorded = read_json(session_dir / "watch.json", default={}).get("claude_pid")
     except (OSError, ValueError):
         recorded = None
-    recorded = recorded or os.environ.get("CLAUDE_PID")
     return int(recorded) if recorded else None
 
 
@@ -665,12 +673,16 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
             if result == "lost":
                 silenced.add(key)
                 dropped.add(key)
-                holder = (lease.read_lease(owner, repo, number) or {}).get("holder", {})
+                try:
+                    holder = (lease._read_with_retry(owner, repo, number) or {}).get("holder", {})
+                except OSError:
+                    holder = {}
                 warn(f"lease for {key} is held by another session")
                 lease_events.append({"pr": key, "kind": "lease-lost",
                                      "holder": holder.get("session_id")})
             elif result == "inactive":
                 silenced.add(key)
+                dropped.add(key)
             elif result == "missing" and key not in warned_missing:
                 warned_missing.add(key)
                 warn(f"no lease file for {key}")
@@ -678,6 +690,8 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
 
     claude_pid = claude_identity(session_dir)
     claude_started = started_at(claude_pid) if claude_pid else None
+    if claude_pid and claude_started is None and IS_WINDOWS:
+        return CLAUDE_GONE_EXIT
     dropped, warned_missing = set(), set()
     ticks = failed_ticks = 0
     while max_ticks is None or ticks < max_ticks:
@@ -821,8 +835,9 @@ def report(gh, session_dir, reseed=False):
     first_run = not seen
     attention, new, standing, errors = [], [], [], []
     fresh = dict(seen)
-    for key in sorted(view["prs"]):
-        entry = view["prs"][key]
+    for key, entry in sorted(view["prs"].items(),
+                             key=lambda item: (item[1]["owner"], item[1]["repo"],
+                                               item[1]["number"])):
         if entry.get("status") not in REPORTED_STATUSES:
             continue
         try:
