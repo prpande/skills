@@ -243,6 +243,26 @@ class MonitorLeaseTests(MonitorCase):
         self.assertEqual([e["kind"] for e in events], ["closed", "idle"])
         self.assertEqual(self.lease()["status"], "closed")
 
+    def test_a_closing_write_that_finds_the_lease_busy_is_retried(self):
+        view = watch({A1: "authored"})
+        merged = pending_pr(1)
+        merged["state"] = "MERGED"
+        self.gh.prs[pk(1, "o", "a")] = merged
+        self.start(view)
+        calls = []
+
+        def busy_once(*args, **kwargs):
+            calls.append(kwargs["status"])
+            if len(calls) == 1:
+                return "busy"
+            return lease.tick_write(*args, **kwargs)
+
+        events, _, code = self.run_monitor(3, write_lease=busy_once)
+        self.assertEqual(calls, ["closed", "closed"])
+        self.assertEqual(code, 0)
+        self.assertEqual([e["kind"] for e in events], ["closed", "idle"])
+        self.assertEqual(self.lease()["status"], "closed")
+
     def test_closed_pr_counts_as_not_armed(self):
         view = watch({A1: "authored", B2: "authored"})
         view["prs"][B2]["status"] = "stopped"
@@ -302,7 +322,7 @@ class MonitorLeaseTests(MonitorCase):
         view = watch({A1: "authored"})
         self.gh.prs[pk(1, "o", "a")] = pending_pr(1)
         self.start(view)
-        with mock.patch.object(lease, "_read_with_retry", side_effect=PermissionError("locked")):
+        with mock.patch.object(lease, "read_with_retry", side_effect=PermissionError("locked")):
             events, _, _ = self.run_monitor(1, write_lease=lambda *a, **k: "lost")
         self.assertIn({"pr": A1, "kind": "lease-lost", "holder": None}, events)
 

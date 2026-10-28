@@ -215,7 +215,7 @@ def release_push_lock(owner, repo, session_id) -> None:
         pass
 
 
-def _read_with_retry(owner, repo, n) -> dict | None:
+def read_with_retry(owner, repo, n) -> dict | None:
     for attempt in range(READ_ATTEMPTS):
         try:
             return read_lease(owner, repo, n)
@@ -226,7 +226,7 @@ def _read_with_retry(owner, repo, n) -> dict | None:
 
 
 def _held_by(owner, repo, n, session_id) -> dict | None:
-    data = _read_with_retry(owner, repo, n)
+    data = read_with_retry(owner, repo, n)
     if data is None or data["holder"].get("session_id") != session_id:
         return None
     return data
@@ -263,7 +263,7 @@ def tick_write(owner, repo, n, *, session_id, now, head, pending_since, last_err
     if lock is None:
         return "busy"
     try:
-        data = _read_with_retry(owner, repo, n)
+        data = read_with_retry(owner, repo, n)
         if data is None:
             return "missing"
         if data["holder"].get("session_id") != session_id:
@@ -291,13 +291,42 @@ def armed_peers(owner, repo, exclude_n) -> list[int]:
     peers = []
     for number in _lease_numbers(owner, repo):
         try:
-            data = _read_with_retry(owner, repo, number)
+            data = read_with_retry(owner, repo, number)
         except OSError:
             continue
         if (number != exclude_n and data is not None and data.get("status") == "armed"
                 and data.get("role") == "authored"):
             peers.append(number)
     return peers
+
+
+def _expired(owner, repo, n, now) -> bool:
+    try:
+        data = read_with_retry(owner, repo, n)
+    except OSError:
+        return False
+    if data is None or data.get("status") != "closed":
+        return False
+    try:
+        return now - parse_iso(data["updated_at"]) > CLOSED_RETENTION_SECONDS
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def _prune_one(owner, repo, n, now) -> bool:
+    if not _expired(owner, repo, n, now):
+        return False
+    lock = _hold_lock(owner, repo, n, now, TICK_LOCK_ATTEMPTS)
+    if lock is None:
+        return False
+    try:
+        if not _expired(owner, repo, n, now):
+            return False
+        lease_path(owner, repo, n).unlink(missing_ok=True)
+        progress_path(owner, repo, n).unlink(missing_ok=True)
+        return True
+    finally:
+        lock.unlink(missing_ok=True)
 
 
 def prune_closed(now) -> int:
@@ -307,19 +336,6 @@ def prune_closed(now) -> int:
     pruned = 0
     for repo_dir in (d for owner_dir in root.iterdir() if owner_dir.is_dir()
                      for d in owner_dir.iterdir() if d.is_dir()):
-        for number in _lease_numbers(repo_dir.parent.name, repo_dir.name):
-            try:
-                data = _read_with_retry(repo_dir.parent.name, repo_dir.name, number)
-            except OSError:
-                continue
-            if data is None or data.get("status") != "closed":
-                continue
-            try:
-                age = now - parse_iso(data["updated_at"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            if age > CLOSED_RETENTION_SECONDS:
-                lease_path(repo_dir.parent.name, repo_dir.name, number).unlink(missing_ok=True)
-                progress_path(repo_dir.parent.name, repo_dir.name, number).unlink(missing_ok=True)
-                pruned += 1
+        owner, repo = repo_dir.parent.name, repo_dir.name
+        pruned += sum(_prune_one(owner, repo, number, now) for number in _lease_numbers(owner, repo))
     return pruned

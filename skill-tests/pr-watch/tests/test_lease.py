@@ -399,6 +399,27 @@ class SweepTests(LeaseCase):
         self.assertIsNotNone(lease.read_lease("o", "r", 3))
         self.assertIsNotNone(lease.read_lease("o", "r", 4))
 
+    def test_prune_skips_a_lease_whose_lock_is_held(self):
+        self.put(1, status="closed", updated=NOW - 8 * 24 * 3600)
+        lock = pw_paths.claim_lock_path("o", "r", 1)
+        lock.touch()
+        os.utime(lock, (NOW, NOW))
+        with mock.patch.object(lease.time, "sleep"):
+            self.assertEqual(lease.prune_closed(NOW), 0)
+        self.assertIsNotNone(lease.read_lease("o", "r", 1))
+
+    def test_prune_keeps_a_lease_reclaimed_before_the_lock_was_taken(self):
+        self.put(1, status="closed", updated=NOW - 8 * 24 * 3600)
+        real = lease._hold_lock
+
+        def claim_first(*args):
+            self.put(1, status="armed", updated=NOW)
+            return real(*args)
+
+        with mock.patch.object(lease, "_hold_lock", side_effect=claim_first):
+            self.assertEqual(lease.prune_closed(NOW), 0)
+        self.assertEqual(lease.read_lease("o", "r", 1)["status"], "armed")
+
     def test_armed_peers_retries_then_skips_unreadable(self):
         self.put(2)
         self.put(3)

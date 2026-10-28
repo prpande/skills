@@ -14,8 +14,10 @@ from pw_paths import NAME, parse_ref, pr_key, session_dir
 
 ORIGIN_CACHE: dict[str, str | None] = {}
 
-GITHUB_REMOTE = re.compile(r"^(?:https://github\.com/|git@github\.com:)([^/\s]+)/([^/\s]+?)(?:\.git)?/?$",
-                           re.IGNORECASE)
+GITHUB_REMOTE = re.compile(
+    r"^(?:(?:https?|ssh|git)://(?:[^@/\s]+@)?(?:www\.)?github\.com(?::\d+)?/|git@github\.com:)"
+    r"([^/\s]+)/([^/\s]+?)(?:\.git)?/?$", re.IGNORECASE)
+GIT_OPTIONS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"}
 TOKEN = re.compile(r"""\"[^\"]*\"|'[^']*'|\S+""")
 REDIRECT = re.compile(r"^\d*>")
 BARE_REDIRECT = re.compile(r"^\d*>>?$")
@@ -154,13 +156,18 @@ def segment_dirs(command, cwd):
 def parse_git_write(segment):
     """(verb, -C path or None, argument tokens) for a real git commit or push, else None."""
     tokens = TOKEN.findall(segment)
+    if tokens[:1] == ["&"]:
+        tokens = tokens[1:]
     if not tokens or tokens[0] != "git":
         return None
     dash_c, i = None, 1
-    while i + 1 < len(tokens) and tokens[i] in ("-C", "-c"):
-        if tokens[i] == "-C":
-            dash_c = tokens[i + 1].strip("\"'")
-        i += 2
+    while i < len(tokens) and tokens[i].startswith("-"):
+        if tokens[i] in GIT_OPTIONS_WITH_VALUE:
+            if tokens[i] == "-C" and i + 1 < len(tokens):
+                dash_c = tokens[i + 1].strip("\"'")
+            i += 2
+        else:
+            i += 1
     if i >= len(tokens) or tokens[i] not in ("commit", "push"):
         return None
     args = without_redirects(tokens[i + 1:])

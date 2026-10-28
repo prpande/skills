@@ -27,8 +27,9 @@ is `owner/repo#N` (`mindbody/mindbody.clients#14`).
 
 `push.lock` is exclusive-create. A session takes it before the scan for
 other PRs' running checks and releases it once the pushed head has a
-check run registered, or 120 seconds after the push. A lock older than
-300 seconds is stale. A session that finds it held treats the repo as
+check run registered, or 120 seconds after the push. It takes it again
+right before the push, which refreshes the lock it holds. A lock older
+than 300 seconds is stale. A session that finds it held treats the repo as
 busy and queues. `POLL --push-lock take|release <owner/repo#N>` takes and
 releases it.
 

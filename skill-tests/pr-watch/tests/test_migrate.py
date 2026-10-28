@@ -123,6 +123,11 @@ class ScanTests(WatchDirCase):
                  proc(3, 0, "python.exe", old_cmd(self.main).replace("\\", "/").replace('"', "").upper())]
         self.assertEqual(3, migrate.old_monitor(self.main, procs)["pid"])
 
+    def test_old_monitor_matches_an_msys_path(self):
+        msys = "/" + str(self.main)[0].lower() + str(self.main)[2:].replace("\\", "/")
+        cmd = old_cmd(self.main).replace(str(self.main), msys)
+        self.assertEqual(1, migrate.old_monitor(self.main, [proc(1, 0, "python.exe", cmd)])["pid"])
+
     def test_old_monitor_requires_the_monitor_flag(self):
         cmd = old_cmd(self.main).replace("--monitor ", "--report ")
         self.assertIsNone(migrate.old_monitor(self.main, [proc(1, 0, "python.exe", cmd)]))

@@ -36,8 +36,12 @@ def list_processes() -> list[dict]:
             for row in rows if isinstance(row, dict)]
 
 
+MSYS_DRIVE = re.compile(r"(^|[\s=])\\([a-z])(?=\\|\s|$)")
+
+
 def _canon(text: str) -> str:
-    return text.replace('"', "").replace("'", "").replace("/", "\\").lower()
+    plain = text.replace('"', "").replace("'", "").replace("/", "\\").lower()
+    return MSYS_DRIVE.sub(r"\1\2:", plain)
 
 
 def _monitors_for(procs, option: str, directory) -> list[dict]:

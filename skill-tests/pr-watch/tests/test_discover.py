@@ -66,6 +66,24 @@ class EvidenceTests(unittest.TestCase):
                                      branch="main"))
         self.assertEqual(ev["branches"], {("o", "r", "feat-1"): ["push-names-branch"]})
 
+    def test_global_options_before_the_verb_are_skipped(self):
+        ev = kinds(Transcript().call("git --no-optional-locks -C D:/a push -u origin feat-1",
+                                     cwd="D:/b", branch="main"))
+        self.assertEqual(ev["branches"], {("o", "r", "feat-1"): ["push-names-branch"]})
+        for command in ("git --no-pager -c core.x=1 push origin feat-1",
+                        "& git --git-dir=D:/a/.git push origin feat-1"):
+            ev = kinds(Transcript().call(command, branch="feat-1"))
+            self.assertEqual(ev["branches"][("o", "r", "feat-1")],
+                             ["push-on-branch", "push-names-branch"], command)
+
+    def test_remote_url_forms(self):
+        for url in ("https://github.com/O/R.git", "git@github.com:o/r.git",
+                    "ssh://git@github.com/o/r.git", "https://user@github.com/o/r",
+                    "https://www.github.com/o/r/", "ssh://git@github.com:22/o/r"):
+            self.assertEqual(discover.parse_origin(url), "o/r", url)
+        for url in ("https://gitlab.com/o/r", "https://github.com.evil.io/o/r"):
+            self.assertIsNone(discover.parse_origin(url), url)
+
     def test_push_refspec_names_destination(self):
         ev = kinds(Transcript().call("git push origin HEAD:refs/heads/feat-2", branch="main"))
         self.assertEqual(ev["branches"][("o", "r", "feat-2")], ["push-names-branch"])

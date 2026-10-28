@@ -250,7 +250,13 @@ No returns in section 5: go to section 7, then section 9.
 2. `POLL --assert-author <N> --repo <owner>/<repo>`. Non-zero: do not push;
    escalate ("needs you, no comment", reason "push guard refused"),
    go to section 9.
-3. `git -C <worktree> push origin HEAD:refs/heads/<branch>`. On a
+3. When this section or the drain's scan holds the push lock, run
+   `POLL --push-lock take <key> --session-dir <SESSION_DIR>` first. It
+   refreshes the lock this session holds, so the push and the wait in
+   step 6 fit inside the 300-second stale window. `busy` there means the
+   lock went stale and another session took it: queue as step 1's `busy`
+   does, without releasing a lock this session no longer holds.
+   `git -C <worktree> push origin HEAD:refs/heads/<branch>`. On a
    non-fast-forward rejection: `git -C <worktree> fetch origin`,
    `git -C <worktree> merge --no-edit origin/<branch>`,
    then rerun `pr-loop-lib/steps/04.5-local-verify.md`, run the guard
