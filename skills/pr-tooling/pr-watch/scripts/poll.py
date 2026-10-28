@@ -1268,6 +1268,8 @@ def run_mode(args, gh):
         print(json.dumps(checks_payload(gh, owner, repo, number), indent=2))
         return 0
     entry = view["prs"].get(pr_key(owner, repo, number)) or {
+        **read_json(progress_file(args.session_dir, owner, repo, number, view["dry_run"]),
+                    default={}),
         "owner": owner, "repo": repo, "number": number}
     pr = fetch_pr(gh, owner, repo, number)
     me, allow = view["self_login"], view["bot_allowlist"]

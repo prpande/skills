@@ -59,6 +59,14 @@ class CliTests(HomeCase):
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(text)["threads"][0]["thread_id"], "T1")
 
+    def test_tails_for_a_pr_not_yet_watched_reads_its_stored_progress(self):
+        self.gh.prs[pk(1500)] = pull(1500, threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
+        path = poll.progress_path("o", "r", 1500)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"settled_ids": ["c1"]}), encoding="utf-8")
+        _, text = self.run_main("--tails", "o/r#1500")
+        self.assertEqual(json.loads(text)["threads"], [])
+
     def test_baseline_prints_and_writes_nothing(self):
         self.gh.prs[pk(1411)] = pull(threads=[thread("T1", [comment("c1", SELF, T0)])])
         before = sorted(p.name for p in self.state.iterdir())
