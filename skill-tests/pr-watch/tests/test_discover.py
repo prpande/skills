@@ -84,6 +84,34 @@ class EvidenceTests(unittest.TestCase):
         for url in ("https://gitlab.com/o/r", "https://github.com.evil.io/o/r"):
             self.assertIsNone(discover.parse_origin(url), url)
 
+    def test_ssh_host_alias_is_resolved_through_ssh_config(self):
+        hosts = {"github-work": "github.com", "gh443": "ssh.github.com",
+                 "ghe": "github.example.com"}
+        asked = []
+
+        def resolve(alias):
+            asked.append(alias)
+            return hosts.get(alias)
+        for url in ("git@github-work:O/R.git", "ssh://git@github-work/o/r",
+                    "github-work:o/r", "ssh://git@gh443:443/o/r.git"):
+            self.assertEqual(discover.parse_origin(url, resolve), "o/r", url)
+        for url in ("git@ghe:o/r.git", "git@unknown:o/r", "C:/src/r", "-oProxyCommand=x:o/r"):
+            self.assertIsNone(discover.parse_origin(url, resolve), url)
+        self.assertNotIn("-oProxyCommand=x", asked)
+        self.assertNotIn("C", asked)
+
+    def test_ssh_hostname_reads_the_resolved_hostname_once(self):
+        discover.SSH_HOSTS.clear()
+        self.addCleanup(discover.SSH_HOSTS.clear)
+        done = mock.Mock(returncode=0, stdout="user git\nhostname github.com\nport 22\n")
+        with mock.patch.object(discover.subprocess, "run", return_value=done) as run:
+            self.assertEqual(discover.ssh_hostname("github-work"), "github.com")
+            self.assertEqual(discover.ssh_hostname("github-work"), "github.com")
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0], ["ssh", "-G", "github-work"])
+        with mock.patch.object(discover.subprocess, "run", side_effect=OSError("no ssh")):
+            self.assertIsNone(discover.ssh_hostname("other"))
+
     def test_push_refspec_names_destination(self):
         ev = kinds(Transcript().call("git push origin HEAD:refs/heads/feat-2", branch="main"))
         self.assertEqual(ev["branches"][("o", "r", "feat-2")], ["push-names-branch"])

@@ -14,9 +14,16 @@ from pw_paths import NAME, parse_ref, pr_key, session_dir
 
 ORIGIN_CACHE: dict[str, str | None] = {}
 
+SSH_HOSTS: dict[str, str | None] = {}
+
+REMOTE_PATH = r"(?P<owner>[^/\s]+)/(?P<repo>[^/\s]+?)(?:\.git)?/?$"
 GITHUB_REMOTE = re.compile(
     r"^(?:(?:https?|ssh|git)://(?:[^@/\s]+@)?(?:www\.)?github\.com(?::\d+)?/|git@github\.com:)"
-    r"([^/\s]+)/([^/\s]+?)(?:\.git)?/?$", re.IGNORECASE)
+    + REMOTE_PATH, re.IGNORECASE)
+SSH_HOST = r"(?P<host>(?!-)[A-Za-z0-9_.-]+)"
+SSH_ALIAS_REMOTE = re.compile(r"^ssh://(?:[^@/\s]+@)?" + SSH_HOST + r"(?::\d+)?/" + REMOTE_PATH)
+SCP_ALIAS_REMOTE = re.compile(r"^(?:[^@/\s:]+@)?" + SSH_HOST + ":" + REMOTE_PATH)
+GITHUB_SSH_HOSTS = ("github.com", "ssh.github.com")
 GIT_OPTIONS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"}
 TOKEN = re.compile(r"""\"[^\"]*\"|'[^']*'|\S+""")
 REDIRECT = re.compile(r"^\d*>")
@@ -63,9 +70,28 @@ def origin_of(path):
     return ORIGIN_CACHE[key]
 
 
-def parse_origin(url):
-    match = GITHUB_REMOTE.match(url.strip()) if url else None
-    return f"{match.group(1)}/{match.group(2)}".lower() if match else None
+def parse_origin(url, resolve_host=None):
+    url = (url or "").strip()
+    match = GITHUB_REMOTE.match(url)
+    if not match:
+        match = SSH_ALIAS_REMOTE.match(url) or SCP_ALIAS_REMOTE.match(url)
+        if not match or (resolve_host or ssh_hostname)(match.group("host")) not in GITHUB_SSH_HOSTS:
+            return None
+    return f"{match.group('owner')}/{match.group('repo')}".lower()
+
+
+def ssh_hostname(alias):
+    """The HostName ssh's own config gives `alias` (`ssh -G` reads it without connecting)."""
+    if alias not in SSH_HOSTS:
+        try:
+            out = subprocess.run(["ssh", "-G", alias], capture_output=True, text=True,
+                                 encoding="utf-8", timeout=10, creationflags=no_window())
+        except (OSError, subprocess.TimeoutExpired):
+            out = None
+        lines = out.stdout.splitlines() if out and out.returncode == 0 else []
+        SSH_HOSTS[alias] = next((line.split(None, 1)[1].strip().lower() for line in lines
+                                 if line.lower().startswith("hostname ")), None)
+    return SSH_HOSTS[alias]
 
 
 def git_output(args):
