@@ -16,7 +16,9 @@ Call `Monitor` with:
 - `description`: `pr-watch events for this session`
 
 The timeout is a ceiling on one stretch of watching, not on the watch:
-the monitor is armed again each time it ends, until `/pr-watch stop`.
+the monitor is armed again each time it ends, until no PR in the watch
+is still armed. Each PR leaves when it closes or merges, is released,
+or is stopped; the next PR to join arms it again.
 
 Remember the task id in the conversation; nothing on disk records it.
 Every arming returns a new one, so each re-arm below replaces the

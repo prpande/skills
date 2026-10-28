@@ -42,6 +42,7 @@ ADO_BUILD = "https://dev.azure.com/{org}/{project}/_apis/build/builds/{build_id}
 ADO_ORG = re.compile(r"^[A-Za-z0-9._-]+$")
 ADO_PROJECT = re.compile(r"^[A-Za-z0-9._ %!&()@~-]+$")
 POLLER_ERROR_AFTER = 5
+PR_FAULTS = (GhError, KeyError, TypeError, ValueError, AttributeError)
 CLAUDE_GONE_EXIT = 3
 IS_WINDOWS = os.name == "nt"
 PROGRESS_SIGNATURE_FIELDS = ("settled_ids", "handled_top_level_ids", "posted_reply_ids",
@@ -223,11 +224,23 @@ def load_view(session_dir):
     dry_run = bool(watch.get("dry_run"))
     prs = {}
     for ref, entry in watch.get("prs", {}).items():
-        owner, repo, number = parse_ref(ref)
-        stored = read_json(progress_file(session_dir, owner, repo, number, dry_run), default={})
-        prs[pr_key(owner, repo, number)] = {
-            **starting_progress(entry.get("role")), **stored, **entry,
-            "owner": owner, "repo": repo, "number": number}
+        try:
+            owner, repo, number = parse_ref(ref)
+            if not isinstance(entry, dict):
+                raise ValueError("entry is not an object")
+        except ValueError as exc:
+            warn(f"watch.json entry {ref!r} skipped: {exc}")
+            continue
+        key, fault = pr_key(owner, repo, number), None
+        try:
+            stored = read_json(progress_file(session_dir, owner, repo, number, dry_run), default={})
+            if not isinstance(stored, dict):
+                raise ValueError("not an object")
+        except ValueError as exc:
+            warn(f"PR {key}: progress file unreadable: {exc}")
+            stored, fault = {}, "progress unreadable"
+        prs[key] = {**starting_progress(entry.get("role")), **stored, **entry,
+                    "owner": owner, "repo": repo, "number": number, "load_fault": fault}
     return {"self_login": watch["self_login"], "bot_allowlist": watch.get("bot_allowlist", []),
             "ado_orgs": watch.get("ado_orgs", []), "push_queue": watch.get("push_queue", []),
             "session_id": watch.get("session_id"), "claude_pid": watch.get("claude_pid"),
@@ -492,6 +505,11 @@ def retry_spend(retry_after, retry, failed, prev, key):
     return retry_after if retry and not failed else prev.get(key)
 
 
+def pr_fault(poller, key, exc):
+    warn(f"PR {key}: {exc}" if isinstance(exc, GhError) else f"PR {key}: {type(exc).__name__}: {exc}")
+    poller["errors"][key] = "check failed"
+
+
 def tick_pr(gh, view, poller, key, node, now, force, events):
     prs, closed = poller["prs"], poller["closed"]
     entry = view["prs"][key]
@@ -529,15 +547,15 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
             else:
                 review_event, signature, review_pending = evaluate_reviewed(
                     gh, view, pr, entry, seen)
-        except GhError as exc:
-            warn(f"PR {key}: {exc}")
+        except PR_FAULTS as exc:
+            pr_fault(poller, key, exc)
             review_failed = True
     if authored and (ci_moved or ci_forced):
         try:
             ci_event, ci_signature, ci_pending = evaluate_ci(
                 gh, entry, node, ci_seen, ci_signature)
-        except GhError as exc:
-            warn(f"PR {key}: {exc}")
+        except PR_FAULTS as exc:
+            pr_fault(poller, key, exc)
             ci_failed = True
     events += [e for e in (review_event, ci_event) if e]
     if review_failed:
@@ -567,12 +585,15 @@ def tick_once(gh, view, poller, now, force=False):
     poller.setdefault("prs", {})
     closed = poller.setdefault("closed", [])
     closed[:] = [k for k in closed if k in view["prs"]]
-    poller["unreachable"] = []
+    poller.pop("unreachable", None)
+    errors = poller["errors"] = {}
     poller["heads"] = {}
     groups = {}
     for key in sorted(view["prs"]):
-        if key not in closed:
-            entry = view["prs"][key]
+        entry = view["prs"][key]
+        if entry.get("load_fault"):
+            errors[key] = entry["load_fault"]
+        elif key not in closed:
             groups.setdefault((entry["owner"], entry["repo"]), []).append(entry["number"])
     if groups:
         query, aliases = tick_query(groups)
@@ -582,15 +603,20 @@ def tick_once(gh, view, poller, now, force=False):
             if nodes is None:
                 warn(f"{owner}/{repo}: repository missing from the heads query; "
                      "skipping its PRs this tick")
-                poller["unreachable"] += [pr_key(owner, repo, n) for n in groups[(owner, repo)]]
+                errors.update(dict.fromkeys(
+                    (pr_key(owner, repo, n) for n in groups[(owner, repo)]), "repo unreachable"))
                 continue
             for n in groups[(owner, repo)]:
+                key = pr_key(owner, repo, n)
                 node = nodes.get(f"p{n}")
                 if node is None:
-                    warn(f"PR {pr_key(owner, repo, n)}: null alias in the heads query; "
-                         "skipping this tick")
+                    warn(f"PR {key}: null alias in the heads query; skipping this tick")
+                    errors[key] = "PR unreachable"
                     continue
-                tick_pr(gh, view, poller, pr_key(owner, repo, n), node, now, force, events)
+                try:
+                    tick_pr(gh, view, poller, key, node, now, force, events)
+                except PR_FAULTS as exc:
+                    pr_fault(poller, key, exc)
     queue = list(view.get("push_queue", []))
     if not queue:
         poller["last_tick_queue"] = []
@@ -648,7 +674,6 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
             if key in closed_before:
                 continue
             closing = key in poller["closed"]
-            unreachable = key in poller["unreachable"]
             owner, repo, number = entry["owner"], entry["repo"], entry["number"]
             head = poller["heads"].get(key)
             if head is None:
@@ -658,7 +683,7 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
                 result = write_lease(
                     owner, repo, number, session_id=view["session_id"], now=now, head=head,
                     pending_since=iso_utc(since) if since and not closing else None,
-                    last_error="repo unreachable" if unreachable else None,
+                    last_error=poller["errors"].get(key),
                     poller_pid=os.getpid(), status="closed" if closing else "armed")
             except OSError as exc:
                 warn(f"lease for {key}: {type(exc).__name__}: {exc}")
@@ -847,6 +872,9 @@ def report(gh, session_dir, reseed=False):
                              key=lambda item: (item[1]["owner"], item[1]["repo"],
                                                item[1]["number"])):
         if entry.get("status") not in REPORTED_STATUSES:
+            continue
+        if entry.get("load_fault"):
+            errors.append(f"PR {key}: {entry['load_fault']}")
             continue
         try:
             pr = fetch_pr(gh, entry["owner"], entry["repo"], entry["number"])
@@ -1274,7 +1302,10 @@ def run_mode(args, gh):
     if args.checks:
         print(json.dumps(checks_payload(gh, owner, repo, number), indent=2))
         return 0
-    entry = view["prs"].get(pr_key(owner, repo, number)) or {
+    entry = view["prs"].get(pr_key(owner, repo, number))
+    if entry and entry.get("load_fault"):
+        raise ValueError(f"PR {pr_key(owner, repo, number)}: {entry['load_fault']}")
+    entry = entry or {
         **read_json(progress_file(args.session_dir, owner, repo, number, view["dry_run"]),
                     default={}),
         "owner": owner, "repo": repo, "number": number}

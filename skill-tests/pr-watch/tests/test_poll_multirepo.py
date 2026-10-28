@@ -46,8 +46,27 @@ class MultiRepoTickTests(unittest.TestCase):
         with contextlib.redirect_stderr(err):
             events = self.tick(view)
         self.assertEqual([e["pr"] for e in events], [A1])
-        self.assertEqual(self.poller["unreachable"], [B2])
+        self.assertEqual(self.poller["errors"], {B2: "repo unreachable"})
         self.assertEqual(err.getvalue().count("p/b"), 1)
+
+    def test_a_malformed_payload_fails_only_its_own_pr(self):
+        view = two_repos(self.gh)
+        self.gh.prs[pk(2, "p", "b")]["reviewThreads"] = None
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            events = self.tick(view)
+        self.assertEqual([e["pr"] for e in events], [A1])
+        self.assertEqual(self.poller["errors"], {B2: "check failed"})
+        self.assertIn("PR p/b#2: TypeError", err.getvalue())
+        self.assertNotIn(B2, self.poller["prs"])
+
+    def test_a_pr_with_unreadable_progress_is_not_queried(self):
+        view = two_repos(self.gh)
+        view["prs"][B2]["load_fault"] = "progress unreadable"
+        events = self.tick(view)
+        self.assertEqual([e["pr"] for e in events], [A1])
+        self.assertEqual(self.poller["errors"], {B2: "progress unreadable"})
+        self.assertFalse(any('"b"' in c[3] for c in self.gh.calls if c[:2] == ["api", "graphql"]))
 
     def test_same_number_in_two_repos(self):
         self.gh.prs[pk(1, "o", "a")] = pending_pr(1, head="ha")
@@ -178,6 +197,30 @@ class LoadViewTests(HomeCase):
         shared.unlink()
         directory2 = self.session(dry_run=False)
         self.assertEqual(poll.load_view(directory2)["prs"][A1]["settled_ids"], [])
+
+    def test_a_malformed_entry_is_skipped_and_the_rest_load(self):
+        directory = self.session()
+        watch_file = directory / "watch.json"
+        data = json.loads(watch_file.read_text(encoding="utf-8"))
+        data["prs"]["not a ref"] = {"role": "authored", "status": "armed"}
+        data["prs"]["o/a#7"] = "armed"
+        watch_file.write_text(json.dumps(data), encoding="utf-8")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            view = poll.load_view(directory)
+        self.assertEqual(sorted(view["prs"]), [A1, B2])
+        self.assertEqual(err.getvalue().count("skipped"), 2)
+
+    def test_an_unreadable_progress_file_marks_the_pr(self):
+        directory = self.session()
+        shared = pw_paths.progress_path("o", "a", 1)
+        shared.parent.mkdir(parents=True)
+        shared.write_text("{not json", encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()):
+            view = poll.load_view(directory)
+        self.assertEqual(view["prs"][A1]["load_fault"], "progress unreadable")
+        self.assertEqual(view["prs"][A1]["settled_ids"], [])
+        self.assertIsNone(view["prs"][B2]["load_fault"])
 
 
 class MonitorCase(HomeCase):
@@ -413,6 +456,29 @@ class MonitorLeaseTests(MonitorCase):
         self.run_monitor(1, clock=NOW + 60)
         held = self.lease(2, "p", "b")
         self.assertEqual((held["last_head_sha"], held["last_error"]), ("h2", None))
+
+    def test_a_failed_pr_check_gets_last_error_and_the_watch_keeps_running(self):
+        view = two_repos(self.gh)
+        self.start(view)
+        self.gh.fail.add(("p", "b", 2))
+        events, err, code = self.run_monitor(1)
+        self.assertEqual(([e["pr"] for e in events], code), ([A1], 0))
+        self.assertEqual(self.lease(2, "p", "b")["last_error"], "check failed")
+        self.assertIsNone(self.lease()["last_error"])
+        self.gh.fail.clear()
+        self.run_monitor(1, clock=NOW + 60)
+        self.assertIsNone(self.lease(2, "p", "b")["last_error"])
+
+    def test_an_unreadable_progress_file_keeps_the_lease_armed_with_an_error(self):
+        view = watch({A1: "authored"})
+        self.gh.prs[pk(1, "o", "a")] = pending_pr(1)
+        self.start(view)
+        pw_paths.progress_path("o", "a", 1).write_text("{not json", encoding="utf-8")
+        events, err, _ = self.run_monitor(2)
+        self.assertEqual(events, [])
+        held = self.lease()
+        self.assertEqual((held["status"], held["last_error"]), ("armed", "progress unreadable"))
+        self.assertIn("progress file unreadable", err)
 
     def test_monitor_exits_when_claude_is_gone(self):
         view = watch({A1: "authored"})
