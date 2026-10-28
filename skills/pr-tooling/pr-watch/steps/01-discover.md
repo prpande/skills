@@ -9,7 +9,11 @@ authored PR. Posts nothing anywhere.
 Run each command on its own and keep its output:
 
 - `python -c "import os; print(os.environ['CLAUDE_CODE_SESSION_ID'])"` →
-  `SESSION_ID`. `SESSION_DIR` is `<PW_HOME>/sessions/<SESSION_ID>`.
+  `SESSION_ID`.
+- `python -c "import sys; sys.path.insert(0, r'<SKILL_DIR>/scripts'); import pw_paths; print(pw_paths.home())"`
+  → `PW_HOME`, an absolute path that honours `PR_WATCH_HOME`.
+- `python -c "import os, sys; sys.path.insert(0, r'<SKILL_DIR>/scripts'); import pw_paths; print(pw_paths.session_dir(os.environ['CLAUDE_CODE_SESSION_ID']))"`
+  → `SESSION_DIR`, the absolute path every `--session-dir` below takes.
 - `python -c "import os; print(os.environ['CLAUDE_PID'])"` → `CLAUDE_PID`.
 - `git rev-parse --show-toplevel` → `ORIGIN`, the worktree the session is
   in now.
@@ -21,7 +25,20 @@ not running under the claude process in `CLAUDE_PID`, so a lease written
 now would name the wrong holder. Stop the whole arm, print the command's
 stderr line, and write nothing.
 
+Under `--dry-run` no lease exists, so every `--claim` and `--lease-status`
+in this step is skipped.
+
+A `POLL` command in this step with no branch of its own below
+(`--discover`, `--end-leftover-monitors`, `--monitor-alive`) stops the
+whole arm on a non-zero exit: print its stderr line and write nothing
+further.
+
 ## 2. Resume or start
+
+Run `POLL --end-leftover-monitors --session-dir <SESSION_DIR>` first, on
+every arm. It ends every monitor of this session left by an earlier
+claude process and prints their pids, so one session never has two
+pollers. It prints `[]` when there is none.
 
 If this invocation is `--dry-run` and `<SESSION_DIR>/watch.json` exists
 with `dry_run` other than `true`: stop and tell the user a real watch
@@ -43,14 +60,13 @@ resume:
 
 - Its `prs` are the starting set, with their `role`, `worktree`,
   `branch`, `title`, and `url` kept. An entry whose `status` is
-  `released` or `closed` is dropped. An entry whose `status` is `armed`,
-  `stopped`, or `lost` stays, and §5 claims it again.
+  `released` or `closed` is dropped. An entry whose `status` is `armed`
+  or `lost` stays, and §5 claims it again. An entry whose `status` is
+  `stopped` stays `stopped`, with its lease untouched, unless this is a
+  bare `/pr-watch` or the invocation names it; then it becomes `armed`
+  and §5 claims it.
 - `push_queue`, `channel_id`, `serialize_pushes`, and `bot_allowlist`
   are kept. `session_id` stays `SESSION_ID`.
-- Run `POLL --end-leftover-monitors --session-dir <SESSION_DIR>`. It ends
-  every monitor of this session left by an earlier claude process and
-  prints their pids, so one session never has two pollers. It prints
-  `[]` when there is none.
 
 Otherwise start from an empty set.
 
@@ -61,6 +77,8 @@ Build the candidate set in the conversation. Nothing is written until §5.
 **Bare `/pr-watch`.** Run `POLL --discover --session-id <SESSION_ID>`. It
 prints a JSON list of `{ref, url, branch, evidence}` for the open PRs
 this session wrote to and authored. Each joins the set as `authored`.
+The list carries no title; read each with
+`gh pr view <url> --json title --jq .title`.
 `[]` means the session has not written to any PR; tell the user so and
 that `/pr-watch owner/repo#N` names one. A bare `/pr-watch` never adds a
 reviewed PR, and a PR the user only mentioned in conversation is never
@@ -74,7 +92,8 @@ the live author:
 `gh pr view <N> --repo <owner/repo> --json author,state,title,url,headRefName`.
 The PR joins the set as `authored` when the author is `SELF`, else
 `reviewed`. A PR that is not open is excluded with its state. Explicit
-PRs are claimed with `--explicit` in §5.
+PRs are claimed with `--explicit` in §5, and a saved `stopped` entry
+among them is re-armed (§2).
 
 **Clone and worktree.** An `authored` PR needs the path of a worktree of
 its head branch. Resolve the clone first:
@@ -88,7 +107,8 @@ its head branch. Resolve the clone first:
 - A non-zero exit excludes the PR with the command's stderr line. Search
   nowhere else.
 
-Then `git -C <CLONE> worktree list --porcelain`. When a
+Then `git -C <CLONE> worktree list --porcelain`. `MAIN` is the path on
+the first `worktree` line of that listing. When a
 `branch refs/heads/<headRefName>` line has a `worktree` path above it,
 that path is the PR's `worktree`. When none does, create one:
 
@@ -97,8 +117,7 @@ git -C <CLONE> fetch origin <headRefName>
 git -C <CLONE> worktree add <MAIN>/.claude/worktrees/<headRefName> <headRefName>
 ```
 
-`MAIN` is the path on the first `worktree` line of that same listing. If
-the local branch does not exist, the second command is
+If the local branch does not exist, the second command is
 `git -C <CLONE> worktree add -b <headRefName> <MAIN>/.claude/worktrees/<headRefName> origin/<headRefName>`.
 
 Other repos' worktrees are edited with absolute paths and `git -C`; this
@@ -122,13 +141,20 @@ keys in the old `<MAIN>/.pr-autopilot/watch.json`. Act on `state`:
   the conversation. Otherwise run `taskkill /T /F /PID <monitor_pid>`;
   `--end-leftover-monitors` does not cover it, because the old poller
   was started with `--state-dir`.
-- `foreign`: another session owns it. Exclude every candidate PR whose
-  key is in `prs` with "old-format watch in <owner/repo> held by the
-  session running claude pid <owner_pid>, heartbeat <heartbeat_age>s ago;
-  re-arm /pr-watch in that session".
+- `foreign`: another session owns it. Run `claude agents --json` and find
+  the entry whose `pid` is `owner_pid`; its label is `[Tag]Name`. When the
+  command fails, lists no match, or `owner_pid` is null, the label is "the
+  session running claude pid <owner_pid>" ("an unidentified session" for
+  null). Exclude every candidate PR whose key is in `prs` with
+  "old-format watch in <owner/repo> held by <label>, heartbeat
+  <heartbeat_age>s ago; re-arm /pr-watch in that session".
 - `live-unknown`: no old poller process, and the heartbeat is
   <heartbeat_age>s old. Exclude the same PRs with "old-format watch in
   <owner/repo> ticked <heartbeat_age>s ago; retry after it goes stale".
+
+A non-zero exit from `--migrate-scan` or `--migrate-import` excludes
+every candidate PR of that repo with the command's stderr line and leaves
+the old watch as it is.
 
 To import, run `POLL --migrate-import <MAIN> --session-dir <SESSION_DIR>`.
 It copies each old PR's progress into its `<N>.progress.json`, keeps a
@@ -141,6 +167,9 @@ role from the live author), so no PR of the old watch is left unwatched.
 
 ## 5. Write `watch.json` and claim
 
+When §2 kept no entry and §3 and §4 found no candidate, tell the user
+that no PR was resumed, discovered, or named, and stop. Write nothing.
+
 Write `watch.json` per `pr-watch/references/watch-state-schema.md`
 "Writing", with:
 
@@ -148,23 +177,25 @@ Write `watch.json` per `pr-watch/references/watch-state-schema.md`
   `SELF`, and `origin_worktree` `ORIGIN`;
 - `channel_id` from `--channel` or `C0C15VC8Y0Z`, `serialize_pushes`
   `false` only under `--parallel-pushes`, and `dry_run` from `--dry-run`;
-- `stopped_at` `null`: any arm clears it. An entry kept from a resume
-  with `status` `stopped` becomes `armed`;
+- `stopped_at` `null`: any arm clears it;
 - `push_queue` kept from a resume, else `[]`;
 - `bot_allowlist` `["sonarqube-mbodevme", "mindbody-ado-pipelines", "mergewatch-playlist"]`
   (kept as is on resume);
 - `ado_orgs` `["mindbody"]`; on resume it is written that way only when
   the key is missing, and any other existing value is kept;
-- `prs`: one entry per candidate, keyed `owner/repo#N`, with `role`,
-  `worktree` (authored only), `branch`, `title`, `url`, and `status`
-  `armed`.
+- `prs`: only the entries §2 kept, each with its `status` (`armed`, or
+  `stopped` for an entry §2 left stopped). A candidate PR is added to
+  `prs` in §7, after its claim and baseline, never before: a running
+  monitor reloads `watch.json` every tick and would otherwise act on a PR
+  this session does not hold yet.
 
 The lease needs `session_id` and `claude_pid` from this file, so write it
 before the first claim.
 
 Under `--dry-run` take no lease and go to §6.
 
-Otherwise claim each PR in the set, one command each:
+Otherwise claim each kept entry whose `status` is `armed` or `lost`, and
+each candidate, one command each:
 `POLL --claim <owner/repo#N> --role <role> --session-dir <SESSION_DIR>`,
 adding `--explicit` for a PR the user named in this invocation. It prints:
 
@@ -177,11 +208,9 @@ adding `--explicit` for a PR the user named in this invocation. It prints:
 
 A non-zero exit refuses the claim. When its stderr line says "lease
 unreadable", run the same claim once more. Any other refusal, and a second
-"lease unreadable", removes the PR from `watch.json` and lists it among
-the excluded PRs in §7 with the command's stderr line.
-
-Rewrite `watch.json` once after the last claim so it holds exactly the
-claimed PRs and the final `push_queue`.
+"lease unreadable", removes a kept entry from `watch.json` or drops a
+candidate, and lists the PR among the excluded PRs in §7 with the
+command's stderr line.
 
 ## 6. Baseline
 
@@ -190,8 +219,8 @@ or under `--dry-run` at
 `<SESSION_DIR>/progress/<owner>/<repo>/<N>.progress.json`. They are
 written with `state_put.py` as `watch-state-schema.md` "Writing" shows.
 
-For every PR in `watch.json` whose progress file does not exist, write
-one with the starting keys for its role:
+For every claimed PR (kept entry or candidate) whose progress file does
+not exist, write one with the starting keys for its role:
 
 - all PRs: `posted_reply_ids`, `settled_ids`, and `escalated_ids` as
   `[]`, `handled_top_level_ids` as `{}`, `slack_ts` as `null`;
@@ -210,12 +239,12 @@ key it has is kept.
 For every `authored` PR that got a new progress file in this run, run
 `POLL --baseline <owner/repo#N> --session-dir <SESSION_DIR>`. Merge its
 `settled_ids` and `handled_top_level_ids` into the PR's progress file.
-When it exits non-zero, remove the PR from `watch.json`, release its lease
-with `POLL --lease-status <owner/repo#N> --status released --session-dir
-<SESSION_DIR>` (skipped under `--dry-run`), delete the progress file just
-written, and list the PR among the excluded PRs in §7 with the command's
-stderr line. A PR left in without its baseline would be resumed next run
-with every old thread pending.
+When it exits non-zero, drop the PR (remove a kept entry from
+`watch.json`), release its lease with `POLL --lease-status
+<owner/repo#N> --status released --session-dir <SESSION_DIR>`, delete the
+progress file just written, and list the PR among the excluded PRs in §7
+with the command's stderr line. A PR left in without its baseline would
+be resumed next run with every old thread pending.
 
 The baseline holds back one kind of existing item: a bot review submitted
 against the PR's current head. That is feedback on the code as it stands,
@@ -225,19 +254,20 @@ and a review body can carry findings of its own
 older head, a bot issue comment, and anything the user already answered
 are baselined as before.
 
-A `reviewed` PR new to this watch is checked with
-`POLL --findings <owner/repo#N> --session-dir <SESSION_DIR>`. Remove it
-from `watch.json` and release its lease when every thread is
+A `reviewed` candidate is checked with
+`POLL --findings <owner/repo#N> --session-dir <SESSION_DIR>`. Drop it and
+release its lease (skipped under `--dry-run`) when every thread is
 `is_resolved: true` and every comment after the user's last comment on it
 (the entries after the last `me` in `kinds`) has its id in `escalated_ids`
 (empty for a new PR, so any such comment keeps it): 03 D step 1's settle
 condition, meaning nothing is left to watch. When the command exits
-non-zero, remove the PR and release its lease too, and list it among the
-excluded PRs in §7 with the command's stderr line.
+non-zero, drop it and release its lease (skipped under `--dry-run`) too,
+and list it among the excluded PRs in §7 with the command's stderr line.
 
 ## 7. Confirm
 
-For each PR run `POLL --tails <owner/repo#N>` (authored) or
+For each PR still in play (kept `armed` entries and candidates) run
+`POLL --tails <owner/repo#N>` (authored) or
 `POLL --findings <owner/repo#N>` (reviewed), both with
 `--session-dir <SESSION_DIR>`. Show one table:
 
@@ -249,18 +279,23 @@ counts. For reviewed PRs it is "head moved past your review" or "waiting
 for a push". When the command exits non-zero, the last column is its
 stderr line and the PR stays in the set; the first event refetches it.
 Under the table list the excluded PRs and why: PRs with no local clone,
-refused claims, old-format watches held elsewhere, and PRs removed in §6
+refused claims, old-format watches held elsewhere, and PRs dropped in §6
 with their stderr line.
 
-With `--yes`, skip the question and go to §8. Otherwise ask with
-`AskUserQuestion`: "Watch these PRs?" with options "Watch them" and
-"Change the set". On "Change the set", take the changes in plain text.
-Remove a PR from `watch.json` and release its lease with
+With `--yes`, skip the question. Otherwise ask with `AskUserQuestion`:
+"Watch these PRs?" with options "Watch them" and "Change the set". On
+"Change the set", take the changes in plain text. Drop a candidate, or
+remove a kept entry from `watch.json`, and release its lease with
 `POLL --lease-status <owner/repo#N> --status released --session-dir
 <SESSION_DIR>` (skipped under `--dry-run`). Run each PR added through §3,
-§5's claim, and §6, removing it again and listing it among the excluded
-PRs with the command's stderr line when its baseline fails. Apply the
-changes to `watch.json` and ask again.
+§5's claim, and §6, dropping it again and listing it among the excluded
+PRs with the command's stderr line when its baseline fails. Ask again.
+
+Once the set is accepted, add each remaining candidate to `prs` in
+`watch.json` with `role`, `worktree` (authored only), `branch`, `title`,
+`url`, and `status` `armed`, and rewrite the file. When no entry of `prs`
+is `armed` after that, there is nothing to watch: tell the user which PRs
+were excluded, delete `watch.json` if this run created it, and stop.
 
 ## 8. Initialise the library state for authored PRs
 
@@ -297,7 +332,7 @@ python "<SKILL_DIR>/scripts/state_put.py" "<scratchpad>/pr-<N>.json.new" "<workt
 Make sure the worktree ignores `.pr-autopilot/`: run
 `git -C <worktree> check-ignore -q .pr-autopilot/probe`. On a non-zero
 exit, append the line `.pr-autopilot/` to
-`<git -C <worktree> rev-parse --git-common-dir>/info/exclude`. Never edit
+`<git -C <worktree> rev-parse --path-format=absolute --git-common-dir>/info/exclude`. Never edit
 `.gitignore`.
 
 Creating the file is all this step does; no lock exists yet, and the
@@ -308,10 +343,7 @@ protocol updates its `session_id` when it reclaims.
 
 ## 9. Arm or join
 
-When no PR in `watch.json` is `armed`, there is nothing to watch: tell the
-user which PRs were excluded and stop.
-
-Otherwise run `POLL --monitor-alive --session-dir <SESSION_DIR>`. Run it
+Run `POLL --monitor-alive --session-dir <SESSION_DIR>`. Run it
 after the entries above are written, never on a remembered task id:
 
 - `alive`: a monitor of this session is already running. Arm nothing; its

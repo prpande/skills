@@ -21,8 +21,8 @@ the monitor is armed again each time it ends, until `/pr-watch stop`.
 Remember the task id in the conversation; nothing on disk records it.
 Every arming returns a new one, so each re-arm below replaces the
 remembered id. `/pr-watch stop` stops whatever the last arming returned;
-on an id left over from an expired task it would stop nothing and leave
-the live monitor running. Whether a monitor runs is always decided by
+on an id left over from an expired task it would stop nothing, and the
+live monitor then ends on its own once no entry is `armed`. Whether a monitor runs is always decided by
 `POLL --monitor-alive`, never by the remembered id.
 
 The first tick is a full reconciliation, so the first events arrive within
@@ -39,8 +39,12 @@ A monitor ends in one of three ways, and the notification says which.
 
 After an `idle` event (`pr-watch/steps/03-route-event.md`) the stream
 ends because no PR in the watch is still `armed`. This is a planned end:
-do not arm again and post no "monitor died" line. The next PR to join
-starts a new monitor.
+do not arm again and post no "Watch monitor restarted." line. The next PR
+to join starts a new monitor.
+
+A monitor this session ended on purpose (step 01 section 4 ending an old
+poller, `/pr-watch stop`, or a `release` that leaves no `armed` PR) is
+not armed again and posts nothing.
 
 An expiry notice names the deadline it reached and the number of events
 it delivered ("Monitor expired after 30m with 2 events delivered"). This
@@ -60,9 +64,10 @@ until they fix it.
 ## Stop
 
 `/pr-watch stop` writes `watch.json` first: `stopped_at` is the current
-epoch seconds and every entry's `status` is `stopped`. Then it runs
+epoch seconds and every `armed` entry's `status` becomes `stopped`; a
+`released`, `closed`, or `lost` entry is left as it is. Then it runs
 `POLL --lease-status <owner/repo#N> --status stopped --session-dir
-<SESSION_DIR>` for each PR, calls `TaskStop` on the monitor when its
+<SESSION_DIR>` for each entry it changed, calls `TaskStop` on the monitor when its
 task id is known, and posts the closing reply per PR thread. With the
 entries `stopped` the monitor sees no `armed` PR and exits, so a lost task
 id still ends it. The state files stay.
@@ -70,4 +75,5 @@ id still ends it. The state files stay.
 `/pr-watch release owner/repo#N` writes the entry's `status` as
 `released` in `watch.json` first, then runs
 `POLL --lease-status <owner/repo#N> --status released --session-dir
-<SESSION_DIR>`. Another session may then claim the PR.
+<SESSION_DIR>`, skipping the second step for a `lost` entry. Another
+session may then claim the PR.

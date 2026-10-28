@@ -44,8 +44,8 @@ session doing the work, so fixes are made with that session's context.
 - `status`: run `POLL --report --session-dir <SESSION_DIR>` and show its
   output, then say whether `POLL --monitor-alive --session-dir
   <SESSION_DIR>` prints `alive`.
-- `stop`: write `watch.json` (`stopped_at`, every entry `stopped`), set
-  each PR's lease to `stopped` with `POLL --lease-status <ref> --status
+- `stop`: write `watch.json` (`stopped_at`, every `armed` entry
+  `stopped`), set each of those PRs' leases to `stopped` with `POLL --lease-status <ref> --status
   stopped --session-dir <SESSION_DIR>`, `TaskStop` the monitor when its
   task id is known, post one closing reply per PR thread
   (`pr-watch/steps/06-notify.md`), and keep the state files so a later
@@ -160,7 +160,7 @@ Owned by `pr-watch`:
   `pr-watch/steps/07-ci.md` section 3 step 3 and
   `pr-watch/steps/04-fix-path.md` section 8 step 4. Step 01 is not event
   handling and follows its own branches for each `POLL` command
-  (`pr-watch/steps/01-discover.md` sections 3, 5, and 6). `/pr-watch
+  (`pr-watch/steps/01-discover.md` sections 1 to 9). `/pr-watch
   status` stops and shows the output and the stderr line.
 - CI is acted on only for required checks on `authored` PRs
   (`pr-watch/steps/07-ci.md`). The Azure DevOps PAT is read only inside
