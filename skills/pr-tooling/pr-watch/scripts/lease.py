@@ -262,7 +262,8 @@ def armed_peers(owner, repo, exclude_n) -> list[int]:
             data = _read_with_retry(owner, repo, number)
         except OSError:
             continue
-        if number != exclude_n and data is not None and data.get("status") == "armed":
+        if (number != exclude_n and data is not None and data.get("status") == "armed"
+                and data.get("role") == "authored"):
             peers.append(number)
     return peers
 

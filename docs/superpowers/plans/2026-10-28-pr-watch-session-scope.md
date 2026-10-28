@@ -104,7 +104,7 @@ def test_iso_round_trip(self):
   - `set_status(owner, repo, n, status, session_id, now) -> bool`: writes `status` only when `holder.session_id == session_id`; false otherwise.
   - `tick_write(owner, repo, n, *, session_id, now, head, pending_since, last_error, poller_pid, status="armed") -> bool`: rewrites heartbeat-side fields; returns false and writes nothing when the lease's holder is a different session (lost lease).
   - `prune_closed(now) -> int`: deletes `closed` leases (and their progress files) whose `updated_at` is over 7 days old.
-  - `armed_peers(owner, repo, exclude_n) -> list[int]`: PR numbers in that repo dir with `status: armed`, any holder, excluding `exclude_n`.
+  - `armed_peers(owner, repo, exclude_n) -> list[int]`: PR numbers in that repo dir with `status: armed` and `role: authored`, any holder, excluding `exclude_n`.
   - `holder_label(session_id, agents=list_agents) -> str`: `[Tag]Name` from `claude agents --json` (`name` for that `sessionId`), else the id. `list_agents()` runs `claude agents --json` with `CREATE_NO_WINDOW`, returns `[]` on any failure.
 
 - [ ] **Step 1: Write the failing tests** (all with a temp `PR_WATCH_HOME`, injected `started_at`, fixed `now`)

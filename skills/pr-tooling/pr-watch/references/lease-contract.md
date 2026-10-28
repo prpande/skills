@@ -52,7 +52,8 @@ Right after a claim, `pending_since` and `last_error` are null and
   `now - heartbeat <= stale_after_seconds`. The session is live when
   `claude agents` lists `holder.session_id`. A listed session with a
   stale heartbeat has a dead monitor: ask that session to run
-  `/pr-watch`.
+  `/pr-watch <owner/repo#N ...> --yes`, naming the stale `armed` leases
+  it holds. A bare `/pr-watch` would also re-arm its `stopped` PRs.
 - `stopped`: the user ran `/pr-watch stop`. The holder keeps the lease.
   Do not re-arm it; report it as stopped but open.
 - `released`: nobody is acting on the PR. Any session may claim it.

@@ -35,14 +35,17 @@ this PR, and is its watch alive" answerable from a file.
   watch on its own.
 - `--yes` arms with no confirm, for unattended use.
 - A documented lease contract the orchestrator reads from stdlib Python.
-- Watches armed in the old per-repo format are migrated on re-arm, never
-  run beside the new one.
+- Watches armed in the old per-repo format are migrated on re-arm. A
+  session whose old poller is still running when the new steps land is
+  not guarded against; none is running.
 
 ## 🚫 Non-goals
 
 - Changing what the watch does on an event: the fix path, CI handling,
   re-review, reply voice, Slack threads and hard rules are unchanged
-  except where a step names a repo or a state path.
+  except where a step names a repo or a state path, the cross-repo fix
+  path (no relocation, `git -C`, an explicit worktree root in the fixer
+  and verify steps), and push serialisation spanning sessions.
 - Any orchestrator code. The orchestrator only reads the lease files.
 - Org-wide PR search for discovery (SAML partial results stay a reason to
   avoid it).
@@ -128,10 +131,11 @@ level go away.
 
 `push_queue` holds `owner/repo#N` keys. Serialisation is per repo and
 across sessions: the shared contract database it guards is per repo, and
-under the old design every watched PR in a repo was serialised against
+under the old design every authored PR in a repo was serialised against
 every other. The "other PRs' checks still running" test therefore covers
-every PR with an `armed` lease under `prs/<owner>/<repo>/`, whichever
-session holds it, and never PRs in other repos.
+every `authored` PR with an `armed` lease under `prs/<owner>/<repo>/`,
+whichever session holds it, never a `reviewed` PR (a colleague pushes to
+it whenever they like), and never PRs in other repos.
 
 Two sessions can both find nothing running and push at once, so the scan
 and the push run under `prs/<owner>/<repo>/push.lock` (exclusive create,
@@ -181,7 +185,9 @@ Status meanings for a reader:
 - `armed`: the holder is watching. The watch is live when
   `now - heartbeat <= stale_after_seconds`. The session is live when
   `claude agents` lists `holder.session_id`. Listed but stale means the
-  monitor is down: nudge the session to run `/pr-watch`.
+  monitor is down: nudge the session to run
+  `/pr-watch <owner/repo#N ...> --yes`, naming the stale `armed` leases
+  it holds, so its `stopped` PRs stay stopped.
 - `stopped`: praty ran `/pr-watch stop`. The holder keeps the lease; the
   orchestrator does not re-arm it and lists it as stopped-but-open.
 - `released`: nobody is acting; anyone may claim it.
@@ -276,6 +282,12 @@ orchestrator (measured 28 Oct 2026).
 The orchestrator's seeding message is `/pr-watch owner/repo#N [...] --yes`.
 Re-running `/pr-watch` with new refs in a session that already watches
 adds them to the running watch without a second monitor.
+
+In a session that already has a `watch.json`, an arm first resumes its
+entries that are not `released` or `closed`, `reviewed` ones included. A
+run with refs re-arms only the `stopped` entries it names; a bare run
+re-arms them all. The evidence rule below picks only PRs not already in
+the file.
 
 ### Bare `/pr-watch`: the evidence rule
 

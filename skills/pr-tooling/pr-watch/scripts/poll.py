@@ -1104,7 +1104,7 @@ def main(argv=None, gh=run_gh):
     mode.add_argument("--lease-status", metavar="REF",
                       help="set the status of a lease this session holds")
     mode.add_argument("--repo-peers", metavar="REF",
-                      help="print the armed PRs in the same repo as a JSON list")
+                      help="print the armed authored PRs in the same repo as a JSON list")
     mode.add_argument("--discover", action="store_true",
                       help="print the open PRs this session wrote to, as JSON")
     mode.add_argument("--find-clone", metavar="REF",

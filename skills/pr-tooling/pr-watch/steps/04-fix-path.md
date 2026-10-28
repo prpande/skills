@@ -230,7 +230,7 @@ No returns in section 5: go to section 7, then section 9.
      Exit 0 prints `taken`. A non-zero exit prints `busy`: another push
      or rerun in `<owner>/<repo>` holds it. `busy` queues the PR exactly
      as a pending check does.
-   - The PR set: the entries of `watch.json` `prs`, of either role, whose
+   - The PR set: the `authored` entries of `watch.json` `prs` whose
      `status` is `armed` and whose repo is `<owner>/<repo>`, plus the
      keys `POLL --repo-peers <key>` prints, without this PR and without
      duplicates. Never a PR in another repo.

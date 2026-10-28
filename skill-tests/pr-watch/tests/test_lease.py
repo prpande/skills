@@ -417,6 +417,11 @@ class SweepTests(LeaseCase):
         self.assertEqual(lease.armed_peers("o", "r", 99), [1, 2, 10])
         self.assertEqual(lease.armed_peers("o", "other", 1), [])
 
+    def test_armed_peers_skips_reviewed_leases(self):
+        self.put(2, h=holder("s-2"))
+        self.put(3, h=holder("s-3"), role="reviewed")
+        self.assertEqual(lease.armed_peers("o", "r", 1), [2])
+
 
 class LabelAndProcessTests(unittest.TestCase):
     def test_holder_label_names_session(self):
