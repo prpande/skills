@@ -251,8 +251,10 @@ is not stranded.
 
 **Inherited identity.** A process started by a session's tools inherits
 `CLAUDE_CODE_SESSION_ID` and `CLAUDE_PID`, and so would a `claude`
-launched from one. Step 01 refuses to arm when `CLAUDE_CODE_CHILD_SESSION`
-is set or `CLAUDE_PID` is not an ancestor of the arming process.
+launched from one. Step 01 refuses to arm when `CLAUDE_PID` is missing or
+is not the nearest `claude.exe*` ancestor of the arming process.
+`CLAUDE_CODE_CHILD_SESSION` is no signal: every session the orchestrator
+launches carries it (measured 28 Oct 2026).
 
 ## 🔎 Arming
 
