@@ -315,12 +315,16 @@ def discover(gh, session_id, self_login, origin_of, projects=None):
             "branch": pr["headRefName"], "evidence": []})
         entry["evidence"].extend(k for k in kinds if k not in entry["evidence"])
 
+    by_repo: dict[tuple[str, str], dict[str, list]] = {}
     for (owner, repo, branch), kinds in found["branches"].items():
-        listed = gh_json(gh, ["pr", "list", "--repo", f"{owner}/{repo}", "--head", branch,
-                              "--author", self_login, "--state", "open",
+        by_repo.setdefault((owner, repo), {})[branch] = kinds
+    for (owner, repo), branches in by_repo.items():
+        listed = gh_json(gh, ["pr", "list", "--repo", f"{owner}/{repo}", "--author", self_login,
+                              "--state", "open", "--limit", "1000",
                               "--json", "number,url,headRefName"])
         for pr in listed or []:
-            keep(pr, kinds)
+            if pr["headRefName"] in branches:
+                keep(pr, branches[pr["headRefName"]])
     for url, kinds in found["urls"].items():
         pr = gh_json(gh, ["pr", "view", url, "--json", "number,author,state,headRefName,url"])
         if pr and self_authored_open(pr, self_login):

@@ -251,8 +251,7 @@ class FakeDiscoverGh:
         self.calls.append(list(args))
         if args[:2] == ["pr", "list"]:
             repo = args[args.index("--repo") + 1]
-            head = args[args.index("--head") + 1]
-            return json.dumps(self.lists.get((repo, head), []))
+            return json.dumps([pr for (r, _), prs in self.lists.items() if r == repo for pr in prs])
         if args[:2] == ["pr", "view"]:
             return json.dumps(self.views[args[2]])
         raise AssertionError(args)
@@ -294,6 +293,17 @@ class DiscoverTests(unittest.TestCase):
         args = self.gh.calls[0]
         self.assertEqual(args[args.index("--author") + 1], SELF)
         self.assertEqual(args[args.index("--state") + 1], "open")
+
+    def test_one_list_call_per_repo_keeps_only_branches_the_session_wrote(self):
+        self.listed()
+        self.gh.lists[("o/r", "feat-2")] = [
+            {"number": 8, "url": "https://github.com/o/r/pull/8", "headRefName": "feat-2"}]
+        self.gh.lists[("o/r", "other")] = [
+            {"number": 9, "url": "https://github.com/o/r/pull/9", "headRefName": "other"}]
+        found = self.run_discover(Transcript().call("git commit -m a", branch="feat-1")
+                                  .call("git commit -m b", branch="feat-2"))
+        self.assertEqual([p["ref"] for p in found], ["o/r#7", "o/r#8"])
+        self.assertEqual(sum(1 for c in self.gh.calls if c[:2] == ["pr", "list"]), 1)
 
     def test_no_pr_for_branch_means_empty(self):
         self.assertEqual(self.run_discover(Transcript().call("git commit -m x")), [])
@@ -439,7 +449,7 @@ def fake_run(cmd, *args, **kwargs):
         return real_run(cmd, *args, **kwargs)
     if cmd[1:3] == ["api", "user"]:
         return subprocess.CompletedProcess(cmd, 0, stdout="prpande\\n", stderr="")
-    if cmd[cmd.index("--head") + 1] == "feat-1":
+    if cmd[1:3] == ["pr", "view"]:
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
     listed = [{"number": 8, "url": "https://github.com/o/r/pull/8", "headRefName": "feat-2"}]
     return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(listed), stderr="")
@@ -490,7 +500,7 @@ class CliTests(unittest.TestCase):
     def test_run_as_a_script_survives_a_failing_candidate(self):
         poll_py = pathlib.Path(poll.__file__)
         write_transcript(pathlib.Path(self.tmp.name) / ".claude" / "projects", "sess-1",
-                         Transcript().call("git commit -m a", branch="feat-1")
+                         Transcript().call("gh pr create", output="https://github.com/o/r/pull/9")
                          .call("git commit -m b", branch="feat-2"))
         driver = pathlib.Path(self.tmp.name) / "driver.py"
         driver.write_text(DRIVER, encoding="utf-8")
