@@ -281,9 +281,10 @@ A PR joins a bare arm only when both hold:
 2. this session's transcript shows it wrote to the PR's head branch:
    - a `git commit` or `git push` tool call in a record whose `cwd` is in
      that repo and whose `gitBranch` equals the PR's `headRefName`; or
-   - a `git push` / `git -C <path> push` call whose command names the
-     head branch, or whose output carries
-     `<sha>..<sha>  <headRefName> -> <headRefName>`; or
+   - a `git push` / `git -C <path> push` call (not `--dry-run`) whose
+     command names the head branch, or whose output carries a push line
+     for it: `<sha>..<sha>  <headRefName> -> <headRefName>`, a forced
+     update, or `[new branch]`; or
    - a `gh pr create` call whose output carries the PR's URL.
 
 `pr-link` records are hints for which PRs to check, never evidence: they
