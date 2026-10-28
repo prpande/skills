@@ -410,11 +410,24 @@ fix path that assumes the cwd takes the worktree root explicitly:
   and exits 0. Step 02 treats "stream ended" after `idle` as a planned
   exit: no re-arm and no "monitor died" line. The next PR to join starts
   a new monitor.
-- `lease-lost` (above) is a new event kind; step 03 routes it.
+- `lease-lost` (above) is a new event kind; step 03 routes it. On
+  `idle`, step 03 re-reads `watch.json` and starts a new monitor when a
+  PR joined while the old one was exiting.
+- The monitor exits without `idle`, and writes nothing more, when its
+  claude process is gone (pid plus creation time). An orphaned poller
+  would otherwise keep a dead session's heartbeat fresh forever and
+  block takeover.
+- A PR in a repo the query cannot reach keeps a fresh heartbeat with
+  `last_error: "repo unreachable"`, so the orchestrator does not nudge a
+  session that a re-arm cannot help.
+- A `--dry-run` monitor writes no leases.
+- Whether the monitor runs is read from disk (`watch-poller.json`
+  `poller_pid` alive under this session's claude pid, and a heartbeat
+  under 300 s), not from a task id compaction may have dropped.
 - `watch-poller.json` records `poller_pid` and `claude_pid` for the
   ancestry check.
-- The per-PR modes (`--baseline`, `--tails`, `--findings`, `--checks`,
-  `--report`) take `owner/repo#N`; `--assert-author`, `--ci-log` and
+- The per-PR modes (`--baseline`, `--tails`, `--findings`, `--checks`)
+  take `owner/repo#N`, and `--report` covers the whole set; `--assert-author`, `--ci-log` and
   `--ci-rerun` keep `--repo` but step files fill it from the key.
 
 ## 🔗 Auto-join from pr-autopilot and pr-followup

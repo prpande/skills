@@ -84,18 +84,18 @@ def test_iso_round_trip(self):
 ```
 
 - [ ] **Step 2:** Run `python -m unittest discover -s skill-tests/pr-watch/tests -p test_pw_paths.py -v`. Expected: FAIL (`No module named 'pw_paths'`). Add `pw_paths` import beside `poll` in `fakes.py`.
-- [ ] **Step 3:** Implement `pw_paths.py` per the Interfaces block. Reuse `poll.NAME` by importing it (no copy).
+- [ ] **Step 3:** Implement `pw_paths.py` per the Interfaces block. (Built: `NAME` moved into `pw_paths.py`; `poll.py` re-imports it. See ledger ruling 5.)
 - [ ] **Step 4:** Run the same command. Expected: PASS.
 - [ ] **Step 5:** Commit `Add pr-watch keys and state paths`.
 
 ### Task 3: Lease module
 
 **Files:**
-- Create: `skills/pr-tooling/pr-watch/scripts/lease.py`
+- Create: `skills/pr-tooling/pr-watch/scripts/lease.py`, `skills/pr-tooling/pr-watch/scripts/pw_io.py` (`read_json`, `write_json_atomic` moved out of `poll.py`, which re-imports them)
 - Test: `skill-tests/pr-watch/tests/test_lease.py`
 
 **Interfaces:**
-- Consumes: Task 2 paths; `poll.write_json_atomic`, `poll.read_json`.
+- Consumes: Task 2 paths; `pw_io.write_json_atomic`, `pw_io.read_json`. Module graph: `pw_io` ← `pw_paths` ← `lease` ← `poll`.
 - Produces:
   - `process_started_at(pid: int) -> float | None`: epoch creation time via `ctypes` (`OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` + `GetProcessTimes`); `None` when the process does not exist or access fails; non-Windows: `None`.
   - `holder_alive(holder: dict, started_at=process_started_at) -> bool`: true when `started_at(holder["pid"])` is within 2 s of `parse_iso(holder["pid_started_at"])`.
@@ -142,7 +142,8 @@ def test_armed_peers_spans_sessions_excludes_self(self):
 
 **Files:**
 - Modify: `skills/pr-tooling/pr-watch/scripts/poll.py` (`tick_query`, `tick_once`, `monitor`, `evaluate_ci`, `evaluate_reviewed`, `checks_payload`, `findings_payload`, `report`, `main`, `run_mode`)
-- Modify: `skill-tests/pr-watch/tests/fakes.py` (`watch()` builder, `FakeGh` heads query)
+- Modify: `skill-tests/pr-watch/tests/fakes.py` (`watch()` builder, `FakeGh` heads query; `FakeGh` keys prs, pages, rollup and failures by `(owner, repo, number)`)
+- Modify: `skills/pr-tooling/pr-watch/scripts/lease.py` and `skill-tests/pr-watch/tests/test_lease.py` (`tick_write` result, Step 0)
 - Modify: every `skill-tests/pr-watch/tests/test_poll_*.py` that builds a watch or asserts `"pr": <int>`
 - Test: `skill-tests/pr-watch/tests/test_poll_multirepo.py`
 
@@ -151,9 +152,13 @@ def test_armed_peers_spans_sessions_excludes_self(self):
 - Produces:
   - `load_view(session_dir: Path) -> dict`: reads `watch.json` and each PR's progress file (session-local copy under `<session_dir>/progress/` when `dry_run`), returns `{self_login, bot_allowlist, ado_orgs, push_queue, session_id, claude_pid, prs: {key: {**progress, **entry, "owner", "repo", "number"}}}`. A missing progress file reads as the starting values of step 01 §4 for the role.
   - `tick_query(groups: dict[tuple[str, str], list[int]]) -> tuple[str, dict[str, tuple[str, str]]]`: one query, alias `r<i>` per repo, `p<N>` per PR inside; returns the query and alias → (owner, repo).
-  - `tick_once(gh, view, poller, now, force=False) -> list[dict]`: as today, keyed by `owner/repo#N`; events carry `"pr": "<key>"`. A null repo alias warns once per repo and skips only that repo's PRs. Poller `prs` entries gain `review_pending: bool` and `ci_pending: bool` and `pending_since: int|None` (set when either first becomes true, cleared when both false).
-  - `monitor(gh, session_dir, sleep, clock, max_ticks=None, write_lease=lease.tick_write) -> int`: re-reads `watch.json` every tick and ticks only `armed` entries. After each saved tick, writes each ticked PR's lease through `write_lease` (`status: closed` when the PR closed); `tick_write` already refuses a lease held by another session or no longer `armed`. Records `poller_pid` and `claude_pid` in `watch-poller.json`, prunes closed leases once per reconciliation. When no entry is `armed` (after writing the final statuses), prints `{"kind": "idle"}` and returns 0.
-  - CLI: `--session-dir` replaces `--state-dir`; `--baseline/--tails/--findings/--checks` take a ref string; `--report/--reseed` cover the whole set.
+  - `lease.tick_write(...)` (amended, Step 0) returns `"written"`, `"lost"` (another session holds it), `"inactive"` (held here but status not `armed`) or `"missing"` (no lease file). It writes only on `"written"`: holder is this session AND stored status is `armed`. `status="closed"` is allowed only from `armed`.
+  - `tick_once(gh, view, poller, now, force=False) -> list[dict]`: as today, keyed by `owner/repo#N`; events carry `"pr": "<key>"`. A null repo alias warns once per repo and skips only that repo's PRs; those PRs are returned in `poller["unreachable"]` so the monitor can write `last_error`. Poller `prs` entries gain `review_pending: bool`, `ci_pending: bool` and `pending_since: int|None` (set when either first becomes true, cleared when both false). Both are recomputed every tick from live data, never from stored signatures: authored `review_pending` = `pending()` returned any thread tail or top-level item this tick; authored `ci_pending` = rollup in `FAILED_ROLLUP` with at least one red required check not yet in `ci_handled`; reviewed `review_pending` = the PR head differs from `rereviewed_head` or an unanswered reply exists, and the settled state is false; reviewed `ci_pending` is always false.
+  - `run_gh` (and every other `subprocess.run` in `poll.py`) passes `creationflags=CREATE_NO_WINDOW` on Windows (ledger ruling 3).
+  - `monitor(gh, session_dir, sleep, clock, max_ticks=None, write_lease=lease.tick_write) -> int`: re-reads `watch.json` every tick and ticks only entries that are `armed` and not in `poller["closed"]`. After each saved tick, writes each ticked PR's lease through `write_lease`, with `status: closed` in the same tick the closed event is emitted. On `"lost"` emits `lease-lost` once and drops the PR; on `"inactive"` drops it silently; on `"missing"` warns on stderr once. For a PR in `poller["unreachable"]` it writes the lease with a fresh heartbeat, `last_head_sha` unchanged and `last_error: "repo unreachable"`, cleared on the next good tick. Records `poller_pid`, `claude_pid` and `claude_started_at` (from `lease.process_started_at` at start) in `watch-poller.json`; prunes closed leases once per reconciliation. Each tick first checks the claude process is still the one recorded (pid + start time, `lease.holder_alive`); when it is gone the monitor writes nothing more and returns 3 without printing `idle`, so the leases go stale and another session can take over. When `dry_run` is true the monitor writes no leases, emits no `lease-lost` and prunes nothing. When no entry is still `armed` and open (after writing the final statuses), prints `{"kind": "idle"}` and returns 0.
+  - CLI: `--session-dir` replaces `--state-dir`; `--baseline/--tails/--findings/--checks` take a ref string; `--report/--reseed` cover the whole set (the spec's Poller section says the same after this review).
+
+- [ ] **Step 0: Amend `lease.tick_write`** to the four-way result above. Tests in `test_lease.py`: a lease this session holds with status `released`, `stopped` or `closed` returns `"inactive"` and the file is byte-identical afterwards; another session's lease returns `"lost"`; no file returns `"missing"`; `status="closed"` over an armed lease of this session writes. Update existing `tick_write` tests that assert `True`/`False`. Run `test_lease.py`; expected PASS.
 
 - [ ] **Step 1: Write the failing tests** in `test_poll_multirepo.py`
 
@@ -171,6 +176,14 @@ def test_monitor_exits_idle_when_nothing_armed(self):  # after closed event: lea
 def test_released_entry_is_not_ticked(self):  # entry status released in watch.json -> no lease write, no event for it
 def test_tick_never_rearms_a_released_lease(self):  # lease file already released, entry still armed in a stale view -> lease unchanged
 def test_lost_lease_pr_is_reported_once(self):  # lease held by another session -> one event {"pr": key, "kind": "lease-lost", "holder": <session id>}, stderr "lease for o/a#1 is held by another session", no further ticks for it
+def test_released_lease_is_silent(self):  # lease released by this session, entry still armed in watch.json -> no lease-lost, no write
+def test_same_number_in_two_repos(self):  # o/a#1 and p/b#1 with different heads -> each event carries its own key and head
+def test_unreachable_repo_gets_last_error(self):  # null alias for p/b -> p/b#2 lease heartbeat fresh, last_error "repo unreachable"; next good tick clears it
+def test_monitor_exits_when_claude_is_gone(self):  # injected holder_alive False -> returns 3, no idle line, lease heartbeat not advanced
+def test_dry_run_monitor_writes_no_lease(self):  # dry_run true -> no lease files created, no lease-lost
+def test_closed_pr_counts_as_not_armed(self):  # closed event this tick with entry still armed in watch.json -> lease closed, idle printed
+def test_pending_flags_from_live_data(self):  # green CI with an old last_ci_signature -> ci_pending False; reviewed PR settled -> review_pending False
+def test_run_gh_hides_window_on_windows(self):  # os.name patched to nt -> subprocess.run called with creationflags CREATE_NO_WINDOW
 ```
 
 - [ ] **Step 2:** Run the new file. Expected: FAIL.
@@ -185,7 +198,10 @@ The `lease-lost` and `idle` events are new; Task 9 routes them (`lease-lost`: ma
 
 **Files:**
 - Modify: `skills/pr-tooling/pr-watch/scripts/poll.py` (`main`, `run_mode`)
-- Test: `skill-tests/pr-watch/tests/test_poll_lease_cli.py`
+- Modify: `skills/pr-tooling/pr-watch/scripts/lease.py` (`taken-over` result; `_take_lock` gains a `stale_seconds` parameter, default 60; push-lock functions write the session id into the lock file)
+- Test: `skill-tests/pr-watch/tests/test_poll_lease_cli.py`, `skill-tests/pr-watch/tests/test_lease.py`
+
+`taken-over` is returned only for the `_decide` branches that take another session's `armed` lease whose holder is dead, or its `stopped` lease by explicit ref. Taking a `released` or `closed` lease, or a missing one, stays `claimed`, so the existing `test_lease.py` cases keep their expected values.
 
 **Interfaces:**
 - Produces CLI modes (all print one line or JSON, exit 0 on success, 1 with a `pr-watch:` stderr line on failure):
@@ -213,8 +229,9 @@ The `lease-lost` and `idle` events are new; Task 9 routes them (`lease-lost`: ma
   - `evidence(records: Iterable[dict], origin_of: Callable[[str], str | None]) -> dict`: returns `{"branches": {(owner, repo, branch): [kinds]}, "urls": {pr_url: [kinds]}, "hints": set[pr_url]}`. Kinds: `commit-on-branch`, `push-on-branch` (tool call in a record whose `cwd` maps to owner/repo via `origin_of` and whose `gitBranch` is the branch), `push-names-branch` (push command naming the branch, repo from `git -C <path>` or `cwd`), `push-output` (tool result matching `^\s*[0-9a-f]+\.\.[0-9a-f]+\s+(\S+) -> \1$`), `pr-create` (a `gh pr create` result containing the URL). `pr-link` records only add to `hints`.
   - `discover(gh, session_id, self_login, origin_of) -> list[dict]`: resolves branch evidence to PRs with `gh pr list --repo <o/r> --head <branch> --author <self> --state open --json number,url,headRefName`, URL evidence with `gh pr view <url> --json number,author,state,headRefName,url`; keeps open PRs authored by `self_login`; returns `[{"ref", "url", "branch", "evidence": [kinds]}]`. Hints with no evidence are dropped.
   - `origin_of(path) -> str | None`: `git -C <path> remote get-url origin` parsed to `owner/repo` lowercased, cached; None on failure.
+  - `clone_candidates(session_id, owner, repo, origin_of, projects=...) -> list[str]`: distinct `cwd` values from the session's transcript whose `origin_of` equals `owner/repo`, newest first, each mapped to its repo top level (`git -C <cwd> rev-parse --show-toplevel`). CLI `--find-clone <ref> --session-id <id>` prints the first or exits 1 with `pr-watch: no local clone of owner/repo known to this session`. Step 01 calls it for both bare and explicit refs after checking the current directory.
 
-- [ ] **Step 1:** Tests: each of the five evidence kinds adopts; a `pr-link` alone does not; a PR authored by someone else is dropped; a closed PR is dropped; a `git -C D:/x push` with `gitBranch` = `main` but command naming `feat-1` adopts `feat-1`; missing transcript → `discover` returns `[]` and `--discover` prints `[]` with stderr `pr-watch: no transcript for session <id>` and exits 0.
+- [ ] **Step 1:** Tests: each of the five evidence kinds adopts; a `pr-link` alone does not; a PR authored by someone else is dropped; a closed PR is dropped; a `git -C D:/x push` with `gitBranch` = `main` but command naming `feat-1` adopts `feat-1`; missing transcript → `discover` returns `[]` and `--discover` prints `[]` with stderr `pr-watch: no transcript for session <id>` and exits 0; `clone_candidates` returns a matching transcript cwd's top level and skips cwds of other repos; `--find-clone` exits 1 with the "no local clone" line when none match.
 - [ ] **Step 2:** Run; expected FAIL.
 - [ ] **Step 3:** Implement. Tool calls are `assistant` records' `message.content[]` items of `type: tool_use` with `name` `Bash` or `PowerShell` and `input.command`; results are later `user` records' `tool_result` items matched by `tool_use_id`.
 - [ ] **Step 4:** Run; expected PASS.
@@ -236,9 +253,10 @@ The `lease-lost` and `idle` events are new; Task 9 routes them (`lease-lost`: ma
   - `import_progress(main, session_dir) -> list[str]`: copies each old PR entry's progress fields to the new progress path (skips a key whose progress file already exists), renames `watch.json` → `watch.json.migrated`, deletes `watch-heartbeat` and `watch-poller.json`; returns the imported keys.
   - `identity_ok(claude_pid, my_pid, procs, env) -> str | None`: None when fine; a reason when `CLAUDE_CODE_CHILD_SESSION` is set in `env` or `claude_pid` is not an ancestor of `my_pid`.
   - `leftover_monitors(session_dir, claude_pid, procs) -> list[int]`: pids of `poll.py --monitor --session-dir <session_dir>` processes whose claude ancestor is not `claude_pid` (a resumed session's old poller).
+  - `monitor_alive(session_dir, claude_pid, procs, now) -> bool`: true when a `poll.py --monitor --session-dir <session_dir>` process whose claude ancestor is `claude_pid` exists and `watch-heartbeat` is under 300 s old. This is how step 01/02 knows the monitor runs after compaction has dropped the task id. CLI `--monitor-alive --session-dir <dir>` prints `alive` or `down`.
   - CLI: `--check-identity` (exit 1 with the reason on stdout-free stderr line) and `--end-leftover-monitors --session-dir <dir>` (ends each pid's tree with `taskkill /T /F`, `CREATE_NO_WINDOW`; prints the pids).
 
-- [ ] **Step 1:** Tests with injected `procs`: owned (ancestor chain python → bash → `claude.exe.old.1730.4242` = `claude_pid`); foreign (other claude pid); stale (no process, heartbeat 301 s); live-unknown (no process, heartbeat 100 s); `import_progress` keeps `settled_ids`/`posted_reply_ids`/`slack_ts`, lowercases keys, never overwrites an existing progress file, and the old files end renamed/deleted; `identity_ok` refuses a child-session env and a non-ancestor pid; `leftover_monitors` returns an old poller under a dead claude and not the one under `claude_pid`.
+- [ ] **Step 1:** Tests with injected `procs`: owned (ancestor chain python → bash → `claude.exe.old.1730.4242` = `claude_pid`); foreign (other claude pid); stale (no process, heartbeat 301 s); live-unknown (no process, heartbeat 100 s); `import_progress` keeps `settled_ids`/`posted_reply_ids`/`slack_ts`, lowercases keys, never overwrites an existing progress file, and the old files end renamed/deleted; `identity_ok` refuses a child-session env and a non-ancestor pid; `leftover_monitors` returns an old poller under a dead claude and not the one under `claude_pid`; `monitor_alive` is true for a same-ancestor poller with a fresh heartbeat and false for a stale heartbeat or no process.
 - [ ] **Step 2:** Run; expected FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run the suite; expected PASS.
@@ -249,7 +267,7 @@ The `lease-lost` and `idle` events are new; Task 9 routes them (`lease-lost`: ma
 **Files:**
 - Create: `skills/pr-tooling/pr-watch/references/lease-contract.md` (the spec's lease table, status meanings, liveness rule, writers, lowercase paths, `<N>.progress.json` and lock as non-contract; addressed to an outside reader)
 - Modify: `skills/pr-tooling/pr-watch/references/watch-state-schema.md` (session files and progress file per the spec's "State"; the per-PR table moves under `<N>.progress.json` unchanged; `watch.json` loses `owner`/`repo`, gains `claude_pid` and per-PR `status`; `push_queue` holds keys)
-- Modify: `skills/pr-tooling/pr-watch/SKILL.md` (description, argument-hint, invocation table from the spec incl. `--yes` and `release`, Paths table: `PW_HOME`, `SESSION_DIR`, `POLL`; drop `MAIN`/`STATE_DIR`/`SLUG`; events list adds `lease-lost`; hard rule: progress files are written only by the lease holder)
+- Modify: `skills/pr-tooling/pr-watch/SKILL.md` (description, argument-hint, invocation table from the spec incl. `--yes` and `release`, Paths table: `PW_HOME`, `SESSION_DIR`, `POLL`; drop `MAIN`/`STATE_DIR`/`SLUG`; events list adds `lease-lost` and `idle`; hard rule: progress files are written only by the lease holder)
 
 - [ ] **Step 1:** Write the three files.
 - [ ] **Step 2:** Run `python scripts/validate.py`. Expected: exit 0.
@@ -258,9 +276,9 @@ The `lease-lost` and `idle` events are new; Task 9 routes them (`lease-lost`: ma
 ### Task 9: Step files
 
 **Files:**
-- Modify: `skills/pr-tooling/pr-watch/steps/01-discover.md` (rewrite §1–§7: fixed values `SESSION_DIR` from `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID`; `POLL --check-identity` first, stop on failure; resume from `SESSION_DIR/watch.json`, then `POLL --end-leftover-monitors`; bare discovery via `POLL --discover`; explicit refs via `parse_ref` rules; clone resolution per spec; old-format handling via `--migrate-scan`/`--migrate-import` with TaskStop or tree kill for `owned`, exclusion line for `foreign` and `live-unknown`; `POLL --claim` per PR with excluded list, one retry on "lease unreadable", and for `taken-over` add the PR to `push_queue` when its progress has `queued_head` or a non-empty `ci_rerun_queued`; `--yes` skips §6's question; any arm clears `stopped_at`; adding refs to a running watch arms no second monitor, and starts one when the last ended `idle`; under `--dry-run` no `--claim`, no migration, progress copies under `SESSION_DIR/progress/`)
+- Modify: `skills/pr-tooling/pr-watch/steps/01-discover.md` (rewrite §1–§7: fixed values `SESSION_DIR` from `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID`; `POLL --check-identity` first, stop on failure; resume from `SESSION_DIR/watch.json`, then `POLL --end-leftover-monitors`; bare discovery via `POLL --discover`; explicit refs via `parse_ref` rules; clone resolution per spec through `POLL --find-clone` when the current directory does not match; old-format handling via `--migrate-scan`/`--migrate-import` with TaskStop or tree kill for `owned`, exclusion line for `foreign` and `live-unknown`; `POLL --claim` per PR with excluded list, one retry on "lease unreadable", and for `taken-over` add the PR to `push_queue` when its progress has `queued_head` or a non-empty `ci_rerun_queued`; `--yes` skips §6's question; any arm clears `stopped_at`; after writing the new entries, `POLL --monitor-alive` decides: `alive` arms no second monitor, `down` arms one per step 02 (covers a monitor that went `idle` while the join was being written, and a task id lost to compaction); under `--dry-run` no `--claim`, no migration, progress copies under `SESSION_DIR/progress/`)
 - Modify: `steps/02-arm-monitor.md` (`--session-dir`; description `pr-watch events for this session`; "stream ended" after an `idle` event is a planned end: no re-arm, no "monitor died" line; old-format guard in "Stream ended")
-- Modify: `steps/03-route-event.md` (key events; `pr` without `/` → migration via step 01 `--yes`; `lease-lost` → entry `lost`, one Slack line; `idle` → nothing; `closed` sets the entry `closed`; `stop` writes `watch.json` (`stopped_at`, entries `stopped`) before `--lease-status`, `release` writes the entry `released` before `--lease-status released`)
+- Modify: `steps/03-route-event.md` (key events; `pr` without `/` → migration via step 01 `--yes`; `lease-lost` → entry `lost`, one Slack line; `idle` → re-read `watch.json`; when any entry is `armed`, arm a new monitor per step 02, else nothing; a monitor exit code 3 (its claude process gone) is never seen by a live session and needs no route; `closed` sets the entry `closed`; `stop` writes `watch.json` (`stopped_at`, entries `stopped`) before `--lease-status`, `release` writes the entry `released` before `--lease-status released`)
 - Modify: `steps/04-fix-path.md` (every "write `watch.json`" for a per-PR field → write the PR's progress file via `state_put.py`; `--repo` from the key; §6 and §8 pending-check scan runs under `POLL --push-lock take` and covers this session's same-repo authored PRs plus `POLL --repo-peers <key>`; `busy` queues like a running check; release the lock once the pushed head shows a check run or 120 s after the push; §2 per outcome C: launch-repo PRs keep `EnterWorktree(path)`; other-repo PRs skip relocation, edit with absolute paths, every git command `git -C <worktree>` incl. §5, §6, §10 and the drain; the fixer brief for an other-repo PR names the worktree root and says to use Read/Grep/Glob on it rather than its git helpers)
 - Modify: `steps/05-rereview.md`, `steps/06-notify.md`, `steps/07-ci.md` (progress-file writes, keys, `--repo` from key; 06 posts one line when a PR joins a running watch)
 - Modify: `skills/pr-tooling/pr-watch/references/fixer-addendum.md`, `known-bots-overlay.md` (key and path mentions; the addendum says "the repository at `<worktree>`", not "this repository")
