@@ -169,9 +169,11 @@ def _take_lock(path, now: float, stale_seconds: float = CLAIM_LOCK_STALE_SECONDS
 
 def claim(owner, repo, n, *, role, holder, explicit, now, started_at=process_started_at,
           agents=list_agents) -> tuple[bool, str]:
+    started = time.monotonic()
     lock = _hold_lock(owner, repo, n, now, CLAIM_LOCK_WAIT_SECONDS)
     if lock is None:
         return False, "busy: another claim in progress"
+    now += time.monotonic() - started
     try:
         try:
             old = read_lease(owner, repo, n)
@@ -246,9 +248,11 @@ def _hold_lock(owner, repo, n, now, wait_seconds):
 
 
 def set_status(owner, repo, n, status, session_id, now) -> bool:
+    started = time.monotonic()
     lock = _hold_lock(owner, repo, n, now, CLAIM_LOCK_WAIT_SECONDS)
     if lock is None:
         raise TimeoutError(f"the lease for {pr_key(owner, repo, n)} stayed locked")
+    now += time.monotonic() - started
     try:
         data = _held_by(owner, repo, n, session_id)
         if data is None:

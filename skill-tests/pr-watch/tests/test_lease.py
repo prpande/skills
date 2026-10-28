@@ -208,6 +208,13 @@ class ClaimTests(LeaseCase):
         self.assertGreater(clock.t, 50)
         self.assertLess(clock.t, lease.CLAIM_LOCK_WAIT_SECONDS)
         self.assertFalse(lock.exists())
+        self.assertEqual(lease.read_lease("o", "r", 1)["heartbeat"], pw_paths.iso_utc(NOW + clock.t))
+
+    def test_claim_judges_a_takeover_at_the_time_the_lock_was_taken(self):
+        self.put(h=holder("s-2", pid=300), heartbeat=NOW - 280)
+        self.lock_at(NOW - 10)
+        self.fake_clock()
+        self.assertEqual(self.claim(holder()), (True, "taken-over"))
 
     def test_lock_removed_when_claim_refused(self):
         other = holder()

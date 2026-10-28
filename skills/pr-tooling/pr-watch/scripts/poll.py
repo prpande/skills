@@ -553,14 +553,14 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
             else:
                 review_event, signature, review_pending = evaluate_reviewed(
                     view, pr, entry, seen, compare)
-        except GhError as exc:
+        except PR_FAULTS as exc:
             pr_fault(poller, key, exc)
             review_failed = True
     if authored and (ci_moved or ci_forced):
         try:
             ci_event, ci_signature, ci_pending = evaluate_ci(
                 gh, entry, node, ci_seen, ci_signature)
-        except GhError as exc:
+        except PR_FAULTS as exc:
             pr_fault(poller, key, exc)
             ci_failed = True
     events += [e for e in (review_event, ci_event) if e]
@@ -599,9 +599,7 @@ def tick_once(gh, view, poller, now, force=False):
     groups = {}
     for key in sorted(view["prs"]):
         entry = view["prs"][key]
-        if entry.get("load_fault"):
-            errors[key] = entry["load_fault"]
-        elif key not in closed:
+        if key not in closed:
             groups.setdefault((entry["owner"], entry["repo"]), []).append(entry["number"])
     if groups:
         query, aliases = tick_query(groups)
@@ -620,6 +618,11 @@ def tick_once(gh, view, poller, now, force=False):
                 if node is None:
                     warn(f"PR {key}: null alias in the heads query; skipping this tick")
                     errors[key] = "PR unreachable"
+                    continue
+                fault = view["prs"][key].get("load_fault")
+                if fault and node["state"] == "OPEN":
+                    errors[key] = fault
+                    poller["heads"][key] = node["headRefOid"]
                     continue
                 try:
                     tick_pr(gh, view, poller, key, node, now, force, events)
@@ -886,13 +889,16 @@ def report(gh, session_dir, reseed=False):
             continue
         try:
             pr = fetch_pr(gh, entry["owner"], entry["repo"], entry["number"])
-        except GhError as exc:
-            errors.append(f"PR {key}: {exc}")
+            lines = (attention_lines(view, pr, entry),
+                     new_lines(key, pr, set(seen.get(key, [])), me, allow),
+                     standing_line(key, pr, entry, me, allow), all_ids(pr))
+        except PR_FAULTS as exc:
+            errors.append(f"PR {key}: {type(exc).__name__}: {exc}")
             continue
-        attention += attention_lines(view, pr, entry)
-        new += new_lines(key, pr, set(seen.get(key, [])), me, allow)
-        standing.append(standing_line(key, pr, entry, me, allow))
-        fresh[key] = all_ids(pr)
+        attention += lines[0]
+        new += lines[1]
+        standing.append(lines[2])
+        fresh[key] = lines[3]
     for line in errors:
         print(f"ERROR  {line}")
     if not reseed and not (errors or attention or new or first_run):
@@ -1151,6 +1157,8 @@ def main(argv=None, gh=run_gh):
                       help="print the state of the old-format watch in a main checkout")
     mode.add_argument("--migrate-import", metavar="MAIN",
                       help="import the old-format watch's progress into this session")
+    mode.add_argument("--migrate-done", metavar="MAIN",
+                      help="mark the old-format watch's import as complete")
     mode.add_argument("--check-identity", action="store_true",
                       help="exit 1 when CLAUDE_PID is not this process's claude")
     mode.add_argument("--end-leftover-monitors", action="store_true",
@@ -1266,6 +1274,9 @@ def migrate_mode(args):
     if args.migrate_import:
         print(json.dumps(migrate.import_progress(args.migrate_import)))
         return 0
+    if args.migrate_done:
+        migrate.finish_import(args.migrate_done)
+        return 0
     procs = migrate.list_processes()
     if args.migrate_scan:
         print(json.dumps(migrate.scan(args.migrate_scan, claude_pid, procs, time.time())))
@@ -1280,7 +1291,7 @@ def migrate_mode(args):
 
 
 def run_mode(args, gh):
-    if (args.migrate_scan or args.migrate_import or args.check_identity
+    if (args.migrate_scan or args.migrate_import or args.migrate_done or args.check_identity
             or args.end_leftover_monitors or args.monitor_alive):
         return migrate_mode(args)
     if args.discover or args.find_clone:
@@ -1310,7 +1321,7 @@ def run_mode(args, gh):
         print(json.dumps(checks_payload(gh, owner, repo, number), indent=2))
         return 0
     entry = view["prs"].get(pr_key(owner, repo, number))
-    if entry and entry.get("load_fault"):
+    if entry and entry.get("load_fault") and not args.baseline:
         raise ValueError(f"PR {pr_key(owner, repo, number)}: {entry['load_fault']}")
     entry = entry or {
         **read_json(progress_file(args.session_dir, owner, repo, number, view["dry_run"]),

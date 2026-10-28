@@ -91,9 +91,12 @@ def _heartbeat_age(path, now: float) -> float:
 
 
 def _old_prs(watch) -> list[tuple[tuple[str, str, int], dict]]:
+    prs = watch.get("prs") if isinstance(watch, dict) else None
+    if not isinstance(prs, dict):
+        return []
     owner, repo = watch.get("owner", ""), watch.get("repo", "")
     found = []
-    for n, entry in watch.get("prs", {}).items():
+    for n, entry in prs.items():
         try:
             found.append((parse_ref(f"{owner}/{repo}#{n}"), entry))
         except ValueError:
@@ -108,8 +111,6 @@ def _unclaimed_after_import(migrated, now) -> list[str]:
             return []
         watch = read_json(migrated)
     except (OSError, ValueError):
-        return []
-    if not isinstance(watch, dict):
         return []
     return [pr_key(*ref) for ref, _ in _old_prs(watch) if not lease_path(*ref).exists()]
 
@@ -154,6 +155,14 @@ def import_progress(main) -> list[str]:
     for name in ("watch-heartbeat", "watch-poller.json"):
         (state_dir / name).unlink(missing_ok=True)
     return covered
+
+
+def finish_import(main) -> None:
+    state_dir = pathlib.Path(main) / ".pr-autopilot"
+    try:
+        os.replace(state_dir / "watch.json.migrated", state_dir / "watch.json.imported")
+    except FileNotFoundError:
+        pass
 
 
 def identity_ok(claude_pid, my_pid, procs) -> str | None:

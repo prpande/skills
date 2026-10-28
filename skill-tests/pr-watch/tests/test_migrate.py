@@ -92,6 +92,20 @@ class ScanTests(WatchDirCase):
         self.assertEqual(("none", []), tuple(migrate.scan(self.main, 4242, [], NOW)[k]
                                              for k in ("state", "prs")))
 
+    def test_a_migrated_file_whose_prs_is_not_an_object_lists_nothing(self):
+        path = self.migrated({"12": {}}, age=60)
+        path.write_text(json.dumps({"owner": "Acme", "repo": "Widgets", "prs": None}),
+                        encoding="utf-8")
+        os.utime(path, (NOW - 60, NOW - 60))
+        self.assertEqual([], migrate.scan(self.main, 4242, [], NOW)["prs"])
+
+    def test_a_finished_import_lists_nothing(self):
+        self.migrated({"12": {}}, age=60)
+        migrate.finish_import(self.main)
+        self.assertEqual([], migrate.scan(self.main, 4242, [], NOW)["prs"])
+        self.assertTrue((self.state / "watch.json.imported").exists())
+        migrate.finish_import(self.main)
+
     def test_an_old_watch_with_a_bad_repo_name_skips_its_prs(self):
         (self.state / "watch.json").write_text(
             json.dumps({"owner": "Acme", "repo": "bad name", "prs": {"12": {}}}), encoding="utf-8")

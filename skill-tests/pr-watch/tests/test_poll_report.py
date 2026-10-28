@@ -133,6 +133,13 @@ class ReportTests(HomeCase):
         self.assertIn("ERROR", text)
         self.assertFalse((self.state / "watch-seen.json").exists())
 
+    def test_a_payload_fault_is_an_error_line_for_that_pr_only(self):
+        self.gh.prs[pk(1411)] = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
+        with unittest.mock.patch.object(poll, "standing_line", side_effect=KeyError("nodes")):
+            code, text = self.run_report()
+        self.assertEqual(code, 1)
+        self.assertIn("ERROR  PR o/r#1411: KeyError", text)
+
     def test_a_failed_seen_write_still_prints_the_report_and_exits_one(self):
         self.gh.prs[pk(1411)] = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
         err = io.StringIO()

@@ -136,8 +136,8 @@ keys in the old `<MAIN>/.pr-autopilot/watch.json`. Act on `state`:
 
 - `none`: nothing to migrate. When an earlier import renamed the old
   watch but no session claimed some of its PRs (the session ended before
-  §5), `prs` lists those PRs for 7 days after that import; add them as
-  the import paragraph below says.
+  §5), `prs` lists those PRs, for 7 days after that import and until
+  §7 runs `--migrate-done`; add them as the import paragraph below says.
 - `stale`: no old poller runs and its heartbeat is over 300 s old. Import.
 - `owned`: the old poller runs under this session's claude process. End
   it, then import. `TaskStop` the monitor when its task id is still in
@@ -307,7 +307,9 @@ Once the set is accepted, set `status` `armed` on each kept entry whose
 claim succeeded (under `--dry-run`, every one §5 would have claimed), add each remaining
 candidate to `prs` in `watch.json` with `role`, `worktree` (authored
 only), `branch`, `title`, `url`, and `status` `armed`, and rewrite the
-file. When at least one entry of `prs` is `armed`, also set `stopped_at`
+file. For each `MAIN` whose old watch §4 imported or recovered, run
+`POLL --migrate-done <MAIN> --session-dir <SESSION_DIR>`, so a later
+scan does not offer the PRs left out here again. When at least one entry of `prs` is `armed`, also set `stopped_at`
 to `null`; otherwise the watch stays as it was, so auto-join stays off.
 When no entry of `prs` is `armed`, there is nothing to watch: tell the user
 which PRs were excluded, delete `watch.json` if this run created it, and

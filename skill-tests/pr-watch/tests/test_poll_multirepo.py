@@ -60,13 +60,30 @@ class MultiRepoTickTests(unittest.TestCase):
         self.assertIn("PR p/b#2: TypeError", err.getvalue())
         self.assertNotIn(B2, self.poller["prs"])
 
-    def test_a_pr_with_unreadable_progress_is_not_queried(self):
+    def test_a_pr_with_unreadable_progress_is_not_evaluated(self):
         view = two_repos(self.gh)
         view["prs"][B2]["load_fault"] = "progress unreadable"
         events = self.tick(view)
         self.assertEqual([e["pr"] for e in events], [A1])
         self.assertEqual(self.poller["errors"], {B2: "progress unreadable"})
-        self.assertFalse(any('"b"' in c[3] for c in self.gh.calls if c[:2] == ["api", "graphql"]))
+        self.assertEqual(self.gh.thread_fetches(), 1)
+        self.assertEqual(self.poller["heads"][B2], self.gh.prs[pk(2, "p", "b")]["headRefOid"])
+
+    def test_a_pr_with_unreadable_progress_still_closes(self):
+        view = two_repos(self.gh)
+        view["prs"][B2]["load_fault"] = "progress unreadable"
+        self.gh.prs[pk(2, "p", "b")]["state"] = "MERGED"
+        events = self.tick(view)
+        self.assertIn({"pr": B2, "kind": "closed", "state": "MERGED"}, events)
+        self.assertIn(B2, self.poller["closed"])
+
+    def test_a_ci_payload_fault_keeps_the_review_event(self):
+        view = two_repos(self.gh)
+        with mock.patch.object(poll, "evaluate_ci", side_effect=KeyError("name")), \
+                contextlib.redirect_stderr(io.StringIO()):
+            events = self.tick(view)
+        self.assertEqual({e["pr"] for e in events}, {A1, B2})
+        self.assertEqual(self.poller["errors"], {A1: "check failed", B2: "check failed"})
 
     def test_same_number_in_two_repos(self):
         self.gh.prs[pk(1, "o", "a")] = pending_pr(1, head="ha")
