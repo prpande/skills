@@ -46,6 +46,8 @@ Throwaway. Decides which branch of the spec's "Editing files in another repo" Ta
 - [ ] **Step 5:** `EnterWorktree` with `path` = this plan's worktree. Expected: back in it; `git rev-parse --show-toplevel` shows it.
 - [ ] **Step 6:** Record outcome A (steps 3-5 all succeed: Task 9 uses exit/absolute paths/re-enter) or B (any fails: Task 9 uses the patch fallback). Delete the scratch repo.
 
+**Result (28 Oct 2026): outcome C.** Run with the probe repo at `D:\src\prpande\pw-xrepo-probe` (the scratchpad is exempt from the lock, so a probe there proves nothing). Step 2's Write into the other repo's worktree succeeded while still isolated; Edit too; a haiku subagent's Write and Edit there succeeded; a Write into this repo's shared checkout was refused ("Edit the worktree copy of this file instead of the shared-checkout path"). No ExitWorktree needed. Task 9: other-repo PRs skip relocation and use absolute paths plus `git -C`; launch-repo PRs keep `EnterWorktree(path)`.
+
 ### Task 2: Keys and paths module
 
 **Files:**

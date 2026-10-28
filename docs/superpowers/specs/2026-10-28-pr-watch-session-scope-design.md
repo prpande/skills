@@ -313,25 +313,21 @@ of letting the watch fail:
 The fix path (step 04 section 2) moves the session into the PR's
 worktree with `EnterWorktree(path)` and back to `origin_worktree`
 afterwards. That switch only works between worktrees of the launch
-repo, or of a repo nested inside the launch directory. Once a session
-has entered a worktree, Write and Edit are locked to it. A session
-launched in `Mindbody.Clients` therefore cannot enter a
-`Staffmgmt.Service` worktree that way.
+repo, or of a repo nested inside the launch directory, so it cannot
+reach a `Staffmgmt.Service` worktree from a session launched in
+`Mindbody.Clients`.
 
-Plan, to be measured first (build task 1, a throwaway spike in a
-separate session):
+It does not need to. Measured 28 Oct 2026 from a session isolated in a
+worktree of this repo: the worktree lock refuses writes only into the
+launch repo's own shared checkout. Write and Edit into a worktree of
+another repo succeeded with no relocation, and so did a subagent's Write
+and Edit there. `git -C <path>` commands against the other repo ran
+normally.
 
-- For a PR whose repo is not the launch repo: `ExitWorktree(keep)` to
-  drop the lock, edit with absolute paths and `git -C <worktree>`,
-  dispatch fixers with absolute paths, then `EnterWorktree(path:
-  origin_worktree)` to return. The spike confirms that Write, Edit and
-  fixer subagents can write into the other repo after the exit, and that
-  the return works.
-- If the spike fails, that PR's fixes go through Bash-side writes (a
-  script applies the fixer's edits), which the lock does not cover. The
-  fixer returns a patch instead of editing.
-
-Either way, a PR in the launch repo keeps today's path unchanged.
+So for a PR whose repo is not the launch repo, step 04 skips the
+relocation: the session and its fixers edit with absolute paths, and
+every git command uses `git -C <worktree>`. A PR in the launch repo keeps
+today's `EnterWorktree(path)` path unchanged.
 
 ## 🔁 Poller
 
@@ -394,8 +390,8 @@ running watch, nothing happens.
 
 ## 🧭 Calls made without praty (check these)
 
-- Cross-repo fixes drop the worktree lock and use absolute paths, after
-  a spike proves it; a patch-applying fallback otherwise.
+- Cross-repo fixes use absolute paths and `git -C` with no relocation
+  (measured: the worktree lock covers only the launch repo's checkout).
 - Push serialisation spans sessions within a repo (read from leases).
 - `owner`/`repo` are lowercased in every path and key.
 - Old-format watches found mid-session are migrated from steps 02 and 03.
