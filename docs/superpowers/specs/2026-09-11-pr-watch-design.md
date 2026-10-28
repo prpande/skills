@@ -811,6 +811,8 @@ Channel `C0C15VC8Y0Z`, one thread per PR, all replies in-thread.
 
 ## 8. State
 
+Superseded by `2026-10-28-pr-watch-session-scope-design.md`, which keeps state per session.
+
 Two files under `<repo_root>/.pr-autopilot/`, keyed to the repo rather
 than the session so a new session resumes settled threads instead of
 replaying them. Both are written with the library's atomic tmp+mv
@@ -1065,7 +1067,7 @@ says so.
 |---|---|
 | Watch lives in the working session, not a scheduled process | The session holds the effort's context; a detached fixer makes worse calls on the findings that matter |
 | Interrupt source is a persistent `Monitor` polling `updatedAt` and `headRefOid` over GraphQL every 60 s | Repo webhooks need admin the user lacks (`/hooks` returns 404) and a public relay; `/notifications` omits the user's own comments and anything already read, and `gh api` surfaces its 304 as an error; one aliased GraphQL request costs about one point and catches comments, replies, and pushes alike |
-| State keyed to the repo, two files with one writer each | A session-keyed file replays settled threads in the next session; two writers on one tmp+mv file lose each other's fields |
+| State keyed to the repo, two files with one writer each | A session-keyed file replays settled threads in the next session; two writers on one tmp+mv file lose each other's fields. Superseded by `2026-10-28-pr-watch-session-scope-design.md`, which keeps state per session. |
 | Push serialisation on by default | The shared contract database deadlock it exists for is a known failure, not a hypothetical |
 | Parent session relocates per PR; no child process, no subagent switching | Subagents cannot write into another worktree even after `EnterWorktree(path)`; a headless child loses the conversation and hits permission prompts |
 | Unit of work is the thread tail after the last posted reply id | Catches replies mid-thread from anyone, including the user; needs no marker in the body |
@@ -1076,6 +1078,6 @@ says so.
 | The colleague is not told his comments seed the guide | The user's decision; traits only are lifted, the corpus never leaves the build scratchpad, and no phrase of his is reproduced |
 | Slack channel with one thread per PR | The user's requirement; channel is only about PRs in flight |
 | No stop other than the user's | The user's requirement |
-| Discovery per repo, not org-wide | SAML partial results return HTTP 200 with PRs silently omitted |
+| Discovery per repo, not org-wide | SAML partial results return HTTP 200 with PRs silently omitted. Superseded by `2026-10-28-pr-watch-session-scope-design.md`, which covers the repos in the session's set. |
 | CI acts on required checks only, platform read per check from its link | Repos mid-migration run GitHub Actions and the legacy Azure pipelines side by side; on one PR the rollup read `FAILURE` from a non-required Azure job while every required check was green |
 | CI reruns are serialised with pushes | A rerun is a gated run and hits the same shared contract database a push does |
