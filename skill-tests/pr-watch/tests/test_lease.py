@@ -97,7 +97,7 @@ class ClaimTests(LeaseCase):
 
     def test_dead_holder_with_stale_heartbeat_taken(self):
         self.put(heartbeat=NOW - 301)
-        self.assertEqual(self.claim(holder("s-2", pid=300)), (True, "claimed"))
+        self.assertEqual(self.claim(holder("s-2", pid=300)), (True, "taken-over"))
         self.assertEqual(lease.read_lease("o", "r", 1)["holder"]["session_id"], "s-2")
 
     def test_dead_holder_with_fresh_heartbeat_refused(self):
@@ -116,7 +116,7 @@ class ClaimTests(LeaseCase):
         other = holder()
         self.put(h=other, heartbeat=NOW - 301)
         reused = lambda pid: pw_paths.parse_iso(other["pid_started_at"]) + 3600
-        self.assertEqual(self.claim(holder("s-2", pid=300), started_at=reused), (True, "claimed"))
+        self.assertEqual(self.claim(holder("s-2", pid=300), started_at=reused), (True, "taken-over"))
 
     def test_renamed_exe_holder_still_live(self):
         other = holder()
@@ -137,7 +137,7 @@ class ClaimTests(LeaseCase):
         ok, _ = self.claim(holder("s-2", pid=300), explicit=False)
         self.assertFalse(ok)
         self.assertEqual(lease.read_lease("o", "r", 1)["holder"]["session_id"], "s-1")
-        self.assertEqual(self.claim(holder("s-2", pid=300), explicit=True), (True, "claimed"))
+        self.assertEqual(self.claim(holder("s-2", pid=300), explicit=True), (True, "taken-over"))
 
     def test_stopped_live_holder_refused_even_explicit(self):
         other = holder()

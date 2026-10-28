@@ -59,6 +59,10 @@ def claim_lock_path(owner: str, repo: str, n: int) -> pathlib.Path:
     return pr_dir(owner, repo) / f"{n}.claim.lock"
 
 
+def push_lock_path(owner: str, repo: str) -> pathlib.Path:
+    return pr_dir(owner, repo) / "push.lock"
+
+
 def iso_utc(epoch: float) -> str:
     moment = datetime.datetime.fromtimestamp(int(epoch), datetime.timezone.utc)
     return moment.strftime("%Y-%m-%dT%H:%M:%SZ")

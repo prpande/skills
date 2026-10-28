@@ -1092,6 +1092,17 @@ def main(argv=None, gh=run_gh):
                            "last failure markers")
     mode.add_argument("--ci-rerun", metavar="LINK",
                       help="rerun the failed jobs behind a check link")
+    mode.add_argument("--claim", metavar="REF", help="claim the PR's lease for this session")
+    mode.add_argument("--lease-status", metavar="REF",
+                      help="set the status of a lease this session holds")
+    mode.add_argument("--repo-peers", metavar="REF",
+                      help="print the armed PRs in the same repo as a JSON list")
+    mode.add_argument("--push-lock", nargs=2, metavar=("ACTION", "REF"),
+                      help="take or release the per-repo push lock")
+    parser.add_argument("--role", choices=("authored", "reviewed"), help="with --claim")
+    parser.add_argument("--explicit", action="store_true",
+                        help="with --claim: the user named this PR")
+    parser.add_argument("--status", choices=("stopped", "released"), help="with --lease-status")
     parser.add_argument("--session-dir", type=pathlib.Path,
                         help="<pr-watch home>/sessions/<session id>")
     parser.add_argument("--repo", help="owner/name; required with --assert-author, --ci-log, --ci-rerun")
@@ -1102,7 +1113,13 @@ def main(argv=None, gh=run_gh):
         parser.error("--assert-author needs --repo owner/name")
     if (args.ci_log or args.ci_rerun) and not (args.repo and args.session_dir):
         parser.error("--ci-log and --ci-rerun need --repo owner/name and --session-dir")
-    if args.assert_author is None and args.session_dir is None:
+    if args.claim and not args.role:
+        parser.error("--claim needs --role")
+    if args.lease_status and not args.status:
+        parser.error("--lease-status needs --status")
+    if args.push_lock and args.push_lock[0] not in ("take", "release"):
+        parser.error("--push-lock action must be take or release")
+    if args.assert_author is None and args.repo_peers is None and args.session_dir is None:
         parser.error("--session-dir is required for this mode")
     try:
         return run_mode(args, gh)
@@ -1111,9 +1128,55 @@ def main(argv=None, gh=run_gh):
         return 1
 
 
+def lease_mode(args):
+    watch = read_json(args.session_dir / "watch.json")
+    session_id = watch.get("session_id")
+    if not session_id:
+        raise ValueError("watch.json has no session_id")
+    now = time.time()
+    if args.push_lock:
+        action, ref = args.push_lock
+        owner, repo, _ = parse_ref(ref)
+        if action == "release":
+            lease.release_push_lock(owner, repo, session_id)
+            print("released")
+            return 0
+        if lease.take_push_lock(owner, repo, session_id, now):
+            print("taken")
+            return 0
+        print("pr-watch: busy", file=sys.stderr)
+        return 1
+    owner, repo, number = parse_ref(args.claim or args.lease_status)
+    if args.lease_status:
+        if lease.set_status(owner, repo, number, args.status, session_id, now):
+            print(args.status)
+            return 0
+        print(f"pr-watch: {pr_key(owner, repo, number)} is not held by this session",
+              file=sys.stderr)
+        return 1
+    pid = watch.get("claude_pid")
+    started = lease.process_started_at(pid) if pid else None
+    holder = {"session_id": session_id, "pid": pid,
+              "pid_started_at": iso_utc(started) if started is not None else None,
+              "poller_pid": None}
+    ok, why = lease.claim(owner, repo, number, role=args.role, holder=holder,
+                          explicit=args.explicit, now=now)
+    if ok:
+        print(why)
+        return 0
+    print(f"pr-watch: cannot claim {pr_key(owner, repo, number)}: {why}", file=sys.stderr)
+    return 1
+
+
 def run_mode(args, gh):
     if args.assert_author is not None:
         return assert_author(gh, args.repo, args.assert_author)
+    if args.repo_peers:
+        owner, repo, number = parse_ref(args.repo_peers)
+        print(json.dumps([pr_key(owner, repo, n) for n in lease.armed_peers(owner, repo, number)]))
+        return 0
+    if args.claim or args.lease_status or args.push_lock:
+        return lease_mode(args)
     if args.monitor:
         return monitor(gh, args.session_dir)
     if args.report or args.reseed:

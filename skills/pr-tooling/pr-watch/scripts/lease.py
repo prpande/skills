@@ -8,10 +8,11 @@ import time
 
 from pw_io import read_json, write_json_atomic
 from pw_paths import (claim_lock_path, home, iso_utc, lease_path, parse_iso, pr_dir,
-                      progress_path)
+                      progress_path, push_lock_path)
 
 STALE_AFTER_SECONDS = 300
 CLAIM_LOCK_STALE_SECONDS = 60
+PUSH_LOCK_STALE_SECONDS = 300
 CLOSED_RETENTION_SECONDS = 7 * 24 * 3600
 START_TIME_TOLERANCE_SECONDS = 2
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
@@ -120,13 +121,13 @@ def _decide(old, session_id, explicit, now, started_at, agents) -> tuple[bool, s
     if status in ("released", "closed"):
         return True, "claimed"
     if status == "armed" and _holder_dead(old, now, started_at):
-        return True, "claimed"
+        return True, "taken-over"
     if status == "stopped" and explicit and _holder_dead(old, now, started_at):
-        return True, "claimed"
+        return True, "taken-over"
     return False, _refusal(old, now, agents)
 
 
-def _take_lock(path, now: float) -> bool:
+def _take_lock(path, now: float, stale_seconds: float = CLAIM_LOCK_STALE_SECONDS) -> bool:
     path.parent.mkdir(parents=True, exist_ok=True)
     for _ in range(2):
         try:
@@ -137,7 +138,7 @@ def _take_lock(path, now: float) -> bool:
                 age = now - os.stat(path).st_mtime
             except FileNotFoundError:
                 continue
-            if age <= CLAIM_LOCK_STALE_SECONDS:
+            if age <= stale_seconds:
                 return False
             aside = path.with_name(f"{path.name}.{os.getpid()}.{time.monotonic_ns()}.stale")
             try:
@@ -147,7 +148,7 @@ def _take_lock(path, now: float) -> bool:
             except OSError:
                 return False
             try:
-                caught_fresh = now - os.stat(aside).st_mtime <= CLAIM_LOCK_STALE_SECONDS
+                caught_fresh = now - os.stat(aside).st_mtime <= stale_seconds
             except FileNotFoundError:
                 continue
             if caught_fresh:
@@ -185,6 +186,23 @@ def claim(owner, repo, n, *, role, holder, explicit, now, started_at=process_sta
         return True, why
     finally:
         lock.unlink(missing_ok=True)
+
+
+def take_push_lock(owner, repo, session_id, now) -> bool:
+    path = push_lock_path(owner, repo)
+    if not _take_lock(path, now, PUSH_LOCK_STALE_SECONDS):
+        return False
+    path.write_text(session_id, encoding="utf-8")
+    return True
+
+
+def release_push_lock(owner, repo, session_id) -> None:
+    path = push_lock_path(owner, repo)
+    try:
+        if path.read_text(encoding="utf-8") == session_id:
+            path.unlink(missing_ok=True)
+    except FileNotFoundError:
+        pass
 
 
 def _read_with_retry(owner, repo, n) -> dict | None:
