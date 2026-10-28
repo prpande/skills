@@ -266,7 +266,7 @@ class WriteTests(LeaseCase):
         self.put(heartbeat=NOW - 100)
         ok = lease.tick_write("o", "r", 1, session_id="s-1", now=NOW, head="def",
                               pending_since=pw_paths.iso_utc(NOW - 50), last_error="boom", poller_pid=999)
-        self.assertTrue(ok)
+        self.assertEqual(ok, "written")
         data = lease.read_lease("o", "r", 1)
         self.assertEqual(data["heartbeat"], pw_paths.iso_utc(NOW))
         self.assertEqual(data["last_head_sha"], "def")
@@ -287,12 +287,33 @@ class WriteTests(LeaseCase):
         before = self.put(h=holder("s-2"), heartbeat=NOW - 100)
         ok = lease.tick_write("o", "r", 1, session_id="s-1", now=NOW, head="def", pending_since=None,
                               last_error=None, poller_pid=1)
-        self.assertFalse(ok)
+        self.assertEqual(ok, "lost")
         self.assertEqual(lease.read_lease("o", "r", 1), before)
 
-    def test_tick_write_without_lease_is_false(self):
-        self.assertFalse(lease.tick_write("o", "r", 1, session_id="s-1", now=NOW, head="x",
-                                          pending_since=None, last_error=None, poller_pid=1))
+    def test_tick_write_without_lease_is_missing(self):
+        self.assertEqual(lease.tick_write("o", "r", 1, session_id="s-1", now=NOW, head="x",
+                                          pending_since=None, last_error=None, poller_pid=1),
+                         "missing")
+
+    def test_tick_write_leaves_a_non_armed_lease_alone(self):
+        for status in ("released", "stopped", "closed"):
+            with self.subTest(status=status):
+                self.put(status=status)
+                path = pw_paths.lease_path("o", "r", 1)
+                before = path.read_bytes()
+                result = lease.tick_write("o", "r", 1, session_id="s-1", now=NOW, head="x",
+                                          pending_since=None, last_error=None, poller_pid=1)
+                self.assertEqual(result, "inactive")
+                self.assertEqual(path.read_bytes(), before)
+
+    def test_tick_write_cannot_close_a_non_armed_lease(self):
+        self.put(status="released")
+        before = pw_paths.lease_path("o", "r", 1).read_bytes()
+        result = lease.tick_write("o", "r", 1, session_id="s-1", now=NOW, head="x",
+                                  pending_since=None, last_error=None, poller_pid=None,
+                                  status="closed")
+        self.assertEqual(result, "inactive")
+        self.assertEqual(pw_paths.lease_path("o", "r", 1).read_bytes(), before)
 
     def test_set_status_only_by_holder(self):
         self.put()
@@ -319,7 +340,7 @@ class WriteTests(LeaseCase):
         with mock.patch.object(lease, "read_json", side_effect=flaky),                 mock.patch.object(lease.time, "sleep"):
             ok = lease.tick_write("o", "r", 1, session_id="s-1", now=NOW, head="d", pending_since=None,
                                   last_error=None, poller_pid=1)
-        self.assertTrue(ok)
+        self.assertEqual(ok, "written")
         self.assertEqual(len(calls), 3)
 
     def test_set_status_propagates_persistent_read_error(self):

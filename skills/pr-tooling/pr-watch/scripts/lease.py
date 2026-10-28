@@ -214,16 +214,20 @@ def set_status(owner, repo, n, status, session_id, now) -> bool:
 
 
 def tick_write(owner, repo, n, *, session_id, now, head, pending_since, last_error, poller_pid,
-               status="armed") -> bool:
-    data = _held_by(owner, repo, n, session_id)
+               status="armed") -> str:
+    data = _read_with_retry(owner, repo, n)
     if data is None:
-        return False
+        return "missing"
+    if data["holder"].get("session_id") != session_id:
+        return "lost"
+    if data.get("status") != "armed":
+        return "inactive"
     stamp = iso_utc(now)
     data["holder"]["poller_pid"] = poller_pid
     data.update(heartbeat=stamp, last_head_sha=head, pending_since=pending_since,
                 last_error=last_error, status=status, updated_at=stamp)
     write_json_atomic(lease_path(owner, repo, n), data)
-    return True
+    return "written"
 
 
 def _lease_numbers(owner, repo) -> list[int]:
