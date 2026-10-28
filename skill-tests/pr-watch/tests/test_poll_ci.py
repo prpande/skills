@@ -5,7 +5,8 @@ import pathlib
 import tempfile
 import unittest
 
-from fakes import ACTIONS, AZURE, NOW, SONAR, T0, FakeGh, comment, poll, pull, thread, watch
+from fakes import (ACTIONS, AZURE, NOW, SONAR, T0, FakeGh, HomeCase, comment, pk, poll, pull, rk,
+                   thread, watch, write_session)
 
 
 def check(name, bucket="fail", workflow="App Gated", done="2026-09-10T05:16:39Z", link=ACTIONS):
@@ -21,7 +22,7 @@ def node(rollup):
 class RollupTests(unittest.TestCase):
     def test_tick_query_asks_for_the_head_rollup(self):
         self.assertIn("commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }",
-                      poll.tick_query("o", "r", [1411]))
+                      poll.tick_query({("o", "r"): [1411]})[0])
 
     def test_rollup_state_reads_the_head_commit(self):
         self.assertEqual(poll.rollup_state(node({"state": "FAILURE"})), "FAILURE")
@@ -51,7 +52,7 @@ class PlatformTests(unittest.TestCase):
 class CiTickTests(unittest.TestCase):
     def setUp(self):
         self.gh = FakeGh()
-        self.gh.prs[1411] = pull(1411)
+        self.gh.prs[pk(1411)] = pull(1411)
         self.watch = watch({1411: "authored"})
         self.poller = {}
 
@@ -59,19 +60,19 @@ class CiTickTests(unittest.TestCase):
         return poll.tick_once(self.gh, self.watch, self.poller, NOW, force=force)
 
     def red(self, done="2026-09-10T05:16:39Z"):
-        self.gh.rollup[1411] = "FAILURE"
-        self.gh.checks[1411] = [check("Gated / Unit Tests", done=done),
+        self.gh.rollup[pk(1411)] = "FAILURE"
+        self.gh.checks[pk(1411)] = [check("Gated / Unit Tests", done=done),
                                 check("Gated / Audit Helm Chart", bucket="pass")]
 
     def test_required_failure_emits_one_ci_red(self):
         self.red()
         self.assertEqual(self.tick(), [{
-            "pr": 1411, "role": "authored", "kind": "ci-red", "head": "h2",
+            "pr": rk(1411), "role": "authored", "kind": "ci-red", "head": "h2",
             "checks": [{"name": "Gated / Unit Tests", "workflow": "App Gated",
                         "completed_at": "2026-09-10T05:16:39Z"}]}])
 
     def test_rollup_change_alone_checks_without_a_thread_fetch(self):
-        self.gh.rollup[1411] = "PENDING"
+        self.gh.rollup[pk(1411)] = "PENDING"
         self.tick()
         fetches = self.gh.thread_fetches()
         self.red()
@@ -80,19 +81,19 @@ class CiTickTests(unittest.TestCase):
         self.assertEqual(self.gh.checks_calls(), 1)
 
     def test_only_a_non_required_failure_is_silent(self):
-        self.gh.rollup[1411] = "FAILURE"
-        self.gh.checks[1411] = [check("Gated / Unit Tests", bucket="pass")]
+        self.gh.rollup[pk(1411)] = "FAILURE"
+        self.gh.checks[pk(1411)] = [check("Gated / Unit Tests", bucket="pass")]
         self.assertEqual(self.tick(), [])
 
     def test_same_failure_is_not_emitted_twice(self):
         self.red()
         self.tick()
         self.assertEqual(self.tick(), [])
-        self.gh.prs[1411] = pull(1411, updated="2026-09-11T11:00:00Z")
+        self.gh.prs[pk(1411)] = pull(1411, updated="2026-09-11T11:00:00Z")
         self.assertEqual(self.tick(), [])
 
     def test_a_green_rollup_is_not_rechecked(self):
-        self.gh.rollup[1411] = "SUCCESS"
+        self.gh.rollup[pk(1411)] = "SUCCESS"
         self.tick()
         self.tick()
         self.assertEqual(self.gh.checks_calls(), 0)
@@ -100,7 +101,7 @@ class CiTickTests(unittest.TestCase):
     def test_a_later_required_failure_on_the_same_red_head_emits_again(self):
         self.red()
         self.assertEqual(len(self.tick()[0]["checks"]), 1)
-        self.gh.checks[1411].append(check("Gated / Integration Tests",
+        self.gh.checks[pk(1411)].append(check("Gated / Integration Tests",
                                           done="2026-09-10T05:40:02Z"))
         events = self.tick()
         self.assertEqual([c["name"] for c in events[0]["checks"]],
@@ -110,7 +111,7 @@ class CiTickTests(unittest.TestCase):
     def test_a_rerun_that_fails_again_emits_again(self):
         self.red()
         self.tick()
-        self.gh.rollup[1411] = "PENDING"
+        self.gh.rollup[pk(1411)] = "PENDING"
         self.assertEqual(self.tick(), [])
         self.red(done="2026-09-10T06:02:11Z")
         self.assertEqual(self.tick()[0]["checks"][0]["completed_at"], "2026-09-10T06:02:11Z")
@@ -118,14 +119,14 @@ class CiTickTests(unittest.TestCase):
     def test_a_rerun_that_fails_the_same_way_does_not_re_emit(self):
         self.red()
         self.tick()
-        self.gh.rollup[1411] = "PENDING"
+        self.gh.rollup[pk(1411)] = "PENDING"
         self.assertEqual(self.tick(), [])
         self.red()
         self.assertEqual(self.tick(), [])
 
     def test_one_name_in_two_workflows_is_two_checks(self):
-        self.gh.rollup[1411] = "FAILURE"
-        self.gh.checks[1411] = [check("Gated / Unit Tests", workflow="Sonarqube"),
+        self.gh.rollup[pk(1411)] = "FAILURE"
+        self.gh.checks[pk(1411)] = [check("Gated / Unit Tests", workflow="Sonarqube"),
                                 check("Gated / Unit Tests")]
         self.assertEqual([c["workflow"] for c in self.tick()[0]["checks"]],
                          ["App Gated", "Sonarqube"])
@@ -137,8 +138,8 @@ class CiTickTests(unittest.TestCase):
         self.assertEqual(self.gh.checks_calls(), 0)
 
     def test_no_required_checks_reads_as_none(self):
-        self.gh.rollup[1411] = "FAILURE"
-        self.gh.no_checks.add(1411)
+        self.gh.rollup[pk(1411)] = "FAILURE"
+        self.gh.no_checks.add(pk(1411))
         with contextlib.redirect_stderr(io.StringIO()) as err:
             self.assertEqual(self.tick(), [])
         self.assertEqual(err.getvalue(), "")
@@ -149,13 +150,13 @@ class CiTickTests(unittest.TestCase):
         self.assertEqual([e["kind"] for e in self.tick(force=True)], ["ci-red"])
 
     def ci_signature(self):
-        return self.poller["prs"]["1411"]["last_ci_signature"]
+        return self.poller["prs"][rk(1411)]["last_ci_signature"]
 
     def test_a_forced_pass_over_a_green_rollup_keeps_the_stored_ci_signature(self):
         self.red()
         self.tick()
         stored = self.ci_signature()
-        self.gh.rollup[1411] = "SUCCESS"
+        self.gh.rollup[pk(1411)] = "SUCCESS"
         self.tick()
         self.assertEqual(self.tick(force=True), [])
         self.assertEqual(self.ci_signature(), stored)
@@ -164,18 +165,18 @@ class CiTickTests(unittest.TestCase):
         self.red()
         self.tick()
         stored = self.ci_signature()
-        self.gh.checks[1411] = [check("Gated / Unit Tests", bucket="pass")]
+        self.gh.checks[pk(1411)] = [check("Gated / Unit Tests", bucket="pass")]
         self.assertEqual(self.tick(force=True), [])
         self.assertEqual(self.ci_signature(), stored)
 
     def test_a_checks_error_keeps_the_pending_event_and_its_signature(self):
-        self.gh.prs[1411] = pull(1411, threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
+        self.gh.prs[pk(1411)] = pull(1411, threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
         self.red()
-        self.gh.fail_checks.add(1411)
+        self.gh.fail_checks.add(pk(1411))
         with contextlib.redirect_stderr(io.StringIO()) as err:
             events = self.tick()
         self.assertEqual([e["kind"] for e in events], ["pending"])
-        self.assertEqual(self.poller["prs"]["1411"]["last_signature"], "pending:c1")
+        self.assertEqual(self.poller["prs"][rk(1411)]["last_signature"], "pending:c1")
         self.assertEqual(self.ci_signature(), "")
         self.assertIn("checks unavailable", err.getvalue())
 
@@ -184,7 +185,7 @@ class CiTickTests(unittest.TestCase):
         self.tick()
         stored = self.ci_signature()
         self.red(done="2026-09-10T06:02:11Z")
-        self.gh.fail_checks.add(1411)
+        self.gh.fail_checks.add(pk(1411))
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(self.tick(), [])
         self.assertEqual(self.ci_signature(), stored)
@@ -193,12 +194,12 @@ class CiTickTests(unittest.TestCase):
 
     def test_a_thread_fetch_error_still_emits_and_stores_the_ci_event(self):
         self.red()
-        self.gh.fail = {1411}
+        self.gh.fail = {pk(1411)}
         with contextlib.redirect_stderr(io.StringIO()) as err:
             events = self.tick()
         self.assertEqual([e["kind"] for e in events], ["ci-red"])
         self.assertTrue(self.ci_signature().startswith("ci:h2:"))
-        self.assertNotIn("updated_at", self.poller["prs"]["1411"])
+        self.assertNotIn("updated_at", self.poller["prs"][rk(1411)])
         self.assertIn("fetch of 1411 failed", err.getvalue())
         self.gh.fail = set()
         self.assertEqual(self.tick(), [])
@@ -207,8 +208,8 @@ class CiTickTests(unittest.TestCase):
 class ChecksPayloadTests(unittest.TestCase):
     def setUp(self):
         self.gh = FakeGh()
-        self.gh.prs[1411] = pull(1411)
-        self.gh.checks[1411] = [
+        self.gh.prs[pk(1411)] = pull(1411)
+        self.gh.checks[pk(1411)] = [
             check("Gated / Unit Tests"),
             check("SonarQube Code Analysis", bucket="pass", workflow="", link=SONAR),
             check("Mindbody.Scheduling.Gated", workflow="", link=AZURE),
@@ -219,11 +220,11 @@ class ChecksPayloadTests(unittest.TestCase):
         self.gh.base_statuses["main"] = [("ci/legacy", "error")]
 
     def payload(self):
-        return poll.checks_payload(self.gh, watch({1411: "authored"}), 1411)
+        return poll.checks_payload(self.gh, "o", "r", 1411)
 
     def test_each_check_carries_its_platform_and_base_conclusion(self):
         payload = self.payload()
-        self.assertEqual((payload["pr"], payload["head"], payload["base"]), (1411, "h2", "main"))
+        self.assertEqual((payload["pr"], payload["head"], payload["base"]), (rk(1411), "h2", "main"))
         by_name = {c["name"]: c for c in payload["checks"]}
         self.assertEqual(by_name["Gated / Unit Tests"], {
             "name": "Gated / Unit Tests", "state": "FAILURE", "bucket": "fail",
@@ -274,7 +275,7 @@ class ChecksPayloadTests(unittest.TestCase):
         self.assertIn(".check_suite.id", jq)
 
     def test_base_branch_with_a_slash_is_encoded(self):
-        self.gh.prs[1411]["baseRefName"] = "release/2026"
+        self.gh.prs[pk(1411)]["baseRefName"] = "release/2026"
         self.gh.base_runs["release/2026"] = [("Gated / Unit Tests", "success")]
         payload = self.payload()
         self.assertEqual(payload["base"], "release/2026")
@@ -289,11 +290,10 @@ class ChecksPayloadTests(unittest.TestCase):
 
     def test_cli_prints_the_payload(self):
         with tempfile.TemporaryDirectory() as tmp:
-            (pathlib.Path(tmp) / "watch.json").write_text(
-                json.dumps(watch({1411: "authored"})), encoding="utf-8")
+            write_session(tmp, watch({1411: "authored"}))
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
-                code = poll.main(["--checks", "1411", "--state-dir", tmp], gh=self.gh)
+                code = poll.main(["--checks", "o/r#1411", "--session-dir", tmp], gh=self.gh)
         self.assertEqual(code, 0)
         self.assertEqual(len(json.loads(out.getvalue())["checks"]), 4)
 

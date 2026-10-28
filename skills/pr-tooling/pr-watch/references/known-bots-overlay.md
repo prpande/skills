@@ -49,10 +49,11 @@ library's worked example skips the pointer because `pr-autopilot`
 re-reads every comment each cycle; `pr-watch` tracks top-level items by
 id and would never see the edited summary again. When
 either the summary or a pointer review surfaces, read the summary's
-current body, with `<SLUG>` and `<N>` replaced by their recorded values:
+current body, with `<owner>/<repo>` and `<N>` taken from the PR's key
+(`owner/repo#N`):
 
 ```
-gh api "repos/<SLUG>/issues/<N>/comments" --paginate --jq '.[] | select(.body | startswith("<!-- mergewatch-review -->")) | {id: .node_id, body}'
+gh api "repos/<owner>/<repo>/issues/<N>/comments" --paginate --jq '.[] | select(.body | startswith("<!-- mergewatch-review -->")) | {id: .node_id, body}'
 ```
 
 It prints one JSON object per matching comment, oldest first; take the
@@ -80,8 +81,9 @@ last output line. `--jq` runs once per page, so a reducing filter such as
   finding order changes when the summary is rewritten, so a positional
   key would re-raise answered findings. Line numbers move between pushes
   and titles do not, so the line is left out of the key. Record the
-  disposition in `handled_top_level_ids` under that key, and the summary's
-  own id and the pointer review's id under `parsed`.
+  disposition in `handled_top_level_ids` (in the PR's progress file) under
+  that key, and the summary's own id and the pointer review's id under
+  `parsed`.
 
 ## `copilot-pull-request-reviewer`
 
@@ -107,8 +109,8 @@ decided not to post inline. Each item is a `**<path>:<line>**` heading, a
 bullet holding the whole finding, and a fenced quote of the lines it
 refers to; that bullet is one actionable finding, and the review carries
 them even when its counts say `Comments generated: 0 new`. Record the
-disposition in `handled_top_level_ids` under `copilot|<path>|<the
-bullet's first sentence>`, and the review's own id under `parsed`.
+disposition in `handled_top_level_ids` (in the PR's progress file) under
+`copilot|<path>|<the bullet's first sentence>`, and the review's own id under `parsed`.
 Copilot repeats a finding it still sees in the next review, under a new
 review id and often a moved line, so neither belongs in the key; the
 path and the sentence carry across and keep an answered finding from

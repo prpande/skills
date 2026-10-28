@@ -3,7 +3,7 @@ import subprocess
 import unittest
 from unittest import mock
 
-from fakes import SELF, T0, T1, T2, T3, FakeGh, comment, poll, pull, review, thread
+from fakes import SELF, T0, T1, T2, T3, FakeGh, comment, pk, poll, pull, review, thread
 
 
 class RunGhTests(unittest.TestCase):
@@ -72,7 +72,7 @@ class FetchTests(unittest.TestCase):
         first = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
         first["reviewThreads"]["pageInfo"] = {"hasNextPage": True, "endCursor": "1"}
         second = pull(threads=[thread("T2", [comment("c2", "reviewer-a", T0)])])
-        gh.pages[1411] = [first, second]
+        gh.pages[pk(1411)] = [first, second]
         pr = poll.fetch_pr(gh, "o", "r", 1411)
         self.assertEqual([t["id"] for t in pr["reviewThreads"]["nodes"]], ["T1", "T2"])
         self.assertEqual(gh.thread_fetches(), 2)
@@ -83,7 +83,7 @@ class FetchTests(unittest.TestCase):
                                          comment("c2", "reviewer-a", T1)])])
         pr["reviewThreads"]["nodes"][0]["comments"]["pageInfo"] = {"hasNextPage": True,
                                                                     "endCursor": "k2"}
-        gh.prs[1411] = pr
+        gh.prs[pk(1411)] = pr
         gh.thread_comment_pages[("T1", "k2")] = {
             "pageInfo": {"hasNextPage": False, "endCursor": None},
             "nodes": [comment("c3", "reviewer-a", T2), comment("c4", "reviewer-a", T3)]}
@@ -98,7 +98,7 @@ class FetchTests(unittest.TestCase):
                   reviews=[review("r3", "reviewer-a", T2, body="x")])
         pr["comments"]["pageInfo"] = {"hasPreviousPage": True, "startCursor": "i3"}
         pr["reviews"]["pageInfo"] = {"hasPreviousPage": True, "startCursor": "r3"}
-        gh.prs[1411] = pr
+        gh.prs[pk(1411)] = pr
         gh.earlier[(1411, "comments", "i3")] = {
             "pageInfo": {"hasPreviousPage": True, "startCursor": "i2"},
             "nodes": [comment("i2", "reviewer-a", T1)]}
@@ -120,7 +120,7 @@ class FetchTests(unittest.TestCase):
         pr = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
         pr["reviewThreads"]["nodes"][0]["comments"]["pageInfo"] = {"hasNextPage": True,
                                                                     "endCursor": "k2"}
-        gh.prs[1411] = pr
+        gh.prs[pk(1411)] = pr
         gh.thread_comment_pages[("T1", "k2")] = None
         with self.assertRaises(poll.GhError):
             poll.fetch_pr(gh, "o", "r", 1411)
@@ -129,28 +129,29 @@ class FetchTests(unittest.TestCase):
         gh = FakeGh()
         pr = pull(comments=[comment("i2", "reviewer-a", T1)])
         pr["comments"]["pageInfo"] = {"hasPreviousPage": True, "startCursor": "i2"}
-        gh.prs[1411] = pr
+        gh.prs[pk(1411)] = pr
         gh.earlier[(1411, "comments", "i2")] = None
         with self.assertRaises(poll.GhError):
             poll.fetch_pr(gh, "o", "r", 1411)
 
     def test_missing_pr_raises(self):
         gh = FakeGh()
-        gh.prs[1411] = None
+        gh.prs[pk(1411)] = None
         with self.assertRaises(poll.GhError):
             poll.fetch_pr(gh, "o", "r", 1411)
 
 
 class TickQueryTests(unittest.TestCase):
     def test_every_pr_gets_an_alias_and_no_threads(self):
-        query = poll.tick_query("mindbody", "Mindbody.Scheduling", [1411, 1413])
+        query, aliases = poll.tick_query({("mindbody", "Mindbody.Scheduling"): [1411, 1413]})
         self.assertIn("p1411: pullRequest(number: 1411)", query)
         self.assertIn("p1413: pullRequest(number: 1413)", query)
         self.assertNotIn("reviewThreads", query)
+        self.assertEqual(aliases, {"r0": ("mindbody", "Mindbody.Scheduling")})
 
     def test_unsafe_names_are_refused(self):
         with self.assertRaises(ValueError):
-            poll.tick_query('o") { x', "r", [1])
+            poll.tick_query({('o") { x', "r"): [1]})
 
 
 if __name__ == "__main__":

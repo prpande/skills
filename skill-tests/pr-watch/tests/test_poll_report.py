@@ -6,11 +6,13 @@ import tempfile
 import unittest
 import unittest.mock
 
-from fakes import SELF, T0, T1, T2, FakeGh, comment, poll, pull, review, thread, watch
+from fakes import (SELF, T0, T1, T2, FakeGh, HomeCase, comment, pk, poll, pull, review, rk,
+                   thread, watch, write_session)
 
 
-class ReportTests(unittest.TestCase):
+class ReportTests(HomeCase):
     def setUp(self):
+        super().setUp()
         self.tmp = tempfile.TemporaryDirectory()
         self.state = pathlib.Path(self.tmp.name)
         self.gh = FakeGh()
@@ -21,7 +23,7 @@ class ReportTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def save_watch(self):
-        (self.state / "watch.json").write_text(json.dumps(self.watch), encoding="utf-8")
+        write_session(self.state, self.watch)
 
     def run_report(self, reseed=False):
         out = io.StringIO()
@@ -39,7 +41,7 @@ class ReportTests(unittest.TestCase):
         return [line for line in lines[start + 1:end] if line.startswith("  PR")]
 
     def test_three_sections_and_no_mutation(self):
-        self.gh.prs[1411] = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
+        self.gh.prs[pk(1411)] = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
         code, text = self.run_report()
         self.assertEqual(code, 0)
         for header in ("ATTENTION", "NEW", "STANDING"):
@@ -47,14 +49,14 @@ class ReportTests(unittest.TestCase):
         self.assertFalse(any("mutation" in " ".join(call) for call in self.gh.calls))
 
     def test_deleted_seen_id_reappears_as_exactly_that_item(self):
-        self.gh.prs[1411] = pull(
+        self.gh.prs[pk(1411)] = pull(
             threads=[thread("T1", [comment("c1", "copilot-pull-request-reviewer", T0,
                                            typename="Bot"),
                                    comment("c2", "reviewer-a", T1)])],
             comments=[comment("i1", "sonarqube-mbodevme", T2)])
         self.run_report()
         seen = self.seen()
-        seen["1411"].remove("c2")
+        seen[rk(1411)].remove("c2")
         (self.state / "watch-seen.json").write_text(json.dumps(seen), encoding="utf-8")
         _, text = self.run_report()
         new = self.new_section(text)
@@ -63,18 +65,18 @@ class ReportTests(unittest.TestCase):
         self.assertIn("reviewer-a", new[0])
 
     def test_deleted_bot_id_reappears_classified_as_bot(self):
-        self.gh.prs[1411] = pull(comments=[comment("i1", "sonarqube-mbodevme", T2)])
+        self.gh.prs[pk(1411)] = pull(comments=[comment("i1", "sonarqube-mbodevme", T2)])
         self.run_report()
-        (self.state / "watch-seen.json").write_text(json.dumps({"1411": []}), encoding="utf-8")
+        (self.state / "watch-seen.json").write_text(json.dumps({rk(1411): []}), encoding="utf-8")
         _, text = self.run_report()
         new = self.new_section(text)
         self.assertEqual(len(new), 1)
         self.assertIn("[bot]", new[0])
 
     def test_human_reply_on_a_resolved_thread_is_in_attention(self):
-        self.watch["prs"]["1411"]["posted_reply_ids"] = ["c2"]
+        self.watch["prs"][rk(1411)]["posted_reply_ids"] = ["c2"]
         self.save_watch()
-        self.gh.prs[1411] = pull(threads=[thread(
+        self.gh.prs[pk(1411)] = pull(threads=[thread(
             "T1", [comment("c1", "copilot-pull-request-reviewer", T0, typename="Bot"),
                    comment("c2", SELF, T1), comment("c3", "reviewer-a", T2)], resolved=True)])
         _, text = self.run_report()
@@ -84,9 +86,9 @@ class ReportTests(unittest.TestCase):
 
     def reviewed_report(self, head, rereviewed_head):
         self.watch = watch({1420: "reviewed"})
-        self.watch["prs"]["1420"]["rereviewed_head"] = rereviewed_head
+        self.watch["prs"][rk(1420)]["rereviewed_head"] = rereviewed_head
         self.save_watch()
-        self.gh.prs[1420] = pull(1420, author_login="author-b", head=head,
+        self.gh.prs[pk(1420)] = pull(1420, author_login="author-b", head=head,
                                  threads=[thread("T9", [comment("m1", SELF, T0)])],
                                  reviews=[review("r1", SELF, T0, oid="h1")])
         _, text = self.run_report()
@@ -101,29 +103,38 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn("head moved past your review", attention)
 
     def test_quiet_report_is_one_line(self):
-        self.watch["prs"]["1411"]["settled_ids"] = ["c1"]
+        self.watch["prs"][rk(1411)]["settled_ids"] = ["c1"]
         self.save_watch()
-        self.gh.prs[1411] = pull(threads=[thread("T1", [comment("c1", SELF, T0)])])
+        self.gh.prs[pk(1411)] = pull(threads=[thread("T1", [comment("c1", SELF, T0)])])
         self.run_report()
         _, text = self.run_report()
         self.assertEqual(len(text.strip().splitlines()), 1)
 
+    def test_prs_are_listed_in_numeric_order(self):
+        self.watch = watch({10: "authored", 2: "authored"})
+        self.save_watch()
+        self.gh.prs[pk(10)] = pull(10)
+        self.gh.prs[pk(2)] = pull(2)
+        _, text = self.run_report()
+        standing = [line for line in text.splitlines() if line.startswith("  PR")]
+        self.assertEqual([line.split()[1] for line in standing], [rk(2), rk(10)])
+
     def test_reseed_accepts_everything(self):
-        self.gh.prs[1411] = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
+        self.gh.prs[pk(1411)] = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
         code, text = self.run_report(reseed=True)
         self.assertEqual(code, 0)
-        self.assertEqual(self.seen(), {"1411": ["c1"]})
+        self.assertEqual(self.seen(), {rk(1411): ["c1"]})
         self.assertIn("reseeded", text)
 
     def test_fetch_error_leaves_the_watermark_untouched(self):
-        self.gh.fail = {1411}
+        self.gh.fail = {pk(1411)}
         code, text = self.run_report()
         self.assertEqual(code, 1)
         self.assertIn("ERROR", text)
         self.assertFalse((self.state / "watch-seen.json").exists())
 
     def test_a_failed_seen_write_still_prints_the_report_and_exits_one(self):
-        self.gh.prs[1411] = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
+        self.gh.prs[pk(1411)] = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
         err = io.StringIO()
         with unittest.mock.patch.object(poll, "write_json_atomic",
                                         side_effect=PermissionError("watch-seen.json is open")), \
@@ -136,7 +147,7 @@ class ReportTests(unittest.TestCase):
                          "pr-watch: could not save watch-seen.json: watch-seen.json is open\n")
 
     def test_a_failed_reseed_save_does_not_claim_the_ids_were_accepted(self):
-        self.gh.prs[1411] = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
+        self.gh.prs[pk(1411)] = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
         with unittest.mock.patch.object(poll, "write_json_atomic",
                                         side_effect=PermissionError("watch-seen.json is open")), \
                 contextlib.redirect_stderr(io.StringIO()):
@@ -147,12 +158,12 @@ class ReportTests(unittest.TestCase):
     def test_a_failed_pr_does_not_hold_back_the_others(self):
         self.watch = watch({1411: "authored", 1413: "authored"})
         self.save_watch()
-        self.gh.prs[1411] = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
-        self.gh.prs[1413] = pull(1413, threads=[thread("T1", [comment("c9", "reviewer-a", T0)])])
-        self.gh.fail = {1413}
+        self.gh.prs[pk(1411)] = pull(threads=[thread("T1", [comment("c1", "reviewer-a", T0)])])
+        self.gh.prs[pk(1413)] = pull(1413, threads=[thread("T1", [comment("c9", "reviewer-a", T0)])])
+        self.gh.fail = {pk(1413)}
         code, text = self.run_report()
         self.assertEqual(code, 1)
-        self.assertEqual(self.seen(), {"1411": ["c1"]})
+        self.assertEqual(self.seen(), {rk(1411): ["c1"]})
 
 
 if __name__ == "__main__":

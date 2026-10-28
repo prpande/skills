@@ -11,7 +11,7 @@ import unittest
 import urllib.error
 from unittest import mock
 
-from fakes import ACTIONS, AZURE, SONAR, FakeGh, poll, watch
+from fakes import ACTIONS, AZURE, SONAR, FakeGh, HomeCase, poll, watch, write_session
 
 BUILD = ("https://dev.azure.com/mindbody/19477e8d-94b2-4461-9dfc-2f54fa23767d"
          "/_apis/build/builds/3366211")
@@ -259,21 +259,21 @@ class CiRerunTests(unittest.TestCase):
         self.assertFalse(any(call[0] == "PATCH" for call in ado.calls))
 
 
-class CliTests(unittest.TestCase):
+class CliTests(HomeCase):
     def setUp(self):
+        super().setUp()
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.state = tmp.name
-        (pathlib.Path(tmp.name) / "watch.json").write_text(
-            json.dumps(watch({1411: "authored"})), encoding="utf-8")
+        write_session(tmp.name, watch({1411: "authored"}))
 
     def ci(self, *args, gh=None):
-        return poll.main([*args, "--repo", "o/r", "--state-dir", self.state], gh=gh or FakeGh())
+        return poll.main([*args, "--repo", "o/r", "--session-dir", self.state], gh=gh or FakeGh())
 
-    def test_ci_log_needs_repo_and_state_dir_and_prints_the_log(self):
+    def test_ci_log_needs_repo_and_session_dir_and_prints_the_log(self):
         gh = FakeGh()
         gh.job_logs["102752575845"] = "error CS1002: ; expected"
-        for partial in (["--repo", "o/r"], ["--state-dir", self.state], []):
+        for partial in (["--repo", "o/r"], ["--session-dir", self.state], []):
             with self.subTest(partial=partial), contextlib.redirect_stderr(io.StringIO()), \
                     self.assertRaises(SystemExit):
                 poll.main(["--ci-log", ACTIONS, *partial], gh=gh)
