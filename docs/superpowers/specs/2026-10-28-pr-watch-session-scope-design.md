@@ -118,9 +118,12 @@ The library files stay where they are:
 The fields that describe the watch, not a PR: `session_id`,
 `claude_pid`, `self_login`, `channel_id`, `origin_worktree`,
 `serialize_pushes`, `bot_allowlist`, `ado_orgs`, `dry_run`,
-`push_queue`, and `prs`: an object keyed by `owner/repo#N`, each value
-`{role, worktree?, branch, title, url, status}` where `status` is
-`armed`, `stopped` or `released`. `owner`/`repo` at the top level go away.
+`stopped_at`, `push_queue`, and `prs`: an object keyed by `owner/repo#N`,
+each value `{role, worktree?, branch, title, url, status}` where `status`
+is `armed`, `stopped`, `released`, `closed` or `lost` (another session
+claimed the lease; this session no longer acts on the PR). `stopped_at` is
+set by `/pr-watch stop` and cleared by any arm. `owner`/`repo` at the top
+level go away.
 
 `push_queue` holds `owner/repo#N` keys. Serialisation is per repo and
 across sessions: the shared contract database it guards is per repo, and
@@ -128,6 +131,14 @@ under the old design every watched PR in a repo was serialised against
 every other. The "other PRs' checks still running" test therefore covers
 every PR with an `armed` lease under `prs/<owner>/<repo>/`, whichever
 session holds it, and never PRs in other repos.
+
+Two sessions can both find nothing running and push at once, so the scan
+and the push run under `prs/<owner>/<repo>/push.lock` (exclusive create,
+same handling as the claim lock). The lock is held from the scan until
+the pushed head has a check run registered, or 120 s after the push,
+whichever comes first; a lock older than 300 s is stale. A session that
+finds the lock held treats the repo as busy and queues, as it does for a
+running check.
 
 ### `<N>.progress.json` (per PR)
 
@@ -183,14 +194,25 @@ A missing or unparseable lease file means nobody holds the PR.
 Windows retry). Two kinds of write, which never overlap for one PR:
 
 - **Claim and final status** (`POLL --claim`, `POLL --lease-status`):
-  run by step 01 before the monitor starts, and by `stop` after the
-  monitor is stopped. A claim holds `<N>.claim.lock` (exclusive create;
-  a lock older than 60 s is stale and removed) for its read-check-write.
-- **Ticks** (`POLL --monitor`): rewrites the lease of every PR in the
-  session's `prs` on each tick: heartbeat, `last_head_sha`,
-  `pending_since`, `last_error`. A PR the session marked `released` in
-  `watch.json` gets `status: released` once, then the monitor stops
-  writing it. A PR that closes gets `status: closed`.
+  run by step 01 before the monitor starts, by `stop` after the monitor
+  is stopped, and by `release` after it updates `watch.json`. A claim
+  holds `<N>.claim.lock` (exclusive create; a lock older than 60 s is
+  stale and removed) for its read-check-write.
+- **Ticks** (`POLL --monitor`): rewrites the lease of every `armed` PR in
+  the session's `prs` on each tick: heartbeat, `last_head_sha`,
+  `pending_since`, `last_error`. Each write first re-reads the lease and
+  writes only when `holder.session_id` is still this session and the
+  status is still `armed`. A tick never moves a lease out of `stopped`,
+  `released` or `closed`; only a claim does. A PR that closes gets
+  `status: closed`.
+- **Lost lease.** When the re-read shows another session holds the PR,
+  the monitor writes nothing for it, emits `{"kind":"lease-lost","pr":
+  ...,"holder":...}` once, and drops it from its ticks. Step 03 marks the
+  PR `lost` in `watch.json` and posts one line to its Slack thread.
+
+`release` and `stop` write `watch.json` first and the lease second, so a
+tick that read the old `watch.json` cannot re-arm a lease it no longer
+owns: the tick sees a non-`armed` status and skips it.
 
 ### Claim rules
 
@@ -210,6 +232,27 @@ fails, exits non-zero, and prints one line naming the holder session
 (`[Tag]Name` from `claude agents --json` when it can be read, else the
 id) and the heartbeat age. Step 01 lists the PR as excluded with that
 line and carries on with the others.
+
+A lease file that exists but cannot be read (a transient sharing error
+while another process replaces it) is not "missing": the claim refuses
+with "lease unreadable" and step 01 retries it once.
+
+**Self-reclaim.** A resumed session can find its old monitor still
+running: the poller outlives its claude process. When the lease names
+this session and `holder.poller_pid` is a live `poll.py --monitor`
+process, the claim ends that process tree before it writes, so one
+session never has two pollers.
+
+**Takeover.** When a claim takes a PR from another session, queued work in
+the progress file (`queued_head`, `ci_rerun_queued`) moves to the new
+holder: step 01 adds the PR to this session's `push_queue` and the next
+drain handles it, so a fix committed but not pushed by the dead session
+is not stranded.
+
+**Inherited identity.** A process started by a session's tools inherits
+`CLAUDE_CODE_SESSION_ID` and `CLAUDE_PID`, and so would a `claude`
+launched from one. Step 01 refuses to arm when `CLAUDE_CODE_CHILD_SESSION`
+is set or `CLAUDE_PID` is not an ancestor of the arming process.
 
 ## 🔎 Arming
 
@@ -284,6 +327,10 @@ new set. When one exists and lists a PR being armed:
    the lookup fails.
 5. No old monitor process and a heartbeat older than 300 s: stale;
    migrate.
+6. No old monitor process and a heartbeat 300 s old or newer: the poller
+   died moments ago or is restarting. Exclude the PR with "old-format
+   watch in owner/repo ticked Ns ago; retry after it goes stale" and arm
+   the rest.
 
 Migrate means: copy each old PR entry's progress fields into
 `<N>.progress.json` (nothing re-baselined), claim the lease, rename the
@@ -329,6 +376,21 @@ relocation: the session and its fixers edit with absolute paths, and
 every git command uses `git -C <worktree>`. A PR in the launch repo keeps
 today's `EnterWorktree(path)` path unchanged.
 
+Without the relocation the cwd is the wrong repo, so every part of the
+fix path that assumes the cwd takes the worktree root explicitly:
+
+- Step 04's own git commands (sections 5, 6 and 10 and the drain) use
+  `git -C <worktree>`.
+- `pr-loop-lib`'s fixer and verifier prompts name the worktree root
+  instead of "this repository", and its `files_changed` check resolves
+  paths against that root.
+- `pr-loop-lib` step 04.5 (local verify) runs its build and test
+  commands with the worktree as their working directory.
+- The `pr-fixer` agent definition is unchanged. Its git helpers are
+  allow-listed only in their bare form, so they would read the launch
+  repo; the brief for an other-repo PR tells the fixer to use Read, Grep
+  and Glob on the worktree path instead.
+
 ## 🔁 Poller
 
 `POLL --monitor --session-dir <dir>` replaces `--state-dir`.
@@ -343,8 +405,12 @@ today's `EnterWorktree(path)` path unchanged.
   first tick a PR has a non-empty pending set or an unhandled red
   required check (authored) or a head past the review (reviewed), and
   cleared the first tick it is empty.
-- The monitor exits cleanly when every PR in `watch.json` is closed,
-  stopped or released. The next PR to join re-arms it.
+- The monitor exits cleanly when no PR in `watch.json` is still
+  `armed`: it writes the final lease statuses, prints `{"kind":"idle"}`
+  and exits 0. Step 02 treats "stream ended" after `idle` as a planned
+  exit: no re-arm and no "monitor died" line. The next PR to join starts
+  a new monitor.
+- `lease-lost` (above) is a new event kind; step 03 routes it.
 - `watch-poller.json` records `poller_pid` and `claude_pid` for the
   ancestry check.
 - The per-PR modes (`--baseline`, `--tails`, `--findings`, `--checks`,
@@ -356,20 +422,28 @@ today's `EnterWorktree(path)` path unchanged.
 At the end of a `pr-autopilot` run (after the final CI gate) and of a
 `pr-followup` run, the skill checks
 `~/.claude/pr-watch/sessions/<CLAUDE_CODE_SESSION_ID>/watch.json`. When
-it exists, its `prs` has at least one `armed` entry, and its heartbeat is
-fresh, the skill invokes `/pr-watch owner/repo#N --yes`. The PR joins the
-running watch, its Slack thread notes it, and nothing is asked. With no
-running watch, nothing happens.
+it exists, `dry_run` is false and `stopped_at` is null, the skill invokes
+`/pr-watch owner/repo#N --yes`. The PR joins the watch, its Slack thread
+notes it, and nothing is asked; when the monitor had gone idle because
+every earlier PR closed, the arm starts a new one. The heartbeat is not
+part of the test: a watch whose PRs all merged is idle, not gone, and
+praty expects the next PR to join it. With no `watch.json`, or a watch
+praty stopped, nothing happens.
 
 ## 🧪 Testing
 
 - Unit tests in `skill-tests/pr-watch/tests/` for: the multi-repo tick
   query and alias mapping; `owner/repo#N` events; lease claim (fresh,
   self-reclaim with a new pid, released, dead holder, live holder refused,
-  stopped needing an explicit ref, claim-lock contention); lease writes on
-  ticks including `pending_since` set and clear; monitor exit on an empty
-  set; transcript evidence (each of the four forms, pr-link alone
-  rejected); migration (owned, foreign, stale) with ancestry faked.
+  stopped needing an explicit ref, claim-lock contention, unreadable
+  lease refused, self-reclaim ending a live old poller, takeover
+  re-queueing queued work, inherited identity refused); lease writes on
+  ticks including `pending_since` set and clear, a tick skipping a lease
+  another session now holds (`lease-lost` once) and one already
+  `released`; the push lock; monitor exit with `idle` when nothing is
+  armed; transcript evidence (each of the four forms, pr-link alone
+  rejected); migration (owned, foreign, stale, fresh-without-monitor)
+  with ancestry faked.
 - Live tests against `prpande/prism-sandbox` and a new public
   `prpande/prism-sandbox-2` (praty approved creating it, test-only; a few
   files and one GitHub Actions check), never Mindbody PRs:
@@ -399,7 +473,18 @@ running watch, nothing happens.
   so the lease keeps a single writer (`poll.py`) and the progress file a
   single writer (the holder session).
 - A dry run takes no leases and keeps progress in its session directory.
-- The monitor exits when nothing in the set is still armed and open.
+- The monitor exits when nothing in the set is still armed and open,
+  with an `idle` event so step 02 does not read it as a crash.
+- Auto-join keys on `watch.json` existing and not stopped, not on a fresh
+  heartbeat.
+- Each tick re-reads the lease and never writes one another session
+  holds or one that is no longer `armed`.
+- Pushes in one repo are serialised across sessions by a `push.lock`.
+- A claim that takes a PR from another session re-queues its queued fix
+  or CI rerun; a self-reclaim ends the session's own leftover poller.
+- Arming refuses when the session identity was inherited.
+- The fixer agent definition stays as is; other-repo briefs steer it to
+  Read, Grep and Glob.
 - Closed lease files are pruned after 7 days.
 - A `stopped` lease of a dead session is claimable only by explicit ref.
 - An authored PR with no local clone known to the session is excluded,
