@@ -37,7 +37,7 @@ The file is UTF-8 JSON, one object.
 | `status` | string | `armed`, `stopped`, `released` or `closed` |
 | `last_head_sha` | string or null | The PR head at the last tick |
 | `pending_since` | string or null | ISO-8601 UTC. The first tick that saw work not yet handled: an unreplied thread tail, an unhandled red required check, or for a `reviewed` PR a reply on the user's threads not yet answered, or a push since the review that touches a file one of the user's findings is on or comes with an author reply. A push that does neither does not set it. Null when there is none, and on a `closed` lease |
-| `last_error` | string or null | Null when the last tick was healthy. The monitor writes it on every tick, so it returns to null on the first good tick; a claim also resets it. A string on an `armed` lease means the monitor is running but could not reach GitHub for this PR. The only value today is `repo unreachable`; treat any string as a fault. `status` stays `armed` |
+| `last_error` | string or null | Null when the last tick was healthy. The monitor writes it on every tick, so it returns to null on the first good tick; a claim also resets it. A string on an `armed` lease means the monitor is running but could not check this PR on its last tick: `repo unreachable`, `PR unreachable`, `check failed` (a GitHub call or its answer failed for this PR alone), or `progress unreadable` (the PR's progress file is not valid JSON; it stays this way until the file is fixed, though the lease still goes `closed` when the PR closes). Treat any string as a fault. `status` stays `armed` |
 | `updated_at` | string | ISO-8601 UTC of the last write |
 
 `heartbeat` is a top-level field. Read it as `lease["heartbeat"]`. A
@@ -57,8 +57,9 @@ Right after a claim, `pending_since` and `last_error` are null and
 - `stopped`: the user ran `/pr-watch stop`. The holder keeps the lease.
   Do not re-arm it; report it as stopped but open.
 - `released`: nobody is acting on the PR. Any session may claim it.
-- `closed`: the PR merged or closed. Final. A closed lease is deleted
-  after 7 days.
+- `closed`: the PR merged or closed. Nobody acts on it; a session may
+  claim it again if the PR is reopened. A closed lease is deleted after
+  7 days.
 
 A holder process is alive when a process with `holder.pid` exists and
 its creation time is within 2 seconds of `holder.pid_started_at`.
@@ -79,9 +80,11 @@ its creation time is within 2 seconds of `holder.pid_started_at`.
 
 ## Writers
 
-Only pr-watch's `poll.py` writes a lease. Two kinds of write exist and
-they do not overlap for one PR; each holds a per-PR lock for its
-read-check-write:
+Only pr-watch's `poll.py` writes a lease. Every write holds a per-PR
+lock for its read-check-write, so no two writes to one PR interleave.
+A claim or a status change waits for that lock long enough to break one
+left by a writer that died; a tick that finds it held skips the PR for
+that tick. The writes are:
 
 - A claim, and a final status (`stopped`, `released`). These run in the
   session that holds, or is claiming, the PR. A claim takes the lease

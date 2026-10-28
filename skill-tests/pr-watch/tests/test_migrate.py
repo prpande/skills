@@ -66,6 +66,51 @@ class ScanTests(WatchDirCase):
     def test_none_without_a_watch(self):
         self.assertEqual("none", migrate.scan(self.main, 4242, [], NOW)["state"])
 
+    def test_after_an_interrupted_import_lists_the_unclaimed_old_prs(self):
+        self.migrated({"12": {}, "13": {}}, age=60)
+        claimed = pw_paths.lease_path("acme", "widgets", 13)
+        claimed.parent.mkdir(parents=True)
+        claimed.write_text("{}", encoding="utf-8")
+        result = migrate.scan(self.main, 4242, [], NOW)
+        self.assertEqual(("none", ["acme/widgets#12"]), (result["state"], result["prs"]))
+
+    def migrated(self, prs, age):
+        self.write_watch(prs)
+        path = self.state / "watch.json.migrated"
+        (self.state / "watch.json").replace(path)
+        os.utime(path, (NOW - age, NOW - age))
+        return path
+
+    def test_an_import_older_than_the_lease_retention_lists_nothing(self):
+        self.migrated({"12": {}}, age=8 * 24 * 3600)
+        self.assertEqual([], migrate.scan(self.main, 4242, [], NOW)["prs"])
+
+    def test_a_corrupt_migrated_file_lists_nothing(self):
+        path = self.migrated({"12": {}}, age=60)
+        path.write_text("{not json", encoding="utf-8")
+        os.utime(path, (NOW - 60, NOW - 60))
+        self.assertEqual(("none", []), tuple(migrate.scan(self.main, 4242, [], NOW)[k]
+                                             for k in ("state", "prs")))
+
+    def test_a_migrated_file_whose_prs_is_not_an_object_lists_nothing(self):
+        path = self.migrated({"12": {}}, age=60)
+        path.write_text(json.dumps({"owner": "Acme", "repo": "Widgets", "prs": None}),
+                        encoding="utf-8")
+        os.utime(path, (NOW - 60, NOW - 60))
+        self.assertEqual([], migrate.scan(self.main, 4242, [], NOW)["prs"])
+
+    def test_a_finished_import_lists_nothing(self):
+        self.migrated({"12": {}}, age=60)
+        migrate.finish_import(self.main)
+        self.assertEqual([], migrate.scan(self.main, 4242, [], NOW)["prs"])
+        self.assertTrue((self.state / "watch.json.imported").exists())
+        migrate.finish_import(self.main)
+
+    def test_an_old_watch_with_a_bad_repo_name_skips_its_prs(self):
+        (self.state / "watch.json").write_text(
+            json.dumps({"owner": "Acme", "repo": "bad name", "prs": {"12": {}}}), encoding="utf-8")
+        self.assertEqual([], migrate.scan(self.main, 4242, [], NOW)["prs"])
+
     def test_owned_when_monitor_ancestor_is_my_claude_even_if_renamed(self):
         self.write_watch()
         self.write_heartbeat(10)

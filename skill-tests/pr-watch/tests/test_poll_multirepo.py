@@ -46,8 +46,44 @@ class MultiRepoTickTests(unittest.TestCase):
         with contextlib.redirect_stderr(err):
             events = self.tick(view)
         self.assertEqual([e["pr"] for e in events], [A1])
-        self.assertEqual(self.poller["unreachable"], [B2])
+        self.assertEqual(self.poller["errors"], {B2: "repo unreachable"})
         self.assertEqual(err.getvalue().count("p/b"), 1)
+
+    def test_a_malformed_payload_fails_only_its_own_pr(self):
+        view = two_repos(self.gh)
+        self.gh.prs[pk(2, "p", "b")]["reviewThreads"] = None
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            events = self.tick(view)
+        self.assertEqual([e["pr"] for e in events], [A1])
+        self.assertEqual(self.poller["errors"], {B2: "check failed"})
+        self.assertIn("PR p/b#2: TypeError", err.getvalue())
+        self.assertNotIn(B2, self.poller["prs"])
+
+    def test_a_pr_with_unreadable_progress_is_not_evaluated(self):
+        view = two_repos(self.gh)
+        view["prs"][B2]["load_fault"] = "progress unreadable"
+        events = self.tick(view)
+        self.assertEqual([e["pr"] for e in events], [A1])
+        self.assertEqual(self.poller["errors"], {B2: "progress unreadable"})
+        self.assertEqual(self.gh.thread_fetches(), 1)
+        self.assertEqual(self.poller["heads"][B2], self.gh.prs[pk(2, "p", "b")]["headRefOid"])
+
+    def test_a_pr_with_unreadable_progress_still_closes(self):
+        view = two_repos(self.gh)
+        view["prs"][B2]["load_fault"] = "progress unreadable"
+        self.gh.prs[pk(2, "p", "b")]["state"] = "MERGED"
+        events = self.tick(view)
+        self.assertIn({"pr": B2, "kind": "closed", "state": "MERGED"}, events)
+        self.assertIn(B2, self.poller["closed"])
+
+    def test_a_ci_payload_fault_keeps_the_review_event(self):
+        view = two_repos(self.gh)
+        with mock.patch.object(poll, "evaluate_ci", side_effect=KeyError("name")), \
+                contextlib.redirect_stderr(io.StringIO()):
+            events = self.tick(view)
+        self.assertEqual({e["pr"] for e in events}, {A1, B2})
+        self.assertEqual(self.poller["errors"], {A1: "check failed", B2: "check failed"})
 
     def test_same_number_in_two_repos(self):
         self.gh.prs[pk(1, "o", "a")] = pending_pr(1, head="ha")
@@ -106,6 +142,19 @@ class MultiRepoTickTests(unittest.TestCase):
 
     def test_reviewed_push_touching_no_thread_is_not_pending(self):
         self.assertFalse(self.reviewed_push(["src/Z.cs"]))
+
+    def test_the_same_head_range_is_compared_once(self):
+        self.reviewed_push(["src/B.cs"])
+        view = watch({2: "reviewed"}, owner="o", repo="a")
+        self.gh.prs[pk(2, "o", "a")]["updatedAt"] = "2026-09-11T11:00:00Z"
+        self.tick(view, now=NOW + 60)
+        compares = [c for c in self.gh.calls if c[:1] == ["api"] and "/compare/" in c[1]]
+        self.assertEqual(len(compares), 1)
+        self.assertEqual(self.poller["prs"]["o/a#2"]["compared"], ["h1", "h2", ["src/B.cs"]])
+        self.gh.prs[pk(2, "o", "a")]["headRefOid"] = "h3"
+        self.gh.compare["h1...h3"] = ["src/Z.cs"]
+        self.tick(view, now=NOW + 120)
+        self.assertEqual(self.poller["prs"]["o/a#2"]["compared"], ["h1", "h3", ["src/Z.cs"]])
 
     def test_pending_flags_from_live_data(self):
         view = watch({1: "authored", 2: "reviewed"}, owner="o", repo="a")
@@ -178,6 +227,30 @@ class LoadViewTests(HomeCase):
         shared.unlink()
         directory2 = self.session(dry_run=False)
         self.assertEqual(poll.load_view(directory2)["prs"][A1]["settled_ids"], [])
+
+    def test_a_malformed_entry_is_skipped_and_the_rest_load(self):
+        directory = self.session()
+        watch_file = directory / "watch.json"
+        data = json.loads(watch_file.read_text(encoding="utf-8"))
+        data["prs"]["not a ref"] = {"role": "authored", "status": "armed"}
+        data["prs"]["o/a#7"] = "armed"
+        watch_file.write_text(json.dumps(data), encoding="utf-8")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            view = poll.load_view(directory)
+        self.assertEqual(sorted(view["prs"]), [A1, B2])
+        self.assertEqual(err.getvalue().count("skipped"), 2)
+
+    def test_an_unreadable_progress_file_marks_the_pr(self):
+        directory = self.session()
+        shared = pw_paths.progress_path("o", "a", 1)
+        shared.parent.mkdir(parents=True)
+        shared.write_text("{not json", encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()):
+            view = poll.load_view(directory)
+        self.assertEqual(view["prs"][A1]["load_fault"], "progress unreadable")
+        self.assertEqual(view["prs"][A1]["settled_ids"], [])
+        self.assertIsNone(view["prs"][B2]["load_fault"])
 
 
 class MonitorCase(HomeCase):
@@ -413,6 +486,29 @@ class MonitorLeaseTests(MonitorCase):
         self.run_monitor(1, clock=NOW + 60)
         held = self.lease(2, "p", "b")
         self.assertEqual((held["last_head_sha"], held["last_error"]), ("h2", None))
+
+    def test_a_failed_pr_check_gets_last_error_and_the_watch_keeps_running(self):
+        view = two_repos(self.gh)
+        self.start(view)
+        self.gh.fail.add(("p", "b", 2))
+        events, err, code = self.run_monitor(1)
+        self.assertEqual(([e["pr"] for e in events], code), ([A1], 0))
+        self.assertEqual(self.lease(2, "p", "b")["last_error"], "check failed")
+        self.assertIsNone(self.lease()["last_error"])
+        self.gh.fail.clear()
+        self.run_monitor(1, clock=NOW + 60)
+        self.assertIsNone(self.lease(2, "p", "b")["last_error"])
+
+    def test_an_unreadable_progress_file_keeps_the_lease_armed_with_an_error(self):
+        view = watch({A1: "authored"})
+        self.gh.prs[pk(1, "o", "a")] = pending_pr(1)
+        self.start(view)
+        pw_paths.progress_path("o", "a", 1).write_text("{not json", encoding="utf-8")
+        events, err, _ = self.run_monitor(2)
+        self.assertEqual(events, [])
+        held = self.lease()
+        self.assertEqual((held["status"], held["last_error"]), ("armed", "progress unreadable"))
+        self.assertIn("progress file unreadable", err)
 
     def test_monitor_exits_when_claude_is_gone(self):
         view = watch({A1: "authored"})

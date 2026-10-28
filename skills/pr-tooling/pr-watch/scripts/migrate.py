@@ -7,9 +7,10 @@ import pathlib
 import re
 import subprocess
 
-from lease import STALE_AFTER_SECONDS
+from lease import CLOSED_RETENTION_SECONDS, STALE_AFTER_SECONDS
 from pw_io import no_window, read_json, write_json_atomic
-from pw_paths import parse_ref, pr_key, progress_path
+from pw_paths import lease_path, parse_ref, pr_key, progress_path
+from pw_progress import FIELDS as PROGRESS_FIELDS
 
 CLAUDE_IMAGE = re.compile(r"^claude\.exe", re.IGNORECASE)
 MONITOR_FLAG = re.compile(r"(?:^|\s)--monitor(?:\s|$)")
@@ -89,6 +90,31 @@ def _heartbeat_age(path, now: float) -> float:
         return float("inf")
 
 
+def _old_prs(watch) -> list[tuple[tuple[str, str, int], dict]]:
+    prs = watch.get("prs") if isinstance(watch, dict) else None
+    if not isinstance(prs, dict):
+        return []
+    owner, repo = watch.get("owner", ""), watch.get("repo", "")
+    found = []
+    for n, entry in prs.items():
+        try:
+            found.append((parse_ref(f"{owner}/{repo}#{n}"), entry))
+        except ValueError:
+            continue
+    return found
+
+
+def _unclaimed_after_import(migrated, now) -> list[str]:
+    # A lease is pruned only after 7 days closed, so an older import cannot be mistaken for an interrupted one.
+    try:
+        if now - migrated.stat().st_mtime > CLOSED_RETENTION_SECONDS:
+            return []
+        watch = read_json(migrated)
+    except (OSError, ValueError):
+        return []
+    return [pr_key(*ref) for ref, _ in _old_prs(watch) if not lease_path(*ref).exists()]
+
+
 def scan(main, claude_pid, procs, now) -> dict:
     state_dir = pathlib.Path(main) / ".pr-autopilot"
     result = {"state": "none", "monitor_pid": None, "owner_pid": None,
@@ -96,9 +122,9 @@ def scan(main, claude_pid, procs, now) -> dict:
     try:
         watch = read_json(state_dir / "watch.json")
     except FileNotFoundError:
+        result["prs"] = _unclaimed_after_import(state_dir / "watch.json.migrated", now)
         return result
-    owner, repo = str(watch.get("owner", "")), str(watch.get("repo", ""))
-    result["prs"] = [pr_key(owner, repo, int(n)) for n in watch.get("prs", {}) if str(n).isdigit()]
+    result["prs"] = [pr_key(*ref) for ref, _ in _old_prs(watch)]
     age = _heartbeat_age(state_dir / "watch-heartbeat", now)
     result["heartbeat_age"] = None if age == float("inf") else int(age)
     monitor = old_monitor(main, procs)
@@ -113,27 +139,30 @@ def scan(main, claude_pid, procs, now) -> dict:
 
 
 def import_progress(main) -> list[str]:
-    import poll
-
     state_dir = pathlib.Path(main) / ".pr-autopilot"
     watch_path = state_dir / "watch.json"
-    fields = {*poll.COMMON_START, *poll.AUTHORED_START, *poll.REVIEWED_START}
     covered = []
     if watch_path.exists():
         watch = read_json(watch_path)
-        for number, entry in watch.get("prs", {}).items():
-            if not str(number).isdigit():
-                continue
-            owner, repo, n = parse_ref(f"{watch.get('owner', '')}/{watch.get('repo', '')}#{number}")
+        for (owner, repo, n), entry in _old_prs(watch):
             target = progress_path(owner, repo, n)
             if not target.exists():
                 target.parent.mkdir(parents=True, exist_ok=True)
-                write_json_atomic(target, {k: v for k, v in entry.items() if k in fields})
+                write_json_atomic(target, {k: v for k, v in entry.items() if k in PROGRESS_FIELDS})
             covered.append(pr_key(owner, repo, n))
         os.replace(watch_path, state_dir / "watch.json.migrated")
+        os.utime(state_dir / "watch.json.migrated")
     for name in ("watch-heartbeat", "watch-poller.json"):
         (state_dir / name).unlink(missing_ok=True)
     return covered
+
+
+def finish_import(main) -> None:
+    state_dir = pathlib.Path(main) / ".pr-autopilot"
+    try:
+        os.replace(state_dir / "watch.json.migrated", state_dir / "watch.json.imported")
+    except FileNotFoundError:
+        pass
 
 
 def identity_ok(claude_pid, my_pid, procs) -> str | None:

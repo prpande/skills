@@ -27,7 +27,34 @@ def dead(pid):
     return None
 
 
+class FakeClock:
+    def __init__(self, on_sleep=None):
+        self.t = 0.0
+        self.on_sleep = on_sleep
+
+    def monotonic(self):
+        return self.t
+
+    def sleep(self, seconds):
+        self.t += seconds
+        if self.on_sleep:
+            self.on_sleep()
+
+
 class LeaseCase(unittest.TestCase):
+    def fake_clock(self, on_sleep=None):
+        clock = FakeClock(on_sleep)
+        for name in ("monotonic", "sleep"):
+            patcher = mock.patch.object(lease.time, name, getattr(clock, name))
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        return clock
+
+    def no_wait(self):
+        patcher = mock.patch.object(lease, "CLAIM_LOCK_WAIT_SECONDS", 0)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -152,16 +179,42 @@ class ClaimTests(LeaseCase):
         self.assertIsNone(lease.read_lease("o", "r", 1))
         self.assertEqual(self.claim(holder()), (True, "claimed"))
 
-    def test_fresh_claim_lock_is_busy_stale_is_removed(self):
+    def lock_at(self, mtime):
         lock = pw_paths.claim_lock_path("o", "r", 1)
         lock.parent.mkdir(parents=True, exist_ok=True)
         lock.write_text("", encoding="utf-8")
-        os.utime(lock, (NOW - 10, NOW - 10))
+        os.utime(lock, (mtime, mtime))
+        return lock
+
+    def test_fresh_claim_lock_is_busy_stale_is_removed(self):
+        self.no_wait()
+        lock = self.lock_at(NOW - 10)
         self.assertEqual(self.claim(holder()), (False, "busy: another claim in progress"))
         self.assertTrue(lock.exists())
         os.utime(lock, (NOW - 61, NOW - 61))
         self.assertEqual(self.claim(holder()), (True, "claimed"))
         self.assertFalse(lock.exists())
+
+    def test_claim_waits_for_a_claim_in_progress(self):
+        lock = self.lock_at(NOW)
+        clock = self.fake_clock(on_sleep=lambda: lock.unlink(missing_ok=True))
+        self.assertEqual(self.claim(holder()), (True, "claimed"))
+        self.assertLess(clock.t, 1)
+
+    def test_claim_breaks_a_lock_left_by_a_dead_claimer_inside_its_wait(self):
+        lock = self.lock_at(NOW - 10)
+        clock = self.fake_clock()
+        self.assertEqual(self.claim(holder()), (True, "claimed"))
+        self.assertGreater(clock.t, 50)
+        self.assertLess(clock.t, lease.CLAIM_LOCK_WAIT_SECONDS)
+        self.assertFalse(lock.exists())
+        self.assertEqual(lease.read_lease("o", "r", 1)["heartbeat"], pw_paths.iso_utc(NOW + clock.t))
+
+    def test_claim_judges_a_takeover_at_the_time_the_lock_was_taken(self):
+        self.put(h=holder("s-2", pid=300), heartbeat=NOW - 280)
+        self.lock_at(NOW - 10)
+        self.fake_clock()
+        self.assertEqual(self.claim(holder()), (True, "taken-over"))
 
     def test_lock_removed_when_claim_refused(self):
         other = holder()
@@ -196,6 +249,7 @@ class ClaimTests(LeaseCase):
             self.assertIsNone(lease.read_lease("o", "r", 1))
 
     def test_stale_lock_break_loses_race_to_another_claimer_is_busy(self):
+        self.no_wait()
         lock = pw_paths.claim_lock_path("o", "r", 1)
         lock.parent.mkdir(parents=True, exist_ok=True)
         lock.write_text("", encoding="utf-8")
@@ -213,6 +267,7 @@ class ClaimTests(LeaseCase):
         self.assertTrue(lock.exists())
 
     def test_stale_lock_break_that_catches_a_fresh_lock_puts_it_back(self):
+        self.no_wait()
         lock = pw_paths.claim_lock_path("o", "r", 1)
         lock.parent.mkdir(parents=True, exist_ok=True)
         lock.write_text("", encoding="utf-8")
@@ -231,6 +286,7 @@ class ClaimTests(LeaseCase):
         self.assertEqual(list(lock.parent.glob("*.stale")), [])
 
     def test_stale_lock_held_open_is_busy_not_an_error(self):
+        self.no_wait()
         lock = pw_paths.claim_lock_path("o", "r", 1)
         lock.parent.mkdir(parents=True, exist_ok=True)
         lock.write_text("", encoding="utf-8")
@@ -360,9 +416,20 @@ class WriteTests(LeaseCase):
         lock = pw_paths.claim_lock_path("o", "r", 1)
         lock.touch()
         os.utime(lock, (NOW, NOW))
-        with mock.patch.object(lease.time, "sleep"), self.assertRaises(TimeoutError):
+        clock = self.fake_clock(on_sleep=lambda: os.utime(lock, (NOW + clock.t, NOW + clock.t)))
+        with self.assertRaises(TimeoutError):
             lease.set_status("o", "r", 1, "stopped", "s-1", NOW)
         self.assertEqual(lease.read_lease("o", "r", 1)["status"], "armed")
+
+    def test_set_status_breaks_a_lock_left_by_a_dead_holder(self):
+        self.put()
+        lock = pw_paths.claim_lock_path("o", "r", 1)
+        lock.touch()
+        os.utime(lock, (NOW, NOW))
+        clock = self.fake_clock()
+        self.assertTrue(lease.set_status("o", "r", 1, "stopped", "s-1", NOW))
+        self.assertGreater(clock.t, lease.CLAIM_LOCK_STALE_SECONDS)
+        self.assertEqual(lease.read_lease("o", "r", 1)["status"], "stopped")
 
     def test_lease_writes_release_the_lock(self):
         self.put()

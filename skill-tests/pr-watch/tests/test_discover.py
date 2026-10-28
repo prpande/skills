@@ -84,6 +84,34 @@ class EvidenceTests(unittest.TestCase):
         for url in ("https://gitlab.com/o/r", "https://github.com.evil.io/o/r"):
             self.assertIsNone(discover.parse_origin(url), url)
 
+    def test_ssh_host_alias_is_resolved_through_ssh_config(self):
+        hosts = {"github-work": "github.com", "gh443": "ssh.github.com",
+                 "ghe": "github.example.com"}
+        asked = []
+
+        def resolve(alias):
+            asked.append(alias)
+            return hosts.get(alias)
+        for url in ("git@github-work:O/R.git", "ssh://git@github-work/o/r",
+                    "github-work:o/r", "ssh://git@gh443:443/o/r.git"):
+            self.assertEqual(discover.parse_origin(url, resolve), "o/r", url)
+        for url in ("git@ghe:o/r.git", "git@unknown:o/r", "C:/src/r", "-oProxyCommand=x:o/r"):
+            self.assertIsNone(discover.parse_origin(url, resolve), url)
+        self.assertNotIn("-oProxyCommand=x", asked)
+        self.assertNotIn("C", asked)
+
+    def test_ssh_hostname_reads_the_resolved_hostname_once(self):
+        discover.SSH_HOSTS.clear()
+        self.addCleanup(discover.SSH_HOSTS.clear)
+        done = mock.Mock(returncode=0, stdout="user git\nhostname github.com\nport 22\n")
+        with mock.patch.object(discover.subprocess, "run", return_value=done) as run:
+            self.assertEqual(discover.ssh_hostname("github-work"), "github.com")
+            self.assertEqual(discover.ssh_hostname("github-work"), "github.com")
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0], ["ssh", "-G", "github-work"])
+        with mock.patch.object(discover.subprocess, "run", side_effect=OSError("no ssh")):
+            self.assertIsNone(discover.ssh_hostname("other"))
+
     def test_push_refspec_names_destination(self):
         ev = kinds(Transcript().call("git push origin HEAD:refs/heads/feat-2", branch="main"))
         self.assertEqual(ev["branches"][("o", "r", "feat-2")], ["push-names-branch"])
@@ -223,8 +251,7 @@ class FakeDiscoverGh:
         self.calls.append(list(args))
         if args[:2] == ["pr", "list"]:
             repo = args[args.index("--repo") + 1]
-            head = args[args.index("--head") + 1]
-            return json.dumps(self.lists.get((repo, head), []))
+            return json.dumps(self.lists.get(repo, []))
         if args[:2] == ["pr", "view"]:
             return json.dumps(self.views[args[2]])
         raise AssertionError(args)
@@ -251,8 +278,8 @@ class DiscoverTests(unittest.TestCase):
         return discover.discover(self.gh, "sess", SELF, origin_of, projects=self.projects)
 
     def listed(self):
-        self.gh.lists[("o/r", "feat-1")] = [
-            {"number": 7, "url": self.url, "headRefName": "feat-1"}]
+        self.gh.lists.setdefault("o/r", []).append(
+            {"number": 7, "url": self.url, "headRefName": "feat-1"})
 
     def view(self, state="OPEN", login=SELF, branch="feat-1"):
         self.gh.views[self.url] = {"number": 7, "url": self.url, "state": state,
@@ -266,6 +293,24 @@ class DiscoverTests(unittest.TestCase):
         args = self.gh.calls[0]
         self.assertEqual(args[args.index("--author") + 1], SELF)
         self.assertEqual(args[args.index("--state") + 1], "open")
+
+    def test_one_list_call_per_repo_keeps_only_branches_the_session_wrote(self):
+        self.listed()
+        self.gh.lists["o/r"] += [
+            {"number": 8, "url": "https://github.com/o/r/pull/8", "headRefName": "feat-2"},
+            {"number": 9, "url": "https://github.com/o/r/pull/9", "headRefName": "other"}]
+        found = self.run_discover(Transcript().call("git commit -m a", branch="feat-1")
+                                  .call("git commit -m b", branch="feat-2"))
+        self.assertEqual([p["ref"] for p in found], ["o/r#7", "o/r#8"])
+        self.assertEqual(sum(1 for c in self.gh.calls if c[:2] == ["pr", "list"]), 1)
+
+    def test_a_full_pr_list_warns_that_later_prs_are_missed(self):
+        self.gh.lists["o/r"] = [{"number": n, "url": f"https://github.com/o/r/pull/{n}",
+                                 "headRefName": f"b{n}"} for n in range(discover.PR_LIST_LIMIT)]
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.run_discover(Transcript().call("git commit -m x"))
+        self.assertIn("PRs past that are not discovered", err.getvalue())
 
     def test_no_pr_for_branch_means_empty(self):
         self.assertEqual(self.run_discover(Transcript().call("git commit -m x")), [])
@@ -362,33 +407,42 @@ class CloneTests(unittest.TestCase):
     def top(self, path):
         return {"D:/a/sub": "D:/a", "D:/c": "D:/c"}.get(path)
 
-    def test_matching_cwds_map_to_top_level_newest_first_and_skip_other_repos(self):
-        found = discover.clone_candidates("sess", "O", "R", origin_of, projects=self.tmp.name,
-                                          toplevel_of=self.top)
-        self.assertEqual(found, ["D:/a", "D:/c"])
+    def test_the_newest_matching_cwd_maps_to_its_top_level_and_stops_the_search(self):
+        asked = []
+
+        def counting_origin(path):
+            asked.append(path)
+            return origin_of(path)
+        found = discover.find_clone("sess", "O", "R", counting_origin, projects=self.tmp.name,
+                                    toplevel_of=self.top)
+        self.assertEqual((found, asked), ("D:/a", ["D:/a/sub"]))
+
+    def test_a_path_from_another_repo_is_skipped(self):
+        t = Transcript().call("x", cwd="D:/c").call("x", cwd="D:/b")
+        write_transcript(self.tmp.name, "other", t)
+        self.assertEqual(discover.find_clone("other", "o", "r", origin_of, projects=self.tmp.name,
+                                             toplevel_of=self.top), "D:/c")
 
     def test_a_git_dash_c_path_counts_as_a_clone_the_session_used(self):
         t = Transcript().call('git -C "D:/c" status', cwd="D:/b")
         t.call("git -C D:/a/sub log -1 && git status", cwd="D:/b")
         write_transcript(self.tmp.name, "dash", t)
-        found = discover.clone_candidates("dash", "o", "r", origin_of, projects=self.tmp.name,
-                                          toplevel_of=self.top)
-        self.assertEqual(found, ["D:/a", "D:/c"])
+        found = discover.find_clone("dash", "o", "r", origin_of, projects=self.tmp.name,
+                                    toplevel_of=self.top)
+        self.assertEqual(found, "D:/a")
 
     def test_a_cd_target_counts_as_a_clone_the_session_used(self):
         t = Transcript().call("Set-Location 'D:/c'; git status", cwd="D:/b")
         t.call("cd /d/a/sub && git log -1", cwd="D:/b")
         write_transcript(self.tmp.name, "cd", t)
         with mock.patch.object(discover, "WINDOWS", True):
-            found = discover.clone_candidates("cd", "o", "r", origin_of, projects=self.tmp.name,
-                                              toplevel_of=self.top)
-        self.assertEqual(found, ["D:/a", "D:/c"])
+            found = discover.find_clone("cd", "o", "r", origin_of, projects=self.tmp.name,
+                                        toplevel_of=self.top)
+        self.assertEqual(found, "D:/a")
 
     def test_no_transcript_or_no_match(self):
-        self.assertEqual(discover.clone_candidates("nope", "o", "r", origin_of,
-                                                   projects=self.tmp.name), [])
-        self.assertEqual(discover.clone_candidates("sess", "x", "y", origin_of,
-                                                   projects=self.tmp.name), [])
+        self.assertIsNone(discover.find_clone("nope", "o", "r", origin_of, projects=self.tmp.name))
+        self.assertIsNone(discover.find_clone("sess", "x", "y", origin_of, projects=self.tmp.name))
 
 
 DRIVER = '''
@@ -402,7 +456,7 @@ def fake_run(cmd, *args, **kwargs):
         return real_run(cmd, *args, **kwargs)
     if cmd[1:3] == ["api", "user"]:
         return subprocess.CompletedProcess(cmd, 0, stdout="prpande\\n", stderr="")
-    if cmd[cmd.index("--head") + 1] == "feat-1":
+    if cmd[1:3] == ["pr", "view"]:
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
     listed = [{"number": 8, "url": "https://github.com/o/r/pull/8", "headRefName": "feat-2"}]
     return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(listed), stderr="")
@@ -453,7 +507,7 @@ class CliTests(unittest.TestCase):
     def test_run_as_a_script_survives_a_failing_candidate(self):
         poll_py = pathlib.Path(poll.__file__)
         write_transcript(pathlib.Path(self.tmp.name) / ".claude" / "projects", "sess-1",
-                         Transcript().call("git commit -m a", branch="feat-1")
+                         Transcript().call("gh pr create", output="https://github.com/o/r/pull/9")
                          .call("git commit -m b", branch="feat-2"))
         driver = pathlib.Path(self.tmp.name) / "driver.py"
         driver.write_text(DRIVER, encoding="utf-8")

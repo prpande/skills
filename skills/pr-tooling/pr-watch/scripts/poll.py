@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import copy
 import http.client
 import json
 import os
@@ -17,6 +16,7 @@ import re
 import subprocess
 import sys
 import time
+from typing import NamedTuple
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -26,7 +26,8 @@ if __name__ == "__main__":
 
 import lease
 from pw_io import GhError, as_pid, no_window, read_json, write_json_atomic
-from pw_paths import NAME, iso_utc, parse_ref, pr_key, progress_path
+from pw_paths import NAME, iso_utc, parse_ref, pr_key, progress_path, repo_slug
+from pw_progress import starting_progress
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 TICK_SECONDS = 60
@@ -42,19 +43,12 @@ ADO_BUILD = "https://dev.azure.com/{org}/{project}/_apis/build/builds/{build_id}
 ADO_ORG = re.compile(r"^[A-Za-z0-9._-]+$")
 ADO_PROJECT = re.compile(r"^[A-Za-z0-9._ %!&()@~-]+$")
 POLLER_ERROR_AFTER = 5
+PR_FAULTS = (GhError, KeyError, TypeError, ValueError, AttributeError)
 CLAUDE_GONE_EXIT = 3
 IS_WINDOWS = os.name == "nt"
 PROGRESS_SIGNATURE_FIELDS = ("settled_ids", "handled_top_level_ids", "posted_reply_ids",
                              "escalated_ids", "rereviewed_head", "ci_handled")
 REPORTED_STATUSES = ("armed", "stopped")
-COMMON_START = {"posted_reply_ids": [], "settled_ids": [], "escalated_ids": [],
-                "handled_top_level_ids": {}, "slack_ts": None}
-AUTHORED_START = {"ci_reruns": [], "ci_rerun_queued": [], "ci_handled": [], "ci_log_retries": [],
-                  "ci_log_occurrence": None, "cap_notified_head": None, "ci_fix_pushes": 0,
-                  "review_fix_pushes": 0, "last_pushed_head": None, "queued_head": None,
-                  "queued_at": None, "wait_notice_at": None, "retry_after": None,
-                  "skip_reason": None}
-REVIEWED_START = {"finding_verdicts": {}, "rereviewed_head": None, "retry_after": None}
 LOG_LINES = 2000
 FAILURE_MARK = re.compile(
     r"##\[error\]|\berror [A-Z]{2,5}\d{3,5}\b|\bFailed [\w.]+ \[|\bTest Run Failed\b|npm ERR!")
@@ -203,11 +197,6 @@ def pr_key_of(pr):
     return pr_key(*parse_ref(pr["url"]))
 
 
-def starting_progress(role):
-    start = dict(COMMON_START, **(AUTHORED_START if role == "authored" else REVIEWED_START))
-    return copy.deepcopy(start)
-
-
 def progress_signature(entry):
     return json.dumps([entry.get(field) for field in PROGRESS_SIGNATURE_FIELDS], sort_keys=True)
 
@@ -223,11 +212,23 @@ def load_view(session_dir):
     dry_run = bool(watch.get("dry_run"))
     prs = {}
     for ref, entry in watch.get("prs", {}).items():
-        owner, repo, number = parse_ref(ref)
-        stored = read_json(progress_file(session_dir, owner, repo, number, dry_run), default={})
-        prs[pr_key(owner, repo, number)] = {
-            **starting_progress(entry.get("role")), **stored, **entry,
-            "owner": owner, "repo": repo, "number": number}
+        try:
+            owner, repo, number = parse_ref(ref)
+            if not isinstance(entry, dict):
+                raise ValueError("entry is not an object")
+        except ValueError as exc:
+            warn(f"watch.json entry {ref!r} skipped: {exc}")
+            continue
+        key, fault = pr_key(owner, repo, number), None
+        try:
+            stored = read_json(progress_file(session_dir, owner, repo, number, dry_run), default={})
+            if not isinstance(stored, dict):
+                raise ValueError("not an object")
+        except ValueError as exc:
+            warn(f"PR {key}: progress file unreadable: {exc}")
+            stored, fault = {}, "progress unreadable"
+        prs[key] = {**starting_progress(entry.get("role")), **stored, **entry,
+                    "owner": owner, "repo": repo, "number": number, "load_fault": fault}
     return {"self_login": watch["self_login"], "bot_allowlist": watch.get("bot_allowlist", []),
             "ado_orgs": watch.get("ado_orgs", []), "push_queue": watch.get("push_queue", []),
             "session_id": watch.get("session_id"), "claude_pid": watch.get("claude_pid"),
@@ -350,7 +351,7 @@ def replies_after_me(thread, self_login, allowlist):
 
 
 def changed_files(gh, owner, repo, old, new):
-    out = gh(["api", f"repos/{owner}/{repo}/compare/{old}...{new}", "--paginate",
+    out = gh(["api", f"repos/{repo_slug(owner, repo)}/compare/{old}...{new}", "--paginate",
               "--jq", "(.files // [])[].filename"])
     return sorted({line.strip() for line in out.splitlines() if line.strip()})
 
@@ -389,15 +390,21 @@ def check_key(check):
     return f"{check.get('workflow') or ''}|{check['name']}"
 
 
+class Evaluation(NamedTuple):
+    event: dict | None
+    signature: str
+    pending: bool
+
+
 def evaluate_ci(gh, entry, node, seen, stored):
     """`seen` dedupes (empty on a forced pass); `stored` is kept when nothing is red."""
     if rollup_state(node) not in FAILED_ROLLUP:
-        return None, stored, False
-    slug = f"{entry['owner']}/{entry['repo']}"
+        return Evaluation(None, stored, False)
+    slug = repo_slug(entry["owner"], entry["repo"])
     red = sorted((c for c in required_checks(gh, slug, entry["number"]) if c.get("bucket") == "fail"),
                  key=check_key)
     if not red:
-        return None, stored, False
+        return Evaluation(None, stored, False)
     head = node["headRefOid"]
     handled = set(entry.get("ci_handled") or [])
     unhandled = any(f"{head}|{c.get('workflow') or ''}|{c['name']}|{c.get('completedAt') or ''}"
@@ -405,24 +412,26 @@ def evaluate_ci(gh, entry, node, seen, stored):
     signature = f"ci:{head}:" + ",".join(
         f"{check_key(c)}|{c.get('completedAt') or ''}" for c in red)
     if signature == seen.get("last_ci_signature"):
-        return None, signature, unhandled
-    return {"pr": entry_key(entry), "role": "authored", "kind": "ci-red", "head": head,
-            "checks": [{"name": c["name"], "workflow": c.get("workflow") or "",
-                        "completed_at": c.get("completedAt")} for c in red]}, signature, unhandled
+        return Evaluation(None, signature, unhandled)
+    event = {"pr": entry_key(entry), "role": "authored", "kind": "ci-red", "head": head,
+             "checks": [{"name": c["name"], "workflow": c.get("workflow") or "",
+                         "completed_at": c.get("completedAt")} for c in red]}
+    return Evaluation(event, signature, unhandled)
 
 
 def evaluate_authored(view, pr, entry, prev):
     threads, top = pending(pr, entry, view["self_login"], view["bot_allowlist"])
     ids = sorted([c["id"] for _, tail in threads for c in tail] + [i["id"] for _, i in top])
     if not ids:
-        return None, "", False
+        return Evaluation(None, "", False)
     signature = "pending:" + ",".join(ids)
     if signature == prev.get("last_signature"):
-        return None, signature, True
-    return {"pr": entry_key(entry), "role": "authored", "kind": "pending",
-            "threads": [t["id"] for t, _ in threads],
-            "comments": [i["id"] for s, i in top if s == "issue"],
-            "reviews": [i["id"] for s, i in top if s == "review"]}, signature, True
+        return Evaluation(None, signature, True)
+    event = {"pr": entry_key(entry), "role": "authored", "kind": "pending",
+             "threads": [t["id"] for t, _ in threads],
+             "comments": [i["id"] for s, i in top if s == "issue"],
+             "reviews": [i["id"] for s, i in top if s == "review"]}
+    return Evaluation(event, signature, True)
 
 
 def review_start(view, pr, entry):
@@ -436,43 +445,45 @@ def compare_capped(files):
     return len(files) >= COMPARE_FILE_CAP
 
 
-def evaluate_reviewed(gh, view, pr, entry, prev):
+def evaluate_reviewed(view, pr, entry, prev, compare):
+    """`compare(old, new)` returns the paths changed between the two heads."""
     me, allow = view["self_login"], view["bot_allowlist"]
     key = entry_key(entry)
     threads = my_threads(pr, me, allow)
     if not threads:
-        return None, "", False
+        return Evaluation(None, "", False)
     replied = {t["id"]: replies_after_me(t, me, allow) for t in threads}
     replies = [c for thread_replies in replied.values() for c in thread_replies]
     escalated = set(entry.get("escalated_ids") or [])
     answered = all(c["id"] in escalated for c in replies)
     if answered and all(t["isResolved"] for t in threads):
         if prev.get("last_signature") == "settled":
-            return None, "settled", False
-        return {"pr": key, "role": "reviewed", "kind": "settled"}, "settled", False
+            return Evaluation(None, "settled", False)
+        return Evaluation({"pr": key, "role": "reviewed", "kind": "settled"}, "settled", False)
     old, new = review_start(view, pr, entry), pr["headRefOid"]
     author = (pr.get("author") or {}).get("login")
     reply_ids = sorted(c["id"] for c in replies)
     author_replied = any((c["author"] or {}).get("login") == author for c in replies)
     if old and old != new:
         signature = f"head:{new}:" + ",".join(reply_ids)
-        files = set(changed_files(gh, entry["owner"], entry["repo"], old, new))
+        files = set(compare(old, new))
         touches = compare_capped(files) or any(t["path"] in files for t in threads)
         review_pending = touches or author_replied or not answered
         if signature == prev.get("last_signature") or not (touches or author_replied):
-            return None, signature, review_pending
-        return {"pr": key, "role": "reviewed", "kind": "head-moved",
-                "old_head": old, "new_head": new, "touches_my_findings": touches,
-                "author_replied": author_replied}, signature, review_pending
+            return Evaluation(None, signature, review_pending)
+        event = {"pr": key, "role": "reviewed", "kind": "head-moved",
+                 "old_head": old, "new_head": new, "touches_my_findings": touches,
+                 "author_replied": author_replied}
+        return Evaluation(event, signature, review_pending)
     review_pending = not answered
     if not replies:
-        return None, "", review_pending
+        return Evaluation(None, "", review_pending)
     signature = "reply:" + ",".join(reply_ids)
     if signature == prev.get("last_signature"):
-        return None, signature, review_pending
-    return {"pr": key, "role": "reviewed", "kind": "reply",
-            "threads": [tid for tid, thread_replies in replied.items() if thread_replies]
-            }, signature, review_pending
+        return Evaluation(None, signature, review_pending)
+    event = {"pr": key, "role": "reviewed", "kind": "reply",
+             "threads": [tid for tid, thread_replies in replied.items() if thread_replies]}
+    return Evaluation(event, signature, review_pending)
 
 
 def warn(message):
@@ -490,6 +501,11 @@ def retry_gate(retry_after, key, prev, now, force):
 def retry_spend(retry_after, retry, failed, prev, key):
     """The value to store under `key`: spent (this retry_after) once, else kept."""
     return retry_after if retry and not failed else prev.get(key)
+
+
+def pr_fault(poller, key, exc):
+    warn(f"PR {key}: {type(exc).__name__}: {exc}")
+    poller["errors"][key] = "check failed"
 
 
 def tick_pr(gh, view, poller, key, node, now, force, events):
@@ -521,6 +537,14 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
     ci_pending = prev.get("ci_pending", False) if authored else False
     review_event = ci_event = None
     review_failed = ci_failed = False
+    compared = prev.get("compared")
+
+    def compare(old, new):
+        nonlocal compared
+        if not compared or compared[:2] != [old, new]:
+            compared = [old, new, changed_files(gh, entry["owner"], entry["repo"], old, new)]
+        return compared[2]
+
     if moved or forced:
         try:
             pr = fetch_pr(gh, entry["owner"], entry["repo"], entry["number"])
@@ -528,16 +552,16 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
                 review_event, signature, review_pending = evaluate_authored(view, pr, entry, seen)
             else:
                 review_event, signature, review_pending = evaluate_reviewed(
-                    gh, view, pr, entry, seen)
-        except GhError as exc:
-            warn(f"PR {key}: {exc}")
+                    view, pr, entry, seen, compare)
+        except PR_FAULTS as exc:
+            pr_fault(poller, key, exc)
             review_failed = True
     if authored and (ci_moved or ci_forced):
         try:
             ci_event, ci_signature, ci_pending = evaluate_ci(
                 gh, entry, node, ci_seen, ci_signature)
-        except GhError as exc:
-            warn(f"PR {key}: {exc}")
+        except PR_FAULTS as exc:
+            pr_fault(poller, key, exc)
             ci_failed = True
     events += [e for e in (review_event, ci_event) if e]
     if review_failed:
@@ -550,6 +574,8 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
                  "last_ci_signature": ci_signature, "review_pending": review_pending,
                  "ci_pending": ci_pending, "pending_since": pending_since,
                  "progress_sig": progress_sig}
+    if compared:
+        new_entry["compared"] = compared
     # Spent independently per branch, so a standing CI-only failure does not
     # keep re-forcing the unchanged review branch too.
     retried_at = retry_spend(retry_after, retry_review, review_failed, prev, "retried_at")
@@ -567,12 +593,13 @@ def tick_once(gh, view, poller, now, force=False):
     poller.setdefault("prs", {})
     closed = poller.setdefault("closed", [])
     closed[:] = [k for k in closed if k in view["prs"]]
-    poller["unreachable"] = []
+    poller.pop("unreachable", None)
+    errors = poller["errors"] = {}
     poller["heads"] = {}
     groups = {}
     for key in sorted(view["prs"]):
+        entry = view["prs"][key]
         if key not in closed:
-            entry = view["prs"][key]
             groups.setdefault((entry["owner"], entry["repo"]), []).append(entry["number"])
     if groups:
         query, aliases = tick_query(groups)
@@ -580,17 +607,27 @@ def tick_once(gh, view, poller, now, force=False):
         for alias, (owner, repo) in aliases.items():
             nodes = heads.get(alias)
             if nodes is None:
-                warn(f"{owner}/{repo}: repository missing from the heads query; "
+                warn(f"{repo_slug(owner, repo)}: repository missing from the heads query; "
                      "skipping its PRs this tick")
-                poller["unreachable"] += [pr_key(owner, repo, n) for n in groups[(owner, repo)]]
+                errors.update(dict.fromkeys(
+                    (pr_key(owner, repo, n) for n in groups[(owner, repo)]), "repo unreachable"))
                 continue
             for n in groups[(owner, repo)]:
+                key = pr_key(owner, repo, n)
                 node = nodes.get(f"p{n}")
                 if node is None:
-                    warn(f"PR {pr_key(owner, repo, n)}: null alias in the heads query; "
-                         "skipping this tick")
+                    warn(f"PR {key}: null alias in the heads query; skipping this tick")
+                    errors[key] = "PR unreachable"
                     continue
-                tick_pr(gh, view, poller, pr_key(owner, repo, n), node, now, force, events)
+                fault = view["prs"][key].get("load_fault")
+                if fault and node["state"] == "OPEN":
+                    errors[key] = fault
+                    poller["heads"][key] = node["headRefOid"]
+                    continue
+                try:
+                    tick_pr(gh, view, poller, key, node, now, force, events)
+                except PR_FAULTS as exc:
+                    pr_fault(poller, key, exc)
     queue = list(view.get("push_queue", []))
     if not queue:
         poller["last_tick_queue"] = []
@@ -648,7 +685,6 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
             if key in closed_before:
                 continue
             closing = key in poller["closed"]
-            unreachable = key in poller["unreachable"]
             owner, repo, number = entry["owner"], entry["repo"], entry["number"]
             head = poller["heads"].get(key)
             if head is None:
@@ -658,7 +694,7 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
                 result = write_lease(
                     owner, repo, number, session_id=view["session_id"], now=now, head=head,
                     pending_since=iso_utc(since) if since and not closing else None,
-                    last_error="repo unreachable" if unreachable else None,
+                    last_error=poller["errors"].get(key),
                     poller_pid=os.getpid(), status="closed" if closing else "armed")
             except OSError as exc:
                 warn(f"lease for {key}: {type(exc).__name__}: {exc}")
@@ -848,15 +884,21 @@ def report(gh, session_dir, reseed=False):
                                                item[1]["number"])):
         if entry.get("status") not in REPORTED_STATUSES:
             continue
+        if entry.get("load_fault"):
+            errors.append(f"PR {key}: {entry['load_fault']}")
+            continue
         try:
             pr = fetch_pr(gh, entry["owner"], entry["repo"], entry["number"])
-        except GhError as exc:
-            errors.append(f"PR {key}: {exc}")
+            lines = (attention_lines(view, pr, entry),
+                     new_lines(key, pr, set(seen.get(key, [])), me, allow),
+                     standing_line(key, pr, entry, me, allow), all_ids(pr))
+        except PR_FAULTS as exc:
+            errors.append(f"PR {key}: {type(exc).__name__}: {exc}")
             continue
-        attention += attention_lines(view, pr, entry)
-        new += new_lines(key, pr, set(seen.get(key, [])), me, allow)
-        standing.append(standing_line(key, pr, entry, me, allow))
-        fresh[key] = all_ids(pr)
+        attention += lines[0]
+        new += lines[1]
+        standing.append(lines[2])
+        fresh[key] = lines[3]
     for line in errors:
         print(f"ERROR  {line}")
     if not reseed and not (errors or attention or new or first_run):
@@ -955,7 +997,7 @@ def base_conclusion(on_base, workflow, name):
 
 
 def checks_payload(gh, owner, repo, number):
-    slug = f"{owner}/{repo}"
+    slug = repo_slug(owner, repo)
     base, head = gh(["api", f"repos/{slug}/pulls/{number}",
                      "--jq", '.base.ref + " " + .head.sha']).split()
     on_base = base_conclusions(gh, slug, base)
@@ -1115,6 +1157,8 @@ def main(argv=None, gh=run_gh):
                       help="print the state of the old-format watch in a main checkout")
     mode.add_argument("--migrate-import", metavar="MAIN",
                       help="import the old-format watch's progress into this session")
+    mode.add_argument("--migrate-done", metavar="MAIN",
+                      help="mark the old-format watch's import as complete")
     mode.add_argument("--check-identity", action="store_true",
                       help="exit 1 when CLAUDE_PID is not this process's claude")
     mode.add_argument("--end-leftover-monitors", action="store_true",
@@ -1198,14 +1242,13 @@ def discover_mode(args, gh):
     import discover
     if args.find_clone:
         owner, repo, number = parse_ref(args.find_clone)
-        found = (discover.clone_candidates(args.session_id, owner, repo, discover.origin_of)
-                 or [p for p in [discover.holder_clone(owner, repo, number, discover.origin_of)]
-                     if p])
+        found = (discover.find_clone(args.session_id, owner, repo, discover.origin_of)
+                 or discover.holder_clone(owner, repo, number, discover.origin_of))
         if not found:
             print(f"pr-watch: no local clone of {owner}/{repo} known to this session",
                   file=sys.stderr)
             return 1
-        print(found[0])
+        print(found)
         return 0
     if discover.find_transcript(args.session_id) is None:
         print(f"pr-watch: no transcript for session {args.session_id}", file=sys.stderr)
@@ -1231,6 +1274,9 @@ def migrate_mode(args):
     if args.migrate_import:
         print(json.dumps(migrate.import_progress(args.migrate_import)))
         return 0
+    if args.migrate_done:
+        migrate.finish_import(args.migrate_done)
+        return 0
     procs = migrate.list_processes()
     if args.migrate_scan:
         print(json.dumps(migrate.scan(args.migrate_scan, claude_pid, procs, time.time())))
@@ -1245,7 +1291,7 @@ def migrate_mode(args):
 
 
 def run_mode(args, gh):
-    if (args.migrate_scan or args.migrate_import or args.check_identity
+    if (args.migrate_scan or args.migrate_import or args.migrate_done or args.check_identity
             or args.end_leftover_monitors or args.monitor_alive):
         return migrate_mode(args)
     if args.discover or args.find_clone:
@@ -1274,7 +1320,10 @@ def run_mode(args, gh):
     if args.checks:
         print(json.dumps(checks_payload(gh, owner, repo, number), indent=2))
         return 0
-    entry = view["prs"].get(pr_key(owner, repo, number)) or {
+    entry = view["prs"].get(pr_key(owner, repo, number))
+    if entry and entry.get("load_fault") and not args.baseline:
+        raise ValueError(f"PR {pr_key(owner, repo, number)}: {entry['load_fault']}")
+    entry = entry or {
         **read_json(progress_file(args.session_dir, owner, repo, number, view["dry_run"]),
                     default={}),
         "owner": owner, "repo": repo, "number": number}

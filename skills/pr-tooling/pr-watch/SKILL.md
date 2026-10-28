@@ -2,7 +2,7 @@
 name: pr-watch
 description: >
   Standing supervisor over a set of pull requests, in any number of
-  repos, for the rest of the session. One watch per session; each PR is
+  repos, until each one closes or is released. One watch per session; each PR is
   held by one session at a time. On PRs the user authored it verifies
   and fixes review feedback from bots and humans, commits, pushes,
   replies, and resolves threads that are clearly settled, and keeps
@@ -10,7 +10,8 @@ description: >
   failures. On PRs the user reviewed it
   re-checks the user's findings when the author pushes and replies on
   the user's own threads. Reports to a private Slack channel, one thread
-  per PR. Never exits on its own. Use when the user says "/pr-watch",
+  per PR. Ends on its own once no PR in it is still armed. Use when the
+  user says "/pr-watch",
   "watch my PRs", "keep an eye on these PRs", "pr-watch status", or
   "stop watching".
 argument-hint: "[owner/repo#N | N ...] [--yes] [--channel <id>] [--parallel-pushes] [--dry-run] | status | stop | release owner/repo#N"
@@ -21,8 +22,9 @@ allowed-tools: Bash, PowerShell, Read, Edit, Write, Glob, Grep, Agent, Monitor, 
 
 Third entry point on `pr-loop-lib`, beside `pr-autopilot` (publish a PR
 and drive it to green) and `pr-followup` (re-enter that loop on demand).
-`pr-watch` is armed once and then reacts to GitHub activity until
-`/pr-watch stop` or the session ends. The session that arms it is the
+`pr-watch` is armed once and then reacts to GitHub activity until no PR
+in it is still armed (each one closed or merged, released, or stopped),
+or the session ends. The session that arms it is the
 session doing the work, so fixes are made with that session's context.
 
 ## Invocation

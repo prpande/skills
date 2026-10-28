@@ -10,13 +10,21 @@ import sys
 
 import lease
 from pw_io import GhError, no_window, read_json
-from pw_paths import NAME, parse_ref, pr_key, session_dir
+from pw_paths import NAME, parse_ref, pr_key, repo_slug, session_dir
 
 ORIGIN_CACHE: dict[str, str | None] = {}
 
+SSH_HOSTS: dict[str, str | None] = {}
+
+REMOTE_PATH = r"(?P<owner>[^/\s]+)/(?P<repo>[^/\s]+?)(?:\.git)?/?$"
 GITHUB_REMOTE = re.compile(
     r"^(?:(?:https?|ssh|git)://(?:[^@/\s]+@)?(?:www\.)?github\.com(?::\d+)?/|git@github\.com:)"
-    r"([^/\s]+)/([^/\s]+?)(?:\.git)?/?$", re.IGNORECASE)
+    + REMOTE_PATH, re.IGNORECASE)
+SSH_HOST = r"(?P<host>(?!-)[A-Za-z0-9_.-]+)"
+SSH_ALIAS_REMOTE = re.compile(r"^ssh://(?:[^@/\s]+@)?" + SSH_HOST + r"(?::\d+)?/" + REMOTE_PATH)
+SCP_ALIAS_REMOTE = re.compile(r"^(?:[^@/\s:]+@)?" + SSH_HOST + ":" + REMOTE_PATH)
+GITHUB_SSH_HOSTS = ("github.com", "ssh.github.com")
+PR_LIST_LIMIT = 1000
 GIT_OPTIONS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"}
 TOKEN = re.compile(r"""\"[^\"]*\"|'[^']*'|\S+""")
 REDIRECT = re.compile(r"^\d*>")
@@ -63,9 +71,28 @@ def origin_of(path):
     return ORIGIN_CACHE[key]
 
 
-def parse_origin(url):
-    match = GITHUB_REMOTE.match(url.strip()) if url else None
-    return f"{match.group(1)}/{match.group(2)}".lower() if match else None
+def parse_origin(url, resolve_host=None):
+    url = (url or "").strip()
+    match = GITHUB_REMOTE.match(url)
+    if not match:
+        match = SSH_ALIAS_REMOTE.match(url) or SCP_ALIAS_REMOTE.match(url)
+        if not match or (resolve_host or ssh_hostname)(match.group("host")) not in GITHUB_SSH_HOSTS:
+            return None
+    return repo_slug(match.group("owner"), match.group("repo"))
+
+
+def ssh_hostname(alias):
+    """The HostName ssh's own config gives `alias` (`ssh -G` reads it without connecting)."""
+    if alias not in SSH_HOSTS:
+        try:
+            out = subprocess.run(["ssh", "-G", alias], capture_output=True, text=True,
+                                 encoding="utf-8", timeout=10, creationflags=no_window())
+        except (OSError, subprocess.TimeoutExpired):
+            out = None
+        lines = out.stdout.splitlines() if out and out.returncode == 0 else []
+        SSH_HOSTS[alias] = next((line.split(None, 1)[1].strip().lower() for line in lines
+                                 if line.lower().startswith("hostname ")), None)
+    return SSH_HOSTS[alias]
 
 
 def git_output(args):
@@ -289,12 +316,20 @@ def discover(gh, session_id, self_login, origin_of, projects=None):
             "branch": pr["headRefName"], "evidence": []})
         entry["evidence"].extend(k for k in kinds if k not in entry["evidence"])
 
+    by_repo: dict[tuple[str, str], dict[str, list]] = {}
     for (owner, repo, branch), kinds in found["branches"].items():
-        listed = gh_json(gh, ["pr", "list", "--repo", f"{owner}/{repo}", "--head", branch,
-                              "--author", self_login, "--state", "open",
-                              "--json", "number,url,headRefName"])
-        for pr in listed or []:
-            keep(pr, kinds)
+        by_repo.setdefault((owner, repo), {})[branch] = kinds
+    for (owner, repo), branches in by_repo.items():
+        slug = repo_slug(owner, repo)
+        listed = gh_json(gh, ["pr", "list", "--repo", slug, "--author", self_login,
+                              "--state", "open", "--limit", str(PR_LIST_LIMIT),
+                              "--json", "number,url,headRefName"]) or []
+        if len(listed) >= PR_LIST_LIMIT:
+            print(f"pr-watch: {slug} lists {PR_LIST_LIMIT}+ open PRs by {self_login}; "
+                  "PRs past that are not discovered", file=sys.stderr)
+        for pr in listed:
+            if pr["headRefName"] in branches:
+                keep(pr, branches[pr["headRefName"]])
     for url, kinds in found["urls"].items():
         pr = gh_json(gh, ["pr", "view", url, "--json", "number,author,state,headRefName,url"])
         if pr and self_authored_open(pr, self_login):
@@ -326,23 +361,23 @@ def holder_clone(owner, repo, number, origin_of, toplevel_of=None):
         return None
     entry = (watch.get("prs") or {}).get(pr_key(owner, repo, number)) or {}
     worktree = entry.get("worktree")
-    if not worktree or origin_of(worktree) != f"{owner}/{repo}".lower():
+    if not worktree or origin_of(worktree) != repo_slug(owner, repo):
         return None
     return (toplevel_of or repo_toplevel)(worktree)
 
 
-def clone_candidates(session_id, owner, repo, origin_of, projects=None, toplevel_of=None):
+def find_clone(session_id, owner, repo, origin_of, projects=None, toplevel_of=None):
+    """The top level of the clone of owner/repo this session used most recently, else None."""
     toplevel_of = toplevel_of or repo_toplevel
     path = find_transcript(session_id, projects)
     if path is None:
-        return []
-    wanted = f"{owner}/{repo}".lower()
-    newest_first = dict.fromkeys(
-        p for r in reversed(list(read_records(path)))
-        for p in [*reversed(dash_c_paths(r)), r.get("cwd")] if p)
-    found = []
-    for cwd in newest_first:
+        return None
+    used = []
+    for record in read_records(path):
+        used += [p for p in [record.get("cwd"), *dash_c_paths(record)] if p]
+    wanted = repo_slug(owner, repo)
+    for cwd in dict.fromkeys(reversed(used)):
         top = toplevel_of(cwd) if origin_of(cwd) == wanted else None
-        if top and top not in found:
-            found.append(top)
-    return found
+        if top:
+            return top
+    return None

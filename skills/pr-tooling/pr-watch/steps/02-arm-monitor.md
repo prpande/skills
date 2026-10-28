@@ -16,7 +16,9 @@ Call `Monitor` with:
 - `description`: `pr-watch events for this session`
 
 The timeout is a ceiling on one stretch of watching, not on the watch:
-the monitor is armed again each time it ends, until `/pr-watch stop`.
+the monitor is armed again each time it ends, until no PR in the watch
+is still armed. Each PR leaves when it closes or merges, is released,
+or is stopped; the next PR to join arms it again.
 
 Remember the task id in the conversation; nothing on disk records it.
 Every arming returns a new one, so each re-arm below replaces the
@@ -80,3 +82,9 @@ id still ends it. The state files stay.
 `POLL --lease-status <owner/repo#N> --status released --session-dir
 <SESSION_DIR>`, skipping the second step for a `lost` entry. Another
 session may then claim the PR.
+
+A `POLL --lease-status` call in `stop` or `release` that exits non-zero
+is run once more. If it fails again, tell the user which PR's lease
+still reads `armed` and print its stderr line: with the monitor gone
+the heartbeat goes stale, and an orchestrator would then nudge this
+session to re-arm that PR.

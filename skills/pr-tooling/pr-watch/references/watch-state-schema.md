@@ -123,8 +123,9 @@ push caps and the Slack thread carry across the handover.
 
 `last_reconciliation` (epoch seconds), `last_tick_event` (epoch seconds),
 `last_tick_queue` (array), `closed` (array of PR keys; a key no longer in
-`watch.json` `prs` is dropped at the start of each tick), `unreachable`
-(PR keys whose repo the last query could not reach), `heads` (PR key to
+`watch.json` `prs` is dropped at the start of each tick), `errors` (PR key
+to the lease `last_error` value for each PR the last tick could not
+check; `pr-watch/references/lease-contract.md`), `heads` (PR key to
 head sha at the last tick), `poller_pid`, `claude_pid`,
 `claude_started_at`, and `prs` keyed by PR key with `updated_at`,
 `last_head`, `last_signature`, `last_rollup` (the head commit's check
@@ -133,7 +134,9 @@ rollup state), `last_ci_signature`, `pending_since`, `retried_at` (the
 branch, so each `retry_after` forces one re-emit of it; kept across later
 writes of the entry), and, `authored` PRs only, `ci_retried_at` (the same,
 for the CI branch; spent independently, so a standing CI-only failure does
-not keep forcing the pending set too). Deleting the file makes the next
+not keep forcing the pending set too), and, `reviewed` PRs only,
+`compared` (`[old head, new head, changed paths]` of the last compare, so
+the same head range is not fetched again). Deleting the file makes the next
 tick a full reconciliation. `poller_pid` and `claude_pid` are recorded
 for diagnosis; the ancestry checks read the live process list.
 

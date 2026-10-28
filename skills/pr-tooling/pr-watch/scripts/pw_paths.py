@@ -33,8 +33,12 @@ def parse_ref(ref: str, default_repo: str | None = None) -> tuple[str, str, int]
     return owner, repo, number
 
 
+def repo_slug(owner: str, repo: str) -> str:
+    return f"{owner}/{repo}".lower()
+
+
 def pr_key(owner: str, repo: str, n: int) -> str:
-    return f"{owner}/{repo}#{n}".lower()
+    return f"{repo_slug(owner, repo)}#{n}"
 
 
 def session_dir(session_id: str) -> pathlib.Path:
