@@ -357,18 +357,18 @@ def holder_clone(owner, repo, number, origin_of, toplevel_of=None):
     return (toplevel_of or repo_toplevel)(worktree)
 
 
-def clone_candidates(session_id, owner, repo, origin_of, projects=None, toplevel_of=None):
+def find_clone(session_id, owner, repo, origin_of, projects=None, toplevel_of=None):
+    """The top level of the clone of owner/repo this session used most recently, else None."""
     toplevel_of = toplevel_of or repo_toplevel
     path = find_transcript(session_id, projects)
     if path is None:
-        return []
+        return None
+    used = []
+    for record in read_records(path):
+        used += [p for p in [record.get("cwd"), *dash_c_paths(record)] if p]
     wanted = f"{owner}/{repo}".lower()
-    newest_first = dict.fromkeys(
-        p for r in reversed(list(read_records(path)))
-        for p in [*reversed(dash_c_paths(r)), r.get("cwd")] if p)
-    found = []
-    for cwd in newest_first:
+    for cwd in dict.fromkeys(reversed(used)):
         top = toplevel_of(cwd) if origin_of(cwd) == wanted else None
-        if top and top not in found:
-            found.append(top)
-    return found
+        if top:
+            return top
+    return None

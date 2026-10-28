@@ -126,6 +126,19 @@ class MultiRepoTickTests(unittest.TestCase):
     def test_reviewed_push_touching_no_thread_is_not_pending(self):
         self.assertFalse(self.reviewed_push(["src/Z.cs"]))
 
+    def test_the_same_head_range_is_compared_once(self):
+        self.reviewed_push(["src/B.cs"])
+        view = watch({2: "reviewed"}, owner="o", repo="a")
+        self.gh.prs[pk(2, "o", "a")]["updatedAt"] = "2026-09-11T11:00:00Z"
+        self.tick(view, now=NOW + 60)
+        compares = [c for c in self.gh.calls if c[:1] == ["api"] and "/compare/" in c[1]]
+        self.assertEqual(len(compares), 1)
+        self.assertEqual(self.poller["prs"]["o/a#2"]["compared"], ["h1", "h2", ["src/B.cs"]])
+        self.gh.prs[pk(2, "o", "a")]["headRefOid"] = "h3"
+        self.gh.compare["h1...h3"] = ["src/Z.cs"]
+        self.tick(view, now=NOW + 120)
+        self.assertEqual(self.poller["prs"]["o/a#2"]["compared"], ["h1", "h3", ["src/Z.cs"]])
+
     def test_pending_flags_from_live_data(self):
         view = watch({1: "authored", 2: "reviewed"}, owner="o", repo="a")
         self.gh.prs[pk(1, "o", "a")] = pull(1)

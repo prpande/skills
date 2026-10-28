@@ -134,7 +134,9 @@ rollup state), `last_ci_signature`, `pending_since`, `retried_at` (the
 branch, so each `retry_after` forces one re-emit of it; kept across later
 writes of the entry), and, `authored` PRs only, `ci_retried_at` (the same,
 for the CI branch; spent independently, so a standing CI-only failure does
-not keep forcing the pending set too). Deleting the file makes the next
+not keep forcing the pending set too), and, `reviewed` PRs only,
+`compared` (`[old head, new head, changed paths]` of the last compare, so
+the same head range is not fetched again). Deleting the file makes the next
 tick a full reconciliation. `poller_pid` and `claude_pid` are recorded
 for diagnosis; the ancestry checks read the live process list.
 

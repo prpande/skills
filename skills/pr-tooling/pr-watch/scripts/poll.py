@@ -449,7 +449,8 @@ def compare_capped(files):
     return len(files) >= COMPARE_FILE_CAP
 
 
-def evaluate_reviewed(gh, view, pr, entry, prev):
+def evaluate_reviewed(gh, view, pr, entry, prev, compare=None):
+    """`compare(old, new)` returns the changed paths; it defaults to one compare call."""
     me, allow = view["self_login"], view["bot_allowlist"]
     key = entry_key(entry)
     threads = my_threads(pr, me, allow)
@@ -469,7 +470,8 @@ def evaluate_reviewed(gh, view, pr, entry, prev):
     author_replied = any((c["author"] or {}).get("login") == author for c in replies)
     if old and old != new:
         signature = f"head:{new}:" + ",".join(reply_ids)
-        files = set(changed_files(gh, entry["owner"], entry["repo"], old, new))
+        files = set((compare or (lambda a, b: changed_files(
+            gh, entry["owner"], entry["repo"], a, b)))(old, new))
         touches = compare_capped(files) or any(t["path"] in files for t in threads)
         review_pending = touches or author_replied or not answered
         if signature == prev.get("last_signature") or not (touches or author_replied):
@@ -539,6 +541,14 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
     ci_pending = prev.get("ci_pending", False) if authored else False
     review_event = ci_event = None
     review_failed = ci_failed = False
+    compared = prev.get("compared")
+
+    def compare(old, new):
+        nonlocal compared
+        if not compared or compared[:2] != [old, new]:
+            compared = [old, new, changed_files(gh, entry["owner"], entry["repo"], old, new)]
+        return compared[2]
+
     if moved or forced:
         try:
             pr = fetch_pr(gh, entry["owner"], entry["repo"], entry["number"])
@@ -546,7 +556,7 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
                 review_event, signature, review_pending = evaluate_authored(view, pr, entry, seen)
             else:
                 review_event, signature, review_pending = evaluate_reviewed(
-                    gh, view, pr, entry, seen)
+                    gh, view, pr, entry, seen, compare)
         except PR_FAULTS as exc:
             pr_fault(poller, key, exc)
             review_failed = True
@@ -568,6 +578,8 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
                  "last_ci_signature": ci_signature, "review_pending": review_pending,
                  "ci_pending": ci_pending, "pending_since": pending_since,
                  "progress_sig": progress_sig}
+    if compared:
+        new_entry["compared"] = compared
     # Spent independently per branch, so a standing CI-only failure does not
     # keep re-forcing the unchanged review branch too.
     retried_at = retry_spend(retry_after, retry_review, review_failed, prev, "retried_at")
@@ -1226,14 +1238,13 @@ def discover_mode(args, gh):
     import discover
     if args.find_clone:
         owner, repo, number = parse_ref(args.find_clone)
-        found = (discover.clone_candidates(args.session_id, owner, repo, discover.origin_of)
-                 or [p for p in [discover.holder_clone(owner, repo, number, discover.origin_of)]
-                     if p])
+        found = (discover.find_clone(args.session_id, owner, repo, discover.origin_of)
+                 or discover.holder_clone(owner, repo, number, discover.origin_of))
         if not found:
             print(f"pr-watch: no local clone of {owner}/{repo} known to this session",
                   file=sys.stderr)
             return 1
-        print(found[0])
+        print(found)
         return 0
     if discover.find_transcript(args.session_id) is None:
         print(f"pr-watch: no transcript for session {args.session_id}", file=sys.stderr)

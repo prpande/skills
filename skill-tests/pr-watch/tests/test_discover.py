@@ -390,33 +390,42 @@ class CloneTests(unittest.TestCase):
     def top(self, path):
         return {"D:/a/sub": "D:/a", "D:/c": "D:/c"}.get(path)
 
-    def test_matching_cwds_map_to_top_level_newest_first_and_skip_other_repos(self):
-        found = discover.clone_candidates("sess", "O", "R", origin_of, projects=self.tmp.name,
-                                          toplevel_of=self.top)
-        self.assertEqual(found, ["D:/a", "D:/c"])
+    def test_the_newest_matching_cwd_maps_to_its_top_level_and_stops_the_search(self):
+        asked = []
+
+        def counting_origin(path):
+            asked.append(path)
+            return origin_of(path)
+        found = discover.find_clone("sess", "O", "R", counting_origin, projects=self.tmp.name,
+                                    toplevel_of=self.top)
+        self.assertEqual((found, asked), ("D:/a", ["D:/a/sub"]))
+
+    def test_a_path_from_another_repo_is_skipped(self):
+        t = Transcript().call("x", cwd="D:/c").call("x", cwd="D:/b")
+        write_transcript(self.tmp.name, "other", t)
+        self.assertEqual(discover.find_clone("other", "o", "r", origin_of, projects=self.tmp.name,
+                                             toplevel_of=self.top), "D:/c")
 
     def test_a_git_dash_c_path_counts_as_a_clone_the_session_used(self):
         t = Transcript().call('git -C "D:/c" status', cwd="D:/b")
         t.call("git -C D:/a/sub log -1 && git status", cwd="D:/b")
         write_transcript(self.tmp.name, "dash", t)
-        found = discover.clone_candidates("dash", "o", "r", origin_of, projects=self.tmp.name,
-                                          toplevel_of=self.top)
-        self.assertEqual(found, ["D:/a", "D:/c"])
+        found = discover.find_clone("dash", "o", "r", origin_of, projects=self.tmp.name,
+                                    toplevel_of=self.top)
+        self.assertEqual(found, "D:/a")
 
     def test_a_cd_target_counts_as_a_clone_the_session_used(self):
         t = Transcript().call("Set-Location 'D:/c'; git status", cwd="D:/b")
         t.call("cd /d/a/sub && git log -1", cwd="D:/b")
         write_transcript(self.tmp.name, "cd", t)
         with mock.patch.object(discover, "WINDOWS", True):
-            found = discover.clone_candidates("cd", "o", "r", origin_of, projects=self.tmp.name,
-                                              toplevel_of=self.top)
-        self.assertEqual(found, ["D:/a", "D:/c"])
+            found = discover.find_clone("cd", "o", "r", origin_of, projects=self.tmp.name,
+                                        toplevel_of=self.top)
+        self.assertEqual(found, "D:/a")
 
     def test_no_transcript_or_no_match(self):
-        self.assertEqual(discover.clone_candidates("nope", "o", "r", origin_of,
-                                                   projects=self.tmp.name), [])
-        self.assertEqual(discover.clone_candidates("sess", "x", "y", origin_of,
-                                                   projects=self.tmp.name), [])
+        self.assertIsNone(discover.find_clone("nope", "o", "r", origin_of, projects=self.tmp.name))
+        self.assertIsNone(discover.find_clone("sess", "x", "y", origin_of, projects=self.tmp.name))
 
 
 DRIVER = '''
