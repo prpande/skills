@@ -104,7 +104,7 @@ Phase 5 — Report (and optional UI-deferred approval)
    push.
 10. Join this session's running `pr-watch`. Skip this step under `--dry-run`. Run:
    ```bash
-   python -c "import json,os;h=os.environ.get('PR_WATCH_HOME') or os.path.expanduser('~/.claude/pr-watch');f=os.path.join(h,'sessions',os.environ.get('CLAUDE_CODE_SESSION_ID','x'),'watch.json');print('join' if os.path.isfile(f) and (lambda w:not w.get('dry_run') and w.get('stopped_at') is None)(json.load(open(f))) else 'skip')"
+   python -c "import json,os;h=os.environ.get('PR_WATCH_HOME') or os.path.expanduser('~/.claude/pr-watch');f=os.path.join(h,'sessions',os.environ.get('CLAUDE_CODE_SESSION_ID','x'),'watch.json');print('join' if os.path.isfile(f) and (lambda w:not w.get('dry_run') and w.get('stopped_at') is None)(json.load(open(f,encoding='utf-8'))) else 'skip')"
    ```
    Anything other than `join` (a missing or unreadable `watch.json`, `dry_run`
    true, `stopped_at` set, or a crash) means do nothing. On `join`, invoke the
