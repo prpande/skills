@@ -134,12 +134,11 @@ def import_progress(main, session_dir) -> list[str]:
 
 
 def identity_ok(claude_pid, my_pid, procs, env) -> str | None:
-    if env.get("CLAUDE_CODE_CHILD_SESSION"):
-        return "CLAUDE_CODE_CHILD_SESSION is set: this process runs inside a launched claude"
     if not claude_pid:
         return "CLAUDE_PID is not set"
-    if claude_pid not in {proc["pid"] for proc in _ancestors(my_pid, procs)}:
-        return f"CLAUDE_PID {claude_pid} is not an ancestor of this process"
+    nearest = claude_ancestor(my_pid, procs)
+    if nearest != claude_pid:
+        return f"CLAUDE_PID {claude_pid} is not the nearest claude ancestor ({nearest})"
     return None
 
 

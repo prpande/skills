@@ -166,21 +166,32 @@ class ImportTests(WatchDirCase):
 
 
 class IdentityTests(unittest.TestCase):
-    def test_ok_when_claude_is_an_ancestor(self):
+    def test_ok_when_claude_is_the_nearest_ancestor(self):
         procs = tree(4242, "claude.exe", "x")
         self.assertIsNone(migrate.identity_ok(4242, 300, procs, {}))
 
-    def test_refuses_a_child_session_env(self):
+    def test_child_session_env_is_ignored(self):
         procs = tree(4242, "claude.exe", "x")
-        reason = migrate.identity_ok(4242, 300, procs, {"CLAUDE_CODE_CHILD_SESSION": "1"})
-        self.assertIn("CLAUDE_CODE_CHILD_SESSION", reason)
+        self.assertIsNone(migrate.identity_ok(4242, 300, procs, {"CLAUDE_CODE_CHILD_SESSION": "1"}))
 
-    def test_refuses_a_pid_that_is_not_an_ancestor(self):
-        procs = tree(4242, "claude.exe", "x") + [proc(5000, 1, "claude.exe")]
-        self.assertIn("not an ancestor", migrate.identity_ok(5000, 300, procs, {}))
+    def test_refuses_when_nearest_claude_is_another_pid(self):
+        procs = [proc(5000, 1, "claude.exe"), proc(4242, 5000, "claude.exe"),
+                 proc(200, 4242, "bash.exe"), proc(300, 200, "python.exe")]
+        reason = migrate.identity_ok(5000, 300, procs, {})
+        self.assertIn("5000", reason)
+        self.assertIn("4242", reason)
 
     def test_refuses_a_missing_claude_pid(self):
-        self.assertIsNotNone(migrate.identity_ok(None, 300, [], {}))
+        self.assertIsNotNone(migrate.identity_ok(None, 300, tree(4242, "claude.exe", "x"), {}))
+
+    def test_cyclic_chain_terminates_at_the_nearest_claude(self):
+        procs = [proc(900, 800, "python.exe"), proc(800, 700, "pwsh.exe"),
+                 proc(700, 17736, "cmd.exe"), proc(17736, 3124, "claude.exe"),
+                 proc(3124, 600, "python.exe"), proc(600, 500, "WindowsTerminal.exe"),
+                 proc(500, 400, "conhost.exe"), proc(400, 17736, "cmd.exe")]
+        self.assertEqual(17736, migrate.claude_ancestor(900, procs))
+        self.assertIsNone(migrate.identity_ok(17736, 900, procs, {}))
+        self.assertIsNone(migrate.claude_ancestor(3124, [p for p in procs if p["pid"] != 17736]))
 
 
 class LeftoverAndAliveTests(WatchDirCase):
@@ -235,13 +246,12 @@ class CliTests(WatchDirCase):
     def test_check_identity_exit_codes(self):
         procs = tree(4242, "claude.exe", "x")
         procs.append(proc(os.getpid(), 200, "python.exe"))
-        with mock.patch.object(migrate, "list_processes", return_value=procs), \
-                mock.patch.dict(os.environ, {"CLAUDE_PID": "4242"}, clear=False):
-            os.environ.pop("CLAUDE_CODE_CHILD_SESSION", None)
-            self.assertEqual(0, poll.main(["--check-identity"]))
-            with mock.patch.dict(os.environ, {"CLAUDE_CODE_CHILD_SESSION": "1"}),                     contextlib.redirect_stderr(io.StringIO()) as err:
+        with mock.patch.object(migrate, "list_processes", return_value=procs):
+            with mock.patch.dict(os.environ, {"CLAUDE_PID": "4242", "CLAUDE_CODE_CHILD_SESSION": "1"}):
+                self.assertEqual(0, poll.main(["--check-identity"]))
+            with mock.patch.dict(os.environ, {"CLAUDE_PID": "9"}),                     contextlib.redirect_stderr(io.StringIO()) as err:
                 self.assertEqual(1, poll.main(["--check-identity"]))
-            self.assertIn("CLAUDE_CODE_CHILD_SESSION", err.getvalue())
+            self.assertIn("nearest claude ancestor", err.getvalue())
 
     def test_monitor_alive_prints_state(self):
         (self.tmp / "watch-heartbeat").write_text(str(int(time.time())), encoding="utf-8")
