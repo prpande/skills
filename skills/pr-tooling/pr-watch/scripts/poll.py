@@ -731,7 +731,12 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
             if not view["dry_run"]:
                 silenced, lease_events = write_leases(
                     view, armed, poller, closed_before, now, dropped, warned_missing)
-                events = [e for e in events if e.get("pr") not in silenced] + lease_events
+                gone = silenced | dropped
+                events = lease_events + [
+                    dict(e, push_queue=[k for k in e["push_queue"] if k not in gone])
+                    if e["kind"] == "tick" else e
+                    for e in events if e.get("pr") not in silenced]
+                events = [e for e in events if e["kind"] != "tick" or e["push_queue"]]
                 if ticks == 1 or due:
                     try:
                         lease.prune_closed(now)

@@ -351,6 +351,17 @@ class MonitorLeaseTests(MonitorCase):
         self.assertEqual([e["pr"] for e in events if e["kind"] == "pending"], [B2])
         self.assertEqual(self.lease_bytes(), before)
 
+    def test_a_lost_pr_leaves_the_tick_queue_and_its_loss_prints_first(self):
+        view = two_repos(self.gh)
+        view["push_queue"] = [A1, B2]
+        write_session(self.state, view)
+        claim_leases(watch({A1: "authored"}), session_id="s-2")
+        claim_leases(watch({B2: "authored"}), session_id="s-1")
+        events, _, _ = self.run_monitor(1)
+        kinds = [e["kind"] for e in events]
+        self.assertLess(kinds.index("lease-lost"), kinds.index("tick"))
+        self.assertEqual([e["push_queue"] for e in events if e["kind"] == "tick"], [[B2]])
+
     def test_released_lease_is_silent(self):
         view = watch({A1: "authored"})
         self.gh.prs[pk(1, "o", "a")] = pending_pr(1)
