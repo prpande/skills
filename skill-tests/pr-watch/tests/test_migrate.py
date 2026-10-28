@@ -95,6 +95,22 @@ class ScanTests(WatchDirCase):
         self.write_heartbeat(100)
         self.assertEqual("live-unknown", migrate.scan(self.main, 4242, [], NOW)["state"])
 
+    def test_heartbeat_at_exactly_300_seconds_is_live_unknown(self):
+        self.write_watch()
+        self.write_heartbeat(300)
+        self.assertEqual("live-unknown", migrate.scan(self.main, 4242, [], NOW)["state"])
+
+    def test_unresolvable_ancestor_or_missing_claude_pid_is_never_owned(self):
+        self.write_watch()
+        self.write_heartbeat(10)
+        orphan = [proc(300, 1, "python.exe", old_cmd(self.main))]
+        result = migrate.scan(self.main, 4242, orphan, NOW)
+        self.assertEqual("foreign", result["state"])
+        self.assertIsNone(result["owner_pid"])
+        self.assertEqual("foreign", migrate.scan(self.main, None, orphan, NOW)["state"])
+        procs = tree(4242, "claude.exe", old_cmd(self.main))
+        self.assertEqual("foreign", migrate.scan(self.main, None, procs, NOW)["state"])
+
     def test_missing_heartbeat_is_stale(self):
         self.write_watch()
         result = migrate.scan(self.main, 4242, [], NOW)
@@ -152,8 +168,27 @@ class ImportTests(WatchDirCase):
         existing.parent.mkdir(parents=True)
         existing.write_text('{"settled_ids": ["new"]}', encoding="utf-8")
         keys = migrate.import_progress(self.main, self.home)
-        self.assertEqual(["acme/widgets#13"], keys)
+        self.assertEqual(["acme/widgets#12", "acme/widgets#13"], keys)
         self.assertEqual(["new"], json.loads(existing.read_text(encoding="utf-8"))["settled_ids"])
+
+    def test_rerun_after_crash_between_rename_and_unlink_cleans_up(self):
+        self.write_watch()
+        self.write_heartbeat(5)
+        (self.state / "watch-poller.json").write_text("{}", encoding="utf-8")
+        (self.state / "watch.json").replace(self.state / "watch.json.migrated")
+        self.assertEqual([], migrate.import_progress(self.main, self.home))
+        self.assertFalse((self.state / "watch-heartbeat").exists())
+        self.assertFalse((self.state / "watch-poller.json").exists())
+
+    def test_returns_existing_keys_too_and_skips_non_digit_keys(self):
+        self.write_watch({"12": {"settled_ids": ["old"]}, "x": {}, "13": {"settled_ids": ["n"]}})
+        existing = pw_paths.progress_path("acme", "widgets", 12)
+        existing.parent.mkdir(parents=True)
+        existing.write_text('{"settled_ids": ["new"]}', encoding="utf-8")
+        keys = migrate.import_progress(self.main, self.home)
+        self.assertEqual(["acme/widgets#12", "acme/widgets#13"], keys)
+        self.assertEqual(["new"], json.loads(existing.read_text(encoding="utf-8"))["settled_ids"])
+        self.assertTrue((self.state / "watch.json.migrated").exists())
 
     def test_a_failed_write_leaves_the_old_watch_in_place(self):
         self.write_watch()
@@ -195,6 +230,13 @@ class IdentityTests(unittest.TestCase):
 
 
 class LeftoverAndAliveTests(WatchDirCase):
+    def test_missing_claude_pid_ends_nothing_and_is_never_alive(self):
+        (self.tmp / "watch-heartbeat").write_text(str(NOW - 5), encoding="utf-8")
+        orphan = [proc(7001, 1, "python.exe", session_cmd(self.tmp))]
+        self.assertEqual([], migrate.leftover_monitors(self.tmp, None, orphan))
+        self.assertFalse(migrate.monitor_alive(self.tmp, None, orphan, NOW))
+        self.assertFalse(migrate.monitor_alive(self.tmp, 4242, orphan, NOW))
+
     def test_leftover_is_the_poller_under_a_dead_claude_only(self):
         mine = tree(4242, "claude.exe", session_cmd(), python_pid=300)
         old = [proc(7000, 1, "bash.exe"), proc(7001, 7000, "python.exe", session_cmd())]
@@ -224,6 +266,11 @@ class ListProcessesTests(unittest.TestCase):
                 mock.patch.object(migrate.subprocess, "run", return_value=done) as run:
             return migrate.list_processes(), run
 
+    def test_command_forces_utf8_output(self):
+        _, run = self.run_with("[]")
+        self.assertTrue(run.call_args.args[0][-1].startswith(
+            "[Console]::OutputEncoding=[Text.Encoding]::UTF8;"))
+
     def test_single_object_and_array_shapes(self):
         row = {"ProcessId": 1, "ParentProcessId": 0, "Name": "a.exe", "CommandLine": None}
         one, run = self.run_with(json.dumps(row))
@@ -243,33 +290,54 @@ class ListProcessesTests(unittest.TestCase):
 
 
 class CliTests(WatchDirCase):
+    def run_cli(self, argv, env, procs):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(migrate, "list_processes", return_value=procs))
+            stack.enter_context(mock.patch.dict(os.environ, env))
+            stack.enter_context(contextlib.redirect_stdout(out))
+            stack.enter_context(contextlib.redirect_stderr(err))
+            code = poll.main(argv)
+        return code, out.getvalue(), err.getvalue()
+
     def test_check_identity_exit_codes(self):
         procs = tree(4242, "claude.exe", "x")
         procs.append(proc(os.getpid(), 200, "python.exe"))
-        with mock.patch.object(migrate, "list_processes", return_value=procs):
-            with mock.patch.dict(os.environ, {"CLAUDE_PID": "4242", "CLAUDE_CODE_CHILD_SESSION": "1"}):
-                self.assertEqual(0, poll.main(["--check-identity"]))
-            with mock.patch.dict(os.environ, {"CLAUDE_PID": "9"}),                     contextlib.redirect_stderr(io.StringIO()) as err:
-                self.assertEqual(1, poll.main(["--check-identity"]))
-            self.assertIn("nearest claude ancestor", err.getvalue())
+        code, _, _ = self.run_cli(["--check-identity"],
+                                  {"CLAUDE_PID": "4242", "CLAUDE_CODE_CHILD_SESSION": "1"}, procs)
+        self.assertEqual(0, code)
+        code, _, err = self.run_cli(["--check-identity"], {"CLAUDE_PID": "9"}, procs)
+        self.assertEqual(1, code)
+        self.assertIn("nearest claude ancestor", err)
 
     def test_monitor_alive_prints_state(self):
         (self.tmp / "watch-heartbeat").write_text(str(int(time.time())), encoding="utf-8")
         procs = tree(4242, "claude.exe", session_cmd(self.tmp))
-        with mock.patch.object(migrate, "list_processes", return_value=procs), \
-                mock.patch.dict(os.environ, {"CLAUDE_PID": "4242"}), \
-                mock.patch("sys.stdout") as out:
-            poll.main(["--monitor-alive", "--session-dir", str(self.tmp)])
-        self.assertIn("alive", "".join(c.args[0] for c in out.write.call_args_list))
+        _, out, _ = self.run_cli(["--monitor-alive", "--session-dir", str(self.tmp)],
+                                 {"CLAUDE_PID": "4242"}, procs)
+        self.assertEqual("alive", out.strip())
 
     def test_end_leftover_monitors_uses_the_injected_killer(self):
         procs = [proc(7000, 1, "bash.exe"), proc(7001, 7000, "python.exe", session_cmd(self.tmp))]
-        with mock.patch.object(migrate, "list_processes", return_value=procs), \
-                mock.patch.object(migrate, "end_tree") as kill, \
-                mock.patch.dict(os.environ, {"CLAUDE_PID": "4242"}),                 contextlib.redirect_stdout(io.StringIO()) as out:
-            poll.main(["--end-leftover-monitors", "--session-dir", str(self.tmp)])
+        with mock.patch.object(migrate, "end_tree") as kill:
+            _, out, _ = self.run_cli(["--end-leftover-monitors", "--session-dir", str(self.tmp)],
+                                     {"CLAUDE_PID": "4242"}, procs)
         kill.assert_called_once_with(7001)
-        self.assertEqual([7001], json.loads(out.getvalue()))
+        self.assertEqual([7001], json.loads(out))
+
+    def test_every_mode_but_check_identity_refuses_without_claude_pid(self):
+        procs = [proc(7000, 1, "bash.exe"), proc(7001, 7000, "python.exe", session_cmd(self.tmp))]
+        session = ["--session-dir", str(self.tmp)]
+        for argv in (["--migrate-scan", str(self.main)] + session,
+                     ["--migrate-import", str(self.main)] + session,
+                     ["--end-leftover-monitors"] + session,
+                     ["--monitor-alive"] + session):
+            with self.subTest(argv=argv[0]), mock.patch.object(migrate, "end_tree") as kill:
+                code, out, err = self.run_cli(argv, {"CLAUDE_PID": ""}, procs)
+                self.assertEqual(1, code)
+                self.assertEqual("", out)
+                self.assertIn("pr-watch: CLAUDE_PID is not set", err)
+                kill.assert_not_called()
 
 
 if __name__ == "__main__":

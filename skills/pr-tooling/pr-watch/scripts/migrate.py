@@ -13,7 +13,7 @@ from pw_paths import parse_ref, pr_key, progress_path
 STALE_AFTER_SECONDS = 300
 CLAUDE_IMAGE = re.compile(r"^claude\.exe", re.IGNORECASE)
 MONITOR_FLAG = re.compile(r"(?:^|\s)--monitor(?:\s|$)")
-LIST_COMMAND = ("Get-CimInstance Win32_Process | Select ProcessId,ParentProcessId,Name,CommandLine"
+LIST_COMMAND = ("[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-CimInstance Win32_Process | Select ProcessId,ParentProcessId,Name,CommandLine"
                 " | ConvertTo-Json -Compress")
 
 
@@ -107,7 +107,8 @@ def scan(main, claude_pid, procs, now) -> dict:
         return result
     result["monitor_pid"] = monitor["pid"]
     result["owner_pid"] = claude_ancestor(monitor["pid"], procs)
-    result["state"] = "owned" if result["owner_pid"] == claude_pid else "foreign"
+    owned = claude_pid and result["owner_pid"] == claude_pid
+    result["state"] = "owned" if owned else "foreign"
     return result
 
 
@@ -116,21 +117,23 @@ def import_progress(main, session_dir) -> list[str]:
 
     state_dir = pathlib.Path(main) / ".pr-autopilot"
     watch_path = state_dir / "watch.json"
-    watch = read_json(watch_path)
     fields = {*poll.COMMON_START, *poll.AUTHORED_START, *poll.REVIEWED_START}
-    imported = []
-    for number, entry in watch.get("prs", {}).items():
-        owner, repo, n = parse_ref(f"{watch.get('owner', '')}/{watch.get('repo', '')}#{number}")
-        target = progress_path(owner, repo, n)
-        if target.exists():
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        write_json_atomic(target, {k: v for k, v in entry.items() if k in fields})
-        imported.append(pr_key(owner, repo, n))
-    os.replace(watch_path, state_dir / "watch.json.migrated")
+    covered = []
+    if watch_path.exists():
+        watch = read_json(watch_path)
+        for number, entry in watch.get("prs", {}).items():
+            if not str(number).isdigit():
+                continue
+            owner, repo, n = parse_ref(f"{watch.get('owner', '')}/{watch.get('repo', '')}#{number}")
+            target = progress_path(owner, repo, n)
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                write_json_atomic(target, {k: v for k, v in entry.items() if k in fields})
+            covered.append(pr_key(owner, repo, n))
+        os.replace(watch_path, state_dir / "watch.json.migrated")
     for name in ("watch-heartbeat", "watch-poller.json"):
         (state_dir / name).unlink(missing_ok=True)
-    return imported
+    return covered
 
 
 def identity_ok(claude_pid, my_pid, procs, env) -> str | None:
@@ -143,11 +146,15 @@ def identity_ok(claude_pid, my_pid, procs, env) -> str | None:
 
 
 def leftover_monitors(session_dir, claude_pid, procs) -> list[int]:
+    if not claude_pid:
+        return []
     return [proc["pid"] for proc in _monitors_for(procs, "--session-dir", session_dir)
             if claude_ancestor(proc["pid"], procs) != claude_pid]
 
 
 def monitor_alive(session_dir, claude_pid, procs, now) -> bool:
+    if not claude_pid:
+        return False
     mine = [proc for proc in _monitors_for(procs, "--session-dir", session_dir)
             if claude_ancestor(proc["pid"], procs) == claude_pid]
     heartbeat = pathlib.Path(session_dir) / "watch-heartbeat"

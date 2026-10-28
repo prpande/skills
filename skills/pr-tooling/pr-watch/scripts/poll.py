@@ -1220,6 +1220,9 @@ def migrate_mode(args):
             print(f"pr-watch: {reason}", file=sys.stderr)
             return 1
         return 0
+    if not claude_pid:
+        print("pr-watch: CLAUDE_PID is not set", file=sys.stderr)
+        return 1
     if args.migrate_scan:
         print(json.dumps(migrate.scan(args.migrate_scan, claude_pid, procs, now)))
     elif args.migrate_import:
