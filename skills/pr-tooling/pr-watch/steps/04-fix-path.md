@@ -261,7 +261,8 @@ No returns in section 5: go to section 7, then section 9.
    the drain that rescan follows drain step 1's rules instead: the hour
    rule applies and nothing is posted, and a stop there releases the
    lock, sets `queued_head` to the new `HEAD`, leaves `queued_at`
-   unchanged, and ends in section 9 with `N` still queued, running
+   unchanged, writes the progress file, and ends in section 9 with `N`
+   still queued, running
    neither drain step 4 nor step 5. Never
    force. A conflict
    (after `git -C <worktree> merge --abort`), a 04.5 failure, a guard refusal, or a
