@@ -16,7 +16,8 @@ The first message for a PR whose `slack_ts` is null is its root:
 <role>, head <sha7>, <pending summary>
 ```
 
-Record the returned `ts` as `slack_ts` and write `watch.json`. Read the
+Record the returned `ts` as `slack_ts` in the PR's progress file
+(`pr-watch/steps/03-route-event.md`, "State has two homes"). Read the
 root back once with `mcp__plugin_slack_slack__slack_read_thread` and
 check the link rendered. Never post a second root for a PR.
 
@@ -43,6 +44,8 @@ check the link rendered. Never post a second root for a PR.
 | CI pre-existing | `<check name> is red on <base> too; leaving it.` |
 | CI needs you | `Needs you: [<check name>](<link>) is red at <head7> (<reason>).` — then, only when the PR's `ci_log_occurrence` is this check's occurrence key and `pr-watch/steps/07-ci.md` rule 3's destination check passes again over the file now, up to 20 lines from `grep -m 20 -E -e '##\[error\]' -e 'error [A-Z]+[0-9]+' -e 'Failed ' -e 'Test Run Failed'` over it, put through "Quoting someone else's text", in a code block; the session never reads the whole file |
 | monitor restarted | `Watch monitor restarted.` |
+| joined | `Joined this session's watch.` Posted once for each PR a run of `pr-watch/steps/01-discover.md` armed when its section 9 printed `alive`, in the PR's thread when it has a root; nothing for a PR without one, whose root appears with its first event |
+| lease lost | `Another session took over #<N> (<holder>); no longer watching it here.` in the PR's thread when it has a root; `<holder>` is the event's `holder`, or "an unidentified session" when it is null |
 | reconciled | `The daily check picked up work the event stream missed.` |
 | poller error | `The watch poller has failed five ticks in a row: <error>. No events are handled until this is fixed.` in every PR thread that has a root; `<error>` is the event's `error` |
 | closed | `PR <merged or closed>; no longer watching.` |
