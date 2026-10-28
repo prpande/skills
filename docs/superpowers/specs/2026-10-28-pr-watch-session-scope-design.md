@@ -238,10 +238,10 @@ while another process replaces it) is not "missing": the claim refuses
 with "lease unreadable" and step 01 retries it once.
 
 **Self-reclaim.** A resumed session can find its old monitor still
-running: the poller outlives its claude process. When the lease names
-this session and `holder.poller_pid` is a live `poll.py --monitor`
-process, the claim ends that process tree before it writes, so one
-session never has two pollers.
+running: the poller outlives its claude process. Before claiming, step 01
+ends every `poll.py --monitor --session-dir <this session's dir>` process
+whose claude ancestor is not this session's `CLAUDE_PID`, so one session
+never has two pollers.
 
 **Takeover.** When a claim takes a PR from another session, queued work in
 the progress file (`queued_head`, `ci_rerun_queued`) moves to the new

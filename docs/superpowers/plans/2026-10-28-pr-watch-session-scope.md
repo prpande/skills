@@ -18,6 +18,8 @@
 - `owner` and `repo` lowercased in every path and key; key form `owner/repo#N`.
 - Lease: `schema` 1, `stale_after_seconds` 300, times ISO-8601 UTC ending `Z`, status one of `armed`, `stopped`, `released`, `closed`.
 - Only `poll.py` writes a lease, via `write_json_atomic`. Claim lock `<N>.claim.lock`, stale after 60 s. Closed leases pruned after 7 days.
+- A lease file that exists but raises an `OSError` other than `FileNotFoundError` is unreadable, not unheld (claim refuses "lease unreadable"). A tick writes only a lease still held by this session and still `armed`; it never moves a lease out of `stopped`, `released` or `closed`.
+- Push lock `prs/<owner>/<repo>/push.lock`, exclusive create, stale after 300 s.
 - Every subprocess the scripts start on Windows passes `creationflags=subprocess.CREATE_NO_WINDOW` (0 elsewhere).
 - No marker, template, prefix or trailer on anything posted to GitHub; commits carry no `Co-Authored-By` trailer (praty's rule).
 - Live tests touch only `prpande/prism-sandbox` and `prpande/prism-sandbox-2`, never Mindbody repos.
@@ -150,7 +152,7 @@ def test_armed_peers_spans_sessions_excludes_self(self):
   - `load_view(session_dir: Path) -> dict`: reads `watch.json` and each PR's progress file (session-local copy under `<session_dir>/progress/` when `dry_run`), returns `{self_login, bot_allowlist, ado_orgs, push_queue, session_id, claude_pid, prs: {key: {**progress, **entry, "owner", "repo", "number"}}}`. A missing progress file reads as the starting values of step 01 §4 for the role.
   - `tick_query(groups: dict[tuple[str, str], list[int]]) -> tuple[str, dict[str, tuple[str, str]]]`: one query, alias `r<i>` per repo, `p<N>` per PR inside; returns the query and alias → (owner, repo).
   - `tick_once(gh, view, poller, now, force=False) -> list[dict]`: as today, keyed by `owner/repo#N`; events carry `"pr": "<key>"`. A null repo alias warns once per repo and skips only that repo's PRs. Poller `prs` entries gain `review_pending: bool` and `ci_pending: bool` and `pending_since: int|None` (set when either first becomes true, cleared when both false).
-  - `monitor(gh, session_dir, sleep, clock, max_ticks=None, write_lease=lease.tick_write) -> int`: after each saved tick, writes every non-closed PR's lease (`status` from the entry: `armed`, or `released` once then never again; `closed` when closed), records `poller_pid` and `claude_pid` in `watch-poller.json`, prunes closed leases once per reconciliation, and returns 0 when no PR in the set is both open and `armed`.
+  - `monitor(gh, session_dir, sleep, clock, max_ticks=None, write_lease=lease.tick_write) -> int`: re-reads `watch.json` every tick and ticks only `armed` entries. After each saved tick, writes each ticked PR's lease through `write_lease` (`status: closed` when the PR closed); `tick_write` already refuses a lease held by another session or no longer `armed`. Records `poller_pid` and `claude_pid` in `watch-poller.json`, prunes closed leases once per reconciliation. When no entry is `armed` (after writing the final statuses), prints `{"kind": "idle"}` and returns 0.
   - CLI: `--session-dir` replaces `--state-dir`; `--baseline/--tails/--findings/--checks` take a ref string; `--report/--reseed` cover the whole set.
 
 - [ ] **Step 1: Write the failing tests** in `test_poll_multirepo.py`
@@ -165,9 +167,10 @@ def test_unreachable_repo_does_not_block_the_other(self):
     self.assertEqual([e["pr"] for e in tick(...)], ["o/a#1"])
 def test_pending_since_set_then_cleared(self): ...
 def test_monitor_writes_lease_each_tick(self):  # heartbeat == iso_utc(clock()), last_head_sha, pending_since
-def test_monitor_exits_when_nothing_armed_and_open(self):  # returns 0 after closed event; lease status closed
-def test_released_written_once_then_left(self):
-def test_lost_lease_pr_is_reported(self):  # tick_write False -> stderr "lease for o/a#1 is held by another session" and an event {"pr": key, "kind": "lease-lost"}
+def test_monitor_exits_idle_when_nothing_armed(self):  # after closed event: lease status closed, last stdout line {"kind": "idle"}, returns 0
+def test_released_entry_is_not_ticked(self):  # entry status released in watch.json -> no lease write, no event for it
+def test_tick_never_rearms_a_released_lease(self):  # lease file already released, entry still armed in a stale view -> lease unchanged
+def test_lost_lease_pr_is_reported_once(self):  # lease held by another session -> one event {"pr": key, "kind": "lease-lost", "holder": <session id>}, stderr "lease for o/a#1 is held by another session", no further ticks for it
 ```
 
 - [ ] **Step 2:** Run the new file. Expected: FAIL.
@@ -176,7 +179,7 @@ def test_lost_lease_pr_is_reported(self):  # tick_write False -> stderr "lease f
 - [ ] **Step 5:** Run `python -m unittest discover -s skill-tests/pr-watch/tests -v`. Expected: all PASS (old and new).
 - [ ] **Step 6:** Commit `Poll every repo in a session's watch in one query and write leases`.
 
-The `lease-lost` event is new; Task 9 routes it (stop handling that PR, post one line, drop it from `watch.json`).
+The `lease-lost` and `idle` events are new; Task 9 routes them (`lease-lost`: mark the entry `lost` in `watch.json`, post one line; `idle`: a planned end, no re-arm).
 
 ### Task 5: Claim, status and peers CLI
 
@@ -186,11 +189,12 @@ The `lease-lost` event is new; Task 9 routes it (stop handling that PR, post one
 
 **Interfaces:**
 - Produces CLI modes (all print one line or JSON, exit 0 on success, 1 with a `pr-watch:` stderr line on failure):
-  - `--claim <ref> --session-dir <dir> --role authored|reviewed [--explicit]`: holder from `watch.json` (`session_id`, `claude_pid`) and `process_started_at(claude_pid)`. Prints `claimed`/`reclaimed`; on refusal exits 1 with the reason.
+  - `--claim <ref> --session-dir <dir> --role authored|reviewed [--explicit]`: holder from `watch.json` (`session_id`, `claude_pid`) and `process_started_at(claude_pid)`. Prints `claimed`, `reclaimed`, or `taken-over` (the previous lease named another session); on refusal exits 1 with the reason. `lease.claim` gains the `taken-over` result for that case.
   - `--lease-status <ref> --session-dir <dir> --status stopped|released`.
   - `--repo-peers <ref>`: prints JSON list of armed peer keys in the same repo.
+  - `--push-lock take|release <ref> --session-dir <dir>`: `take` prints `taken` or exits 1 with `busy`; `release` removes the lock only when this session took it (the lock file holds the session id). Backed by new `lease.take_push_lock(owner, repo, session_id, now) -> bool` and `lease.release_push_lock(owner, repo, session_id) -> None`, reusing the claim-lock helper with a 300 s stale threshold.
 
-- [ ] **Step 1:** Tests: claim then reclaim with the same session; refusal exit code 1 and stderr naming the holder; `--lease-status` by a non-holder exits 1; `--repo-peers` lists another session's armed PR and not a closed one.
+- [ ] **Step 1:** Tests: claim then reclaim with the same session; claim of another session's dead lease prints `taken-over`; refusal exit code 1 and stderr naming the holder; `--lease-status` by a non-holder exits 1; `--repo-peers` lists another session's armed PR and not a closed one; push lock taken by session A makes B's `take` exit 1 `busy`, B's `release` leaves A's lock, a 301 s old lock is taken.
 - [ ] **Step 2:** Run; expected FAIL.
 - [ ] **Step 3:** Implement as thin wrappers over `lease.py`.
 - [ ] **Step 4:** Run the whole suite; expected PASS.
@@ -230,8 +234,11 @@ The `lease-lost` event is new; Task 9 routes it (stop handling that PR, post one
   - `claude_ancestor(pid, procs) -> int | None`: first ancestor whose `name` matches `^claude\.exe` (so `claude.exe.old.<ms>.<pid>` matches).
   - `scan(main, claude_pid, procs, now) -> dict`: `{"state": "none"|"owned"|"foreign"|"stale"|"live-unknown", "monitor_pid", "owner_pid", "heartbeat_age", "prs": [keys]}`. `live-unknown` = no monitor process but heartbeat under 300 s.
   - `import_progress(main, session_dir) -> list[str]`: copies each old PR entry's progress fields to the new progress path (skips a key whose progress file already exists), renames `watch.json` → `watch.json.migrated`, deletes `watch-heartbeat` and `watch-poller.json`; returns the imported keys.
+  - `identity_ok(claude_pid, my_pid, procs, env) -> str | None`: None when fine; a reason when `CLAUDE_CODE_CHILD_SESSION` is set in `env` or `claude_pid` is not an ancestor of `my_pid`.
+  - `leftover_monitors(session_dir, claude_pid, procs) -> list[int]`: pids of `poll.py --monitor --session-dir <session_dir>` processes whose claude ancestor is not `claude_pid` (a resumed session's old poller).
+  - CLI: `--check-identity` (exit 1 with the reason on stdout-free stderr line) and `--end-leftover-monitors --session-dir <dir>` (ends each pid's tree with `taskkill /T /F`, `CREATE_NO_WINDOW`; prints the pids).
 
-- [ ] **Step 1:** Tests with injected `procs`: owned (ancestor chain python → bash → `claude.exe.old.1730.4242` = `claude_pid`); foreign (other claude pid); stale (no process, heartbeat 301 s); live-unknown (no process, heartbeat 100 s); `import_progress` keeps `settled_ids`/`posted_reply_ids`/`slack_ts`, lowercases keys, never overwrites an existing progress file, and the old files end renamed/deleted.
+- [ ] **Step 1:** Tests with injected `procs`: owned (ancestor chain python → bash → `claude.exe.old.1730.4242` = `claude_pid`); foreign (other claude pid); stale (no process, heartbeat 301 s); live-unknown (no process, heartbeat 100 s); `import_progress` keeps `settled_ids`/`posted_reply_ids`/`slack_ts`, lowercases keys, never overwrites an existing progress file, and the old files end renamed/deleted; `identity_ok` refuses a child-session env and a non-ancestor pid; `leftover_monitors` returns an old poller under a dead claude and not the one under `claude_pid`.
 - [ ] **Step 2:** Run; expected FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run the suite; expected PASS.
@@ -251,15 +258,16 @@ The `lease-lost` event is new; Task 9 routes it (stop handling that PR, post one
 ### Task 9: Step files
 
 **Files:**
-- Modify: `skills/pr-tooling/pr-watch/steps/01-discover.md` (rewrite §1–§7: fixed values `SESSION_DIR` from `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID`; resume from `SESSION_DIR/watch.json`; bare discovery via `POLL --discover`; explicit refs via `parse_ref` rules; clone resolution per spec; old-format handling via `--migrate-scan`/`--migrate-import` with TaskStop or tree kill for `owned`; `POLL --claim` per PR with excluded list; `--yes` skips §6's question; adding refs to a running watch arms no second monitor; under `--dry-run` no `--claim`, no migration, progress copies under `SESSION_DIR/progress/`)
-- Modify: `steps/02-arm-monitor.md` (`--session-dir`; description `pr-watch events for this session`; exit 0 of the monitor when nothing is armed is a normal end: do not re-arm until a PR joins; old-format guard in "Stream ended")
-- Modify: `steps/03-route-event.md` (key events; `pr` without `/` → migration via step 01 `--yes`; `lease-lost` route; `closed` drops the key from `watch.json`)
-- Modify: `steps/04-fix-path.md` (every "write `watch.json`" for a per-PR field → write the PR's progress file via `state_put.py`; `--repo` from the key; §6 and §8 pending-check scan covers this session's same-repo authored PRs plus `POLL --repo-peers <key>`; §2 relocation per Task 1 outcome: A = launch-repo PRs keep `EnterWorktree(path)`, other repos `ExitWorktree(keep)` + absolute paths + `git -C`, return with `EnterWorktree(path: origin_worktree)`; B = other-repo fixers return a unified diff applied with `git -C <worktree> apply`)
+- Modify: `skills/pr-tooling/pr-watch/steps/01-discover.md` (rewrite §1–§7: fixed values `SESSION_DIR` from `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID`; `POLL --check-identity` first, stop on failure; resume from `SESSION_DIR/watch.json`, then `POLL --end-leftover-monitors`; bare discovery via `POLL --discover`; explicit refs via `parse_ref` rules; clone resolution per spec; old-format handling via `--migrate-scan`/`--migrate-import` with TaskStop or tree kill for `owned`, exclusion line for `foreign` and `live-unknown`; `POLL --claim` per PR with excluded list, one retry on "lease unreadable", and for `taken-over` add the PR to `push_queue` when its progress has `queued_head` or a non-empty `ci_rerun_queued`; `--yes` skips §6's question; any arm clears `stopped_at`; adding refs to a running watch arms no second monitor, and starts one when the last ended `idle`; under `--dry-run` no `--claim`, no migration, progress copies under `SESSION_DIR/progress/`)
+- Modify: `steps/02-arm-monitor.md` (`--session-dir`; description `pr-watch events for this session`; "stream ended" after an `idle` event is a planned end: no re-arm, no "monitor died" line; old-format guard in "Stream ended")
+- Modify: `steps/03-route-event.md` (key events; `pr` without `/` → migration via step 01 `--yes`; `lease-lost` → entry `lost`, one Slack line; `idle` → nothing; `closed` sets the entry `closed`; `stop` writes `watch.json` (`stopped_at`, entries `stopped`) before `--lease-status`, `release` writes the entry `released` before `--lease-status released`)
+- Modify: `steps/04-fix-path.md` (every "write `watch.json`" for a per-PR field → write the PR's progress file via `state_put.py`; `--repo` from the key; §6 and §8 pending-check scan runs under `POLL --push-lock take` and covers this session's same-repo authored PRs plus `POLL --repo-peers <key>`; `busy` queues like a running check; release the lock once the pushed head shows a check run or 120 s after the push; §2 per outcome C: launch-repo PRs keep `EnterWorktree(path)`; other-repo PRs skip relocation, edit with absolute paths, every git command `git -C <worktree>` incl. §5, §6, §10 and the drain; the fixer brief for an other-repo PR names the worktree root and says to use Read/Grep/Glob on it rather than its git helpers)
 - Modify: `steps/05-rereview.md`, `steps/06-notify.md`, `steps/07-ci.md` (progress-file writes, keys, `--repo` from key; 06 posts one line when a PR joins a running watch)
-- Modify: `skills/pr-tooling/pr-watch/references/fixer-addendum.md`, `known-bots-overlay.md` (key and path mentions only)
+- Modify: `skills/pr-tooling/pr-watch/references/fixer-addendum.md`, `known-bots-overlay.md` (key and path mentions; the addendum says "the repository at `<worktree>`", not "this repository")
+- Modify: `skills/pr-tooling/pr-loop-lib/references/fixer-prompt.md`, `references/fixer-verifier-prompt.md`, `steps/04-dispatch-fixers.md`, `steps/04.5-local-verify.md` (the worktree root is an explicit input: prompts name it instead of "this repository"; the `files_changed` check resolves paths against it; local verify runs build/test with it as working directory. When the caller passes no root, behaviour is today's: the cwd)
 
 - [ ] **Step 1:** Edit 01 and 02. Run `python scripts/validate.py`; expected exit 0. Commit `Arm pr-watch per session with leases`.
-- [ ] **Step 2:** Edit 03, 04, 05, 06, 07 and the two references. `git grep -n "STATE_DIR\|SLUG\|<MAIN>/.pr-autopilot/watch\|--state-dir" skills/pr-tooling/pr-watch` must print only the migration lines in 01, 02 and 03. Run the validator; expected exit 0. Commit `Route session-scoped events through the fix, re-review and CI paths`.
+- [ ] **Step 2:** Edit 03, 04, 05, 06, 07, the two references and the four pr-loop-lib files. `git grep -n "STATE_DIR\|SLUG\|<MAIN>/.pr-autopilot/watch\|--state-dir" skills/pr-tooling/pr-watch` must print only the migration lines in 01, 02 and 03. Run the validator; expected exit 0. Commit `Route session-scoped events through the fix, re-review and CI paths`.
 
 ### Task 10: Auto-join from pr-autopilot and pr-followup
 
@@ -268,9 +276,9 @@ The `lease-lost` event is new; Task 9 routes it (stop handling that PR, post one
 - Modify: `skills/pr-tooling/pr-followup/SKILL.md` (Execution step 6)
 
 **Interfaces:**
-- Consumes: `~/.claude/pr-watch/sessions/<CLAUDE_CODE_SESSION_ID>/watch.json` and `watch-heartbeat`.
+- Consumes: `~/.claude/pr-watch/sessions/<CLAUDE_CODE_SESSION_ID>/watch.json`.
 
-- [ ] **Step 1:** Add one numbered step to each: when `<PW_HOME>/sessions/<session id>/watch.json` exists, any entry has `status` `armed`, and the heartbeat is under 300 s old, invoke the `pr-watch` skill with `owner/repo#N --yes` for this PR; otherwise do nothing. Under `--dry-run`, do nothing.
+- [ ] **Step 1:** Add one numbered step to each: when `<PW_HOME>/sessions/<session id>/watch.json` exists, its `dry_run` is false and its `stopped_at` is null, invoke the `pr-watch` skill with `owner/repo#N --yes` for this PR; otherwise do nothing. No heartbeat test: an idle watch (every PR closed) still takes the new PR. Under the calling skill's own `--dry-run`, do nothing.
 - [ ] **Step 2:** Run `python scripts/validate.py`; expected exit 0.
 - [ ] **Step 3:** Commit `Join a running pr-watch when autopilot or followup finishes`.
 
@@ -289,7 +297,8 @@ The `lease-lost` event is new; Task 9 routes it (stop handling that PR, post one
 - [ ] **Step 3:** Second session: launch a session in `prism-sandbox` and run `/pr-watch prpande/prism-sandbox#<S1-1> --yes`. Expected: excluded with a line naming this session's `[Tag]Name`.
 - [ ] **Step 4:** Resume: end this test session, `claude --resume <id>`, run `/pr-watch`. Expected: `reclaimed`, no replay of handled threads.
 - [ ] **Step 5:** Takeover: kill the holder session, wait 301 s, arm from another session. Expected: claimed; progress (settled ids, Slack thread) carried.
-- [ ] **Step 6:** Auto-join: run `pr-autopilot` for a new PR in the test session with the watch running. Expected: the PR appears in `watch.json` and gets a lease.
+- [ ] **Step 6:** Auto-join: run `pr-autopilot` for a new PR in the test session with the watch running. Expected: the PR appears in `watch.json` and gets a lease. Then close every watched PR, wait for the `idle` event, and run `pr-autopilot` for one more PR. Expected: a new monitor starts and the PR is `armed`.
+- [ ] **Step 6b:** Cross-repo fix: on the `prism-sandbox-2` PR (not the launch repo), a review comment needing a code change is fixed by a pr-fixer with no relocation, local verify runs in that worktree, the commit lands on that PR's branch, and nothing changes in the launch repo's checkout.
 - [ ] **Step 7:** Migration: arm the old skill version (`git -C <main> show origin/main:...` copy in a scratch skill dir) on a sandbox PR, then arm the new one in the same session. Expected: old poller gone, `watch.json.migrated` present, progress imported.
 - [ ] **Step 8:** Close and delete every sandbox PR and branch the tests opened; record results here.
 
