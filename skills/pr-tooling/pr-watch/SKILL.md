@@ -90,6 +90,9 @@ arrives as a notification. Its `kind` is one of `pending`, `head-moved`,
 `reply`, `ci-red`, `tick`, `closed`, `settled`, `reconciled`,
 `lease-lost` (another session now holds the PR), `review-ready` (an
 `authored` PR is quiet and green and may be ready to ask humans to review),
+`conflicting` (an `authored` PR no longer merges cleanly into its base),
+`behind-ready` (an `authored` PR is approved, or needs no review, and is
+green but behind a base that requires branches to be up to date),
 `idle` (no PR in the
 watch is still armed; the monitor exits), or `poller-error` (the poller
 has failed five ticks in a row). Events about a PR carry `pr` as

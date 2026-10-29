@@ -323,6 +323,7 @@ def tick_query(groups):
             raise ValueError(f"unsafe owner/repo: {owner}/{repo}")
         fields = " ".join(
             f"p{int(n)}: pullRequest(number: {int(n)}) {{ number updatedAt headRefOid state "
+            f"baseRefName mergeable mergeStateStatus reviewDecision "
             f"commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }} }}"
             for n in numbers)
         aliases[f"r{index}"] = (owner, repo)
@@ -689,6 +690,34 @@ def check_review_ready(gh, view, poller, key, node, now, force, events):
         events.append({"pr": key, "role": "authored", "kind": "review-ready", "head": head})
 
 
+def merge_blocker(node):
+    """`conflicting`, `behind-ready`, or None when mergeable or not yet computed by GitHub."""
+    if node.get("mergeable") == "CONFLICTING":
+        return "conflicting"
+    # GitHub reports BEHIND only where the base requires branches to be up to date;
+    # reviewDecision is null where the base requires no review.
+    if (node.get("mergeable") == "MERGEABLE" and node.get("mergeStateStatus") == "BEHIND"
+            and node.get("reviewDecision") in ("APPROVED", None)
+            and rollup_state(node) == "SUCCESS"):
+        return "behind-ready"
+    return None
+
+
+def check_mergeability(view, poller, key, node, force, events):
+    """Emit `conflicting` or `behind-ready` once per kind and head until the session records it."""
+    entry = view["prs"][key]
+    kind = merge_blocker(node) if entry["role"] == "authored" else None
+    if kind is None:
+        return
+    mark = f"{kind}:{node['headRefOid']}"
+    marks = poller.setdefault("merge", {})
+    if entry.get("merge_notified") == mark or (not force and marks.get(key) == mark):
+        return
+    marks[key] = mark
+    events.append({"pr": key, "role": "authored", "kind": kind, "head": node["headRefOid"],
+                   "base": node.get("baseRefName")})
+
+
 def tick_once(gh, view, poller, now, force=False):
     events = []
     poller.setdefault("prs", {})
@@ -732,7 +761,9 @@ def tick_once(gh, view, poller, now, force=False):
                     continue
                 if node["state"] != "OPEN":
                     poller.get("review", {}).pop(key, None)
+                    poller.get("merge", {}).pop(key, None)
                     continue
+                check_mergeability(view, poller, key, node, force, events)
                 try:
                     check_review_ready(gh, view, poller, key, node, now, force, events)
                 except PR_FAULTS as exc:

@@ -26,6 +26,8 @@ check, and a note about the poller's own state file.
 | `settled` | section D |
 | `lease-lost` | section E |
 | `review-ready` | `pr-watch/steps/08-review-ask.md` |
+| `conflicting` | section G |
+| `behind-ready` | section H |
 | `idle` | section F |
 | `reconciled` | post "The daily check picked up work the event stream missed." in the thread of each listed `armed` PR whose progress file has a `slack_ts` (`pr-watch/steps/06-notify.md`) |
 | `poller-error` | post "The watch poller has failed five ticks in a row: <error>. No events are handled until this is fixed." in each PR thread that has a root (`slack_ts` set in its progress file), with the event's `error` (`pr-watch/steps/06-notify.md`, "poller error") |
@@ -167,3 +169,43 @@ The monitor found no `armed` PR left and ended. Re-read `watch.json`.
 When any entry's `status` is `armed`, arm a new monitor per
 `pr-watch/steps/02-arm-monitor.md`. Otherwise do nothing and post
 nothing; the stream's end that follows is planned.
+
+## G. Conflicting authored PR
+
+The base moved and the PR no longer merges cleanly. The poller raises
+this once per head until the progress file's `merge_notified` records it,
+and again on its daily check while unrecorded. Nothing here pushes.
+
+1. `gh pr view <N> --repo <owner>/<repo> --json mergeable,baseRefName,headRefOid`.
+   While `mergeable` is `UNKNOWN` (GitHub is still computing it), wait 10
+   seconds and ask again, up to three times. Stop and post nothing unless
+   it ends `CONFLICTING`.
+2. `git -C <worktree> fetch origin <baseRefName> <headRefOid>`, then
+   `git -C <worktree> merge-tree --write-tree --name-only origin/<baseRefName> <headRefOid>`.
+   It never touches the working tree or the index. Exit 1 means
+   conflicts: the first output line is a tree id, and each line after it,
+   up to the first blank line, is a conflicting path. Exit 0 means the
+   base fetched now merges cleanly: stop and post nothing. When the PR
+   has no worktree, or either command fails for another reason, the paths
+   are `paths unknown`.
+3. Post "conflicting" (`pr-watch/steps/06-notify.md`) in the PR's
+   thread. Only when the line was posted, set `merge_notified` to
+   `conflicting:<headRefOid>` in the PR's progress file. Never resolve the
+   conflict here. The fix path's own merge of `origin/<base>` still
+   escalates a conflict as before.
+
+## H. Behind, approved and green
+
+The PR is approved (or its base requires no review) and its checks are
+green, but its base requires branches to be up to date and the PR is
+behind it, so it cannot merge.
+
+1. `gh pr view <N> --repo <owner>/<repo> --json mergeStateStatus,reviewDecision,headRefOid,baseRefName`.
+   While `mergeStateStatus` is `UNKNOWN`, wait 10 seconds and ask again,
+   up to three times. Stop and post nothing unless it ends `BEHIND` with
+   `reviewDecision` `APPROVED` or null.
+2. Post "behind" (`pr-watch/steps/06-notify.md`) in the PR's thread. Only
+   when the line was posted, set `merge_notified` to
+   `behind-ready:<headRefOid>` in the PR's progress file. Never update the
+   branch for this event: every push starts another reviewer-bot round,
+   and the user decides when to take it.
