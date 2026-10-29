@@ -159,6 +159,7 @@ class FakeGh:
         self.null_repos = set()
         self.calls = []
         self.rollup = {}
+        self.merge = {}
         self.checks = {}
         self.no_checks = set()
         self.base_runs = {}
@@ -224,6 +225,9 @@ class FakeGh:
                     node = None if p is None or key in self.partial_heads else {
                         "number": n, "updatedAt": p["updatedAt"],
                         "headRefOid": p["headRefOid"], "state": p["state"]}
+                    if node is not None:
+                        node["baseRefName"] = p["baseRefName"]
+                        node.update(self.merge.get(key, {"mergeable": "MERGEABLE"}))
                     if node is not None and key in self.rollup:
                         node["commits"] = {"nodes": [{"commit": {
                             "statusCheckRollup": {"state": self.rollup[key]}}}]}
