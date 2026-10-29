@@ -694,21 +694,24 @@ def merge_blocker(node):
     """`conflicting`, `behind-ready`, or None when mergeable or not yet computed by GitHub."""
     if node.get("mergeable") == "CONFLICTING":
         return "conflicting"
-    # GitHub reports BEHIND only where the base requires branches to be up to date.
+    # GitHub reports BEHIND only where the base requires branches to be up to date;
+    # reviewDecision is null where the base requires no review.
     if (node.get("mergeable") == "MERGEABLE" and node.get("mergeStateStatus") == "BEHIND"
-            and node.get("reviewDecision") == "APPROVED" and rollup_state(node) == "SUCCESS"):
+            and node.get("reviewDecision") in ("APPROVED", None)
+            and rollup_state(node) == "SUCCESS"):
         return "behind-ready"
     return None
 
 
-def check_mergeability(view, poller, key, node, events):
-    """Emit `conflicting` or `behind-ready` once per kind and head for an authored PR."""
-    kind = merge_blocker(node) if view["prs"][key]["role"] == "authored" else None
+def check_mergeability(view, poller, key, node, force, events):
+    """Emit `conflicting` or `behind-ready` once per kind and head until the session records it."""
+    entry = view["prs"][key]
+    kind = merge_blocker(node) if entry["role"] == "authored" else None
     if kind is None:
         return
     mark = f"{kind}:{node['headRefOid']}"
     marks = poller.setdefault("merge", {})
-    if marks.get(key) == mark:
+    if entry.get("merge_notified") == mark or (not force and marks.get(key) == mark):
         return
     marks[key] = mark
     events.append({"pr": key, "role": "authored", "kind": kind, "head": node["headRefOid"],
@@ -760,7 +763,7 @@ def tick_once(gh, view, poller, now, force=False):
                     poller.get("review", {}).pop(key, None)
                     poller.get("merge", {}).pop(key, None)
                     continue
-                check_mergeability(view, poller, key, node, events)
+                check_mergeability(view, poller, key, node, force, events)
                 try:
                     check_review_ready(gh, view, poller, key, node, now, force, events)
                 except PR_FAULTS as exc:

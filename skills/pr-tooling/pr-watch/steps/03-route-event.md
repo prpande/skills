@@ -173,29 +173,39 @@ nothing; the stream's end that follows is planned.
 ## G. Conflicting authored PR
 
 The base moved and the PR no longer merges cleanly. The poller raises
-this once per head. Nothing here pushes.
+this once per head until the progress file's `merge_notified` records it,
+and again on its daily check while unrecorded. Nothing here pushes.
 
 1. `gh pr view <N> --repo <owner>/<repo> --json mergeable,baseRefName,headRefOid`.
-   Stop and post nothing unless `mergeable` is `CONFLICTING`.
+   While `mergeable` is `UNKNOWN` (GitHub is still computing it), wait 10
+   seconds and ask again, up to three times. Stop and post nothing unless
+   it ends `CONFLICTING`.
 2. `git -C <worktree> fetch origin <baseRefName> <headRefOid>`, then
    `git -C <worktree> merge-tree --write-tree --name-only origin/<baseRefName> <headRefOid>`.
    It never touches the working tree or the index. Exit 1 means
    conflicts: the first output line is a tree id, and each line after it,
-   up to the first blank line, is a conflicting path. When the PR has no
-   worktree, or either command fails for another reason, the paths are
-   `paths unknown`.
+   up to the first blank line, is a conflicting path. Exit 0 means the
+   base fetched now merges cleanly: stop and post nothing. When the PR
+   has no worktree, or either command fails for another reason, the paths
+   are `paths unknown`.
 3. Post "conflicting" (`pr-watch/steps/06-notify.md`) in the PR's
-   thread. Never resolve the conflict here. The fix path's own merge of
-   `origin/<base>` still escalates a conflict as before.
+   thread. Only when the line was posted, set `merge_notified` to
+   `conflicting:<headRefOid>` in the PR's progress file. Never resolve the
+   conflict here. The fix path's own merge of `origin/<base>` still
+   escalates a conflict as before.
 
 ## H. Behind, approved and green
 
-The PR is approved and its checks are green, but its base requires
-branches to be up to date and the PR is behind it, so it cannot merge.
+The PR is approved (or its base requires no review) and its checks are
+green, but its base requires branches to be up to date and the PR is
+behind it, so it cannot merge.
 
-1. `gh pr view <N> --repo <owner>/<repo> --json mergeStateStatus,reviewDecision,baseRefName`.
-   Stop and post nothing unless `mergeStateStatus` is `BEHIND` and
-   `reviewDecision` is `APPROVED`.
-2. Post "behind" (`pr-watch/steps/06-notify.md`) in the PR's thread.
-   Never update the branch for this event: every push starts another
-   reviewer-bot round, and the user decides when to take it.
+1. `gh pr view <N> --repo <owner>/<repo> --json mergeStateStatus,reviewDecision,headRefOid,baseRefName`.
+   While `mergeStateStatus` is `UNKNOWN`, wait 10 seconds and ask again,
+   up to three times. Stop and post nothing unless it ends `BEHIND` with
+   `reviewDecision` `APPROVED` or null.
+2. Post "behind" (`pr-watch/steps/06-notify.md`) in the PR's thread. Only
+   when the line was posted, set `merge_notified` to
+   `behind-ready:<headRefOid>` in the PR's progress file. Never update the
+   branch for this event: every push starts another reviewer-bot round,
+   and the user decides when to take it.

@@ -119,6 +119,7 @@ push caps and the Slack thread carry across the handover.
 | `wait_notice_at` | integer or null | `authored` only. The `queued_at` value the "Stopped waiting" line was posted for, so it posts once per wait; set by step 04 section 8 step 1, cleared by section 8 step 5 |
 | `retry_after` | integer or null | Both roles. Epoch seconds after which the poller re-emits the PR's events once (pending set and red checks on an `authored` PR; reply, head-moved, or settled on a `reviewed` PR); set to now + 600 by every skip in step 04 sections 1 and 2, by `pr-watch/steps/03-route-event.md` A.1, by a first failed log read in `pr-watch/steps/07-ci.md` rule 3, by `pr-watch/steps/03-route-event.md` B.4 after it writes `escalated_ids`, and, for either role, by a failing `POLL` command that no step gives its own branch (`SKILL.md` hard rules) |
 | `review_ask` | object or null | `authored` only; null until the review ask is sent. `{"drafted_at": ISO UTC string, "outbox_ts": the Slack ts of the message in `C0C205Q34SX`, "destination": channel id of the earlier ask's channel, or `none`}`. Written by `pr-watch/steps/08-review-ask.md` step 4 right after the send; once set, the poller never raises `review-ready` for the PR. Never written under `dry_run`. The orchestrator reads it |
+| `merge_notified` | string or null | `authored` only. `<kind>:<head>` of the last `conflicting` or `behind-ready` line posted, set by `pr-watch/steps/03-route-event.md` G.3 and H.2; the poller raises neither kind again for that head |
 | `skip_reason` | string or null | `authored` only. The reason of the last "Skipped" line posted; set by step 04's skips, cleared when step 04 section 2 acquires the lock. A skip with the same reason posts no line |
 
 ## `watch-poller.json`: written only by `POLL --monitor`
@@ -138,7 +139,7 @@ writes of the entry), and, `authored` PRs only, `ci_retried_at` (the same,
 for the CI branch; spent independently, so a standing CI-only failure does
 not keep forcing the pending set too), and, `reviewed` PRs only,
 `compared` (`[old head, new head, changed paths]` of the last compare, so
-the same head range is not fetched again). `review` maps an `authored` PR key to `checked` (`[head, updatedAt]` of the last review-ready evaluation) and `emitted` (the head a `review-ready` event was last raised for), so the event comes once per head. `merge` maps an `authored` PR key to `<kind>:<head>` of the last `conflicting` or `behind-ready` event, so each comes once per head. Deleting the file makes the next
+the same head range is not fetched again). `review` maps an `authored` PR key to `checked` (`[head, updatedAt]` of the last review-ready evaluation) and `emitted` (the head a `review-ready` event was last raised for), so the event comes once per head. `merge` maps an `authored` PR key to `<kind>:<head>` of the last `conflicting` or `behind-ready` event, so each comes once per head between forced ticks; a forced tick raises it again until the progress file's `merge_notified` records it. Deleting the file makes the next
 tick a full reconciliation. `poller_pid` and `claude_pid` are recorded
 for diagnosis; the ancestry checks read the live process list.
 
