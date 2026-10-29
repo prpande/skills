@@ -26,7 +26,7 @@ if __name__ == "__main__":
 
 import lease
 from pw_io import GhError, as_pid, no_window, read_json, write_json_atomic
-from pw_paths import NAME, iso_utc, parse_ref, pr_key, progress_path, repo_slug
+from pw_paths import NAME, iso_utc, parse_iso, parse_ref, pr_key, progress_path, repo_slug
 from pw_progress import starting_progress
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
@@ -43,6 +43,9 @@ ADO_BUILD = "https://dev.azure.com/{org}/{project}/_apis/build/builds/{build_id}
 ADO_ORG = re.compile(r"^[A-Za-z0-9._-]+$")
 ADO_PROJECT = re.compile(r"^[A-Za-z0-9._ %!&()@~-]+$")
 POLLER_ERROR_AFTER = 5
+REVIEW_QUIET_SECONDS = 30 * 60
+NON_REVIEW_BOTS = ("github-actions", "dependabot")
+GREEN_BUCKETS = ("pass", "skipping")
 PR_FAULTS = (GhError, KeyError, TypeError, ValueError, AttributeError)
 CLAUDE_GONE_EXIT = 3
 IS_WINDOWS = os.name == "nt"
@@ -588,6 +591,104 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
     prs[key] = new_entry
 
 
+def bot_activity_times(pr, self_login, allowlist):
+    """Epoch seconds of every comment and review a reviewer bot left on the PR."""
+    def is_review_bot(author):
+        login, kind = classify(author, self_login, allowlist)
+        return kind == "bot" and login.lower().removesuffix("[bot]") not in NON_REVIEW_BOTS
+
+    times = []
+    comments = [c for t in pr["reviewThreads"]["nodes"] for c in t["comments"]["nodes"]]
+    for c in comments + pr["comments"]["nodes"]:
+        if is_review_bot(c["author"]):
+            times += [parse_iso(c["createdAt"]), parse_iso(c["updatedAt"])]
+    for r in pr["reviews"]["nodes"]:
+        if is_review_bot(r["author"]) and r.get("submittedAt"):
+            times.append(parse_iso(r["submittedAt"]))
+    return times
+
+
+def human_reviewed(pr, self_login, allowlist):
+    """True when a human other than the user left a submitted review or an inline comment."""
+    def human(author):
+        return classify(author, self_login, allowlist)[1] == "human"
+
+    if any(human(r["author"]) and r.get("state") != "PENDING" for r in pr["reviews"]["nodes"]):
+        return True
+    return any(human(c["author"]) for t in pr["reviewThreads"]["nodes"]
+               for c in t["comments"]["nodes"])
+
+
+def head_commit_time(pr):
+    commits = (pr.get("commits") or {}).get("nodes") or []
+    stamp = ((commits[0].get("commit") or {}).get("committedDate")) if commits else None
+    return parse_iso(stamp) if stamp else None
+
+
+def review_blockers(gh, view, pr, entry, now):
+    """What keeps an authored PR from being ready for human review; empty means ready."""
+    me, allow = view["self_login"], view["bot_allowlist"]
+    blockers = []
+    if entry.get("role") != "authored":
+        return ["not-authored"]
+    if entry.get("review_ask") is not None:
+        blockers.append("already-asked")
+    if pr["state"] != "OPEN":
+        blockers.append("not-open")
+    if pr.get("isDraft"):
+        blockers.append("draft")
+    if any(not t["isResolved"] for t in pr["reviewThreads"]["nodes"]):
+        blockers.append("unresolved-threads")
+    threads, top = pending(pr, entry, me, allow)
+    if threads or top:
+        blockers.append("fix-pending")
+    key = entry_key(entry)
+    if (key in view.get("push_queue", []) or entry.get("queued_head")
+            or entry.get("ci_rerun_queued")):
+        blockers.append("fix-queued")
+    bot_times = bot_activity_times(pr, me, allow)
+    if not bot_times:
+        blockers.append("no-bot-review")
+    elif now - max(bot_times) < REVIEW_QUIET_SECONDS:
+        blockers.append("bot-active")
+    pushed = head_commit_time(pr)
+    if pushed is None or now - pushed < REVIEW_QUIET_SECONDS:
+        blockers.append("recent-push")
+    if human_reviewed(pr, me, allow):
+        blockers.append("human-reviewed")
+    if not blockers:
+        checks = required_checks(gh, repo_slug(entry["owner"], entry["repo"]), entry["number"])
+        rollup = rollup_state(pr)
+        if rollup != "SUCCESS" or any(c.get("bucket") not in GREEN_BUCKETS for c in checks):
+            blockers.append("checks-not-green")
+    return blockers
+
+
+def review_ready_payload(gh, view, entry, pr, now):
+    blockers = review_blockers(gh, view, pr, entry, now)
+    return {"pr": entry_key(entry), "head": pr["headRefOid"], "ready": not blockers,
+            "blockers": blockers}
+
+
+def check_review_ready(gh, view, poller, key, node, now, force, events):
+    """Emit review-ready once per head when a quiet, green authored PR may be asked about."""
+    entry = view["prs"][key]
+    state = poller.setdefault("review", {}).setdefault(key, {})
+    head, stamp = node["headRefOid"], node["updatedAt"]
+    if (entry["role"] != "authored" or entry.get("review_ask") is not None
+            or rollup_state(node) != "SUCCESS"
+            or now - parse_iso(stamp) < REVIEW_QUIET_SECONDS):
+        return
+    if not force and (state.get("checked") == [head, stamp] or state.get("emitted") == head):
+        return
+    pr = fetch_pr(gh, entry["owner"], entry["repo"], entry["number"])
+    payload = review_ready_payload(gh, view, entry, pr, now)
+    state["checked"] = [head, stamp]
+    if payload["ready"]:
+        state["emitted"] = head
+        events.append({"pr": key, "role": "authored", "kind": "review-ready", "head": head})
+
+
 def tick_once(gh, view, poller, now, force=False):
     events = []
     poller.setdefault("prs", {})
@@ -628,6 +729,14 @@ def tick_once(gh, view, poller, now, force=False):
                     tick_pr(gh, view, poller, key, node, now, force, events)
                 except PR_FAULTS as exc:
                     pr_fault(poller, key, exc)
+                    continue
+                if node["state"] != "OPEN":
+                    poller.get("review", {}).pop(key, None)
+                    continue
+                try:
+                    check_review_ready(gh, view, poller, key, node, now, force, events)
+                except PR_FAULTS as exc:
+                    warn(f"PR {key}: review-ready check: {type(exc).__name__}: {exc}")
     queue = list(view.get("push_queue", []))
     if not queue:
         poller["last_tick_queue"] = []
@@ -1133,6 +1242,8 @@ def main(argv=None, gh=run_gh):
     mode.add_argument("--tails", metavar="REF", help="print pending tails as CommentRecords")
     mode.add_argument("--findings", metavar="REF",
                       help="print the user's threads on a reviewed PR")
+    mode.add_argument("--review-ready", metavar="REF",
+                      help="print whether an authored PR is ready to ask humans to review")
     mode.add_argument("--checks", metavar="REF",
                       help="print the required checks on the PR head")
     mode.add_argument("--assert-author", type=int, metavar="PR",
@@ -1316,7 +1427,8 @@ def run_mode(args, gh):
         for line in ci_rerun(gh, args.repo, args.ci_rerun, view["ado_orgs"]):
             print(f"rerun started: {line}")
         return 0
-    owner, repo, number = parse_ref(args.checks or args.baseline or args.tails or args.findings)
+    owner, repo, number = parse_ref(args.checks or args.baseline or args.tails or args.findings
+                                    or args.review_ready)
     if args.checks:
         print(json.dumps(checks_payload(gh, owner, repo, number), indent=2))
         return 0
@@ -1333,6 +1445,8 @@ def run_mode(args, gh):
         payload = baseline(pr, me, allow)
     elif args.tails:
         payload = tails_payload(pr, entry, me, allow)
+    elif args.review_ready:
+        payload = review_ready_payload(gh, view, entry, pr, time.time())
     else:
         payload = findings_payload(gh, view, entry, pr)
     print(json.dumps(payload, indent=2))

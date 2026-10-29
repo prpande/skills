@@ -9,7 +9,7 @@ AUTHORED_START = {"slack_root_checked": False, "ci_reruns": [], "ci_rerun_queued
                   "ci_log_occurrence": None, "cap_notified_head": None, "ci_fix_pushes": 0,
                   "review_fix_pushes": 0, "last_pushed_head": None, "queued_head": None,
                   "queued_at": None, "wait_notice_at": None, "retry_after": None,
-                  "skip_reason": None}
+                  "skip_reason": None, "review_ask": None}
 REVIEWED_START = {"finding_verdicts": {}, "rereviewed_head": None, "retry_after": None}
 FIELDS = frozenset({*COMMON_START, *AUTHORED_START, *REVIEWED_START})
 

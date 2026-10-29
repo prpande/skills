@@ -4,7 +4,10 @@ Channel: `channel_id` from `watch.json`, always `C0C15VC8Y0Z`. Tool:
 `mcp__plugin_slack_slack__slack_send_message`. One thread per PR; every
 message is a reply in the PR's thread. Only the user reads this
 channel, so messages are short plain lines and do not go through the
-voice guide. Under `dry_run`, append each message to
+voice guide. The one other place this skill sends is the user's outbox
+`C0C205Q34SX`, for the review ask of `pr-watch/steps/08-review-ask.md`;
+that message is a draft the user forwards, so it does go through
+`human-reply` and `humanizer`. Under `dry_run`, append each message to
 `<scratchpad>/pr-watch-dry-run/slack.md` instead of sending; the
 history read in "Finding the thread" still happens.
 
@@ -74,6 +77,7 @@ the steps above.
 | CI rerun dropped | `Rerun of <check name> dropped: the PR head moved before it ran.` |
 | CI pre-existing | `<check name> is red on <base> too; leaving it.` |
 | CI needs you | `Needs you: [<check name>](<link>) is red at <head7> (<reason>).` — then, only when the PR's `ci_log_occurrence` is this check's occurrence key and `pr-watch/steps/07-ci.md` rule 3's destination check passes again over the file now, up to 20 lines from `grep -m 20 -E -e '##\[error\]' -e 'error [A-Z]+[0-9]+' -e 'Failed ' -e 'Test Run Failed'` over it, put through "Quoting someone else's text", in a code block; the session never reads the whole file |
+| review ask | `Review ask drafted in #prpande-outbox for <destination>.` (`pr-watch/steps/08-review-ask.md`; `<destination>` is the channel name, or `no earlier ask found; pick a channel`) |
 | monitor restarted | `Watch monitor restarted.` |
 | joined | `Joined this session's watch.` Posted once for each PR that was not `armed` in `watch.json` before a run of `pr-watch/steps/01-discover.md`, when that run's section 9 printed `alive`. A PR whose `slack_ts` is null follows "Finding the thread" first, and this line is posted only if that ends with a thread; an entry that was already `armed` gets nothing |
 | lease lost | `Another session took over #<N> (<holder>); no longer watching it here.` in the PR's thread when its progress file has a `slack_ts`; `<holder>` is the label `pr-watch/steps/03-route-event.md` section E works out |
