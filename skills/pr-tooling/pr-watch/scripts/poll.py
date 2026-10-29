@@ -620,8 +620,8 @@ def human_reviewed(pr, self_login, allowlist):
 
 
 def head_commit_time(pr):
-    commits = (pr.get("commits") or {}).get("nodes") or []
-    stamp = ((commits[0].get("commit") or {}).get("committedDate")) if commits else None
+    nodes = (pr.get("commits") or {}).get("nodes") or [{}]
+    stamp = (nodes[0].get("commit") or {}).get("committedDate")
     return parse_iso(stamp) if stamp else None
 
 
