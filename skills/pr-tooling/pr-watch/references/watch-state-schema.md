@@ -138,7 +138,7 @@ writes of the entry), and, `authored` PRs only, `ci_retried_at` (the same,
 for the CI branch; spent independently, so a standing CI-only failure does
 not keep forcing the pending set too), and, `reviewed` PRs only,
 `compared` (`[old head, new head, changed paths]` of the last compare, so
-the same head range is not fetched again). `review` maps an `authored` PR key to `checked` (`[head, updatedAt]` of the last review-ready evaluation) and `emitted` (the head a `review-ready` event was last raised for), so the event comes once per head. `merge` maps an `authored` PR key to `<kind>:<head>` of the last `conflicting` or `behind-ready` event, so each comes once per head (and again on a forced tick); it is cleared when the PR merges cleanly again and left alone while GitHub reports `UNKNOWN`. Deleting the file makes the next
+the same head range is not fetched again). `review` maps an `authored` PR key to `checked` (`[head, updatedAt]` of the last review-ready evaluation) and `emitted` (the head a `review-ready` event was last raised for), so the event comes once per head. `merge` maps an `authored` PR key to `<kind>:<head>` of the last `conflicting` or `behind-ready` event, so each comes once per head. Deleting the file makes the next
 tick a full reconciliation. `poller_pid` and `claude_pid` are recorded
 for diagnosis; the ancestry checks read the live process list.
 

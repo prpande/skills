@@ -691,34 +691,27 @@ def check_review_ready(gh, view, poller, key, node, now, force, events):
 
 
 def merge_blocker(node):
-    """`conflicting`, `behind-ready`, None when mergeable, or "unknown" while GitHub computes it."""
+    """`conflicting`, `behind-ready`, or None when mergeable or not yet computed by GitHub."""
     if node.get("mergeable") == "CONFLICTING":
         return "conflicting"
-    if node.get("mergeable") != "MERGEABLE":
-        return "unknown"
     # GitHub reports BEHIND only where the base requires branches to be up to date.
-    if (node.get("mergeStateStatus") == "BEHIND" and node.get("reviewDecision") == "APPROVED"
-            and rollup_state(node) == "SUCCESS"):
+    if (node.get("mergeable") == "MERGEABLE" and node.get("mergeStateStatus") == "BEHIND"
+            and node.get("reviewDecision") == "APPROVED" and rollup_state(node) == "SUCCESS"):
         return "behind-ready"
     return None
 
 
-def check_mergeability(view, poller, key, node, force, events):
-    """Emit `conflicting` or `behind-ready` once per head, and again on a forced pass."""
-    if view["prs"][key]["role"] != "authored":
-        return
-    marks = poller.setdefault("merge", {})
-    kind = merge_blocker(node)
-    if kind == "unknown":
-        return
+def check_mergeability(view, poller, key, node, events):
+    """Emit `conflicting` or `behind-ready` once per kind and head for an authored PR."""
+    kind = merge_blocker(node) if view["prs"][key]["role"] == "authored" else None
     if kind is None:
-        marks.pop(key, None)
         return
-    head = node["headRefOid"]
-    if not force and marks.get(key) == f"{kind}:{head}":
+    mark = f"{kind}:{node['headRefOid']}"
+    marks = poller.setdefault("merge", {})
+    if marks.get(key) == mark:
         return
-    marks[key] = f"{kind}:{head}"
-    events.append({"pr": key, "role": "authored", "kind": kind, "head": head,
+    marks[key] = mark
+    events.append({"pr": key, "role": "authored", "kind": kind, "head": node["headRefOid"],
                    "base": node.get("baseRefName")})
 
 
@@ -767,7 +760,7 @@ def tick_once(gh, view, poller, now, force=False):
                     poller.get("review", {}).pop(key, None)
                     poller.get("merge", {}).pop(key, None)
                     continue
-                check_mergeability(view, poller, key, node, force, events)
+                check_mergeability(view, poller, key, node, events)
                 try:
                     check_review_ready(gh, view, poller, key, node, now, force, events)
                 except PR_FAULTS as exc:

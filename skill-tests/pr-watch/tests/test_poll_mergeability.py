@@ -14,9 +14,10 @@ class MergeBlockerTests(unittest.TestCase):
     def test_conflicting(self):
         self.assertEqual(poll.merge_blocker(self.node(mergeable="CONFLICTING")), "conflicting")
 
-    def test_unknown_while_github_computes(self):
-        self.assertEqual(poll.merge_blocker(self.node(mergeable="UNKNOWN")), "unknown")
-        self.assertEqual(poll.merge_blocker(self.node()), "unknown")
+    def test_nothing_while_github_computes(self):
+        self.assertIsNone(poll.merge_blocker(self.node(mergeable="UNKNOWN")))
+        self.assertIsNone(poll.merge_blocker(self.node(mergeStateStatus="BEHIND",
+                                                       reviewDecision="APPROVED")))
 
     def test_behind_counts_only_when_approved_and_green(self):
         self.assertEqual(poll.merge_blocker(self.node(**APPROVED_BEHIND)), "behind-ready")
@@ -68,18 +69,24 @@ class MergeabilityTickTests(unittest.TestCase):
         self.gh.merge[pk(1411)] = {"mergeable": "CONFLICTING"}
         self.assertEqual(self.tick(), [])
 
-    def test_a_cleared_conflict_that_returns_is_raised_again(self):
+    def test_a_forced_pass_does_not_raise_it_again(self):
         self.gh.merge[pk(1411)] = {"mergeable": "CONFLICTING"}
         self.tick()
-        self.gh.merge[pk(1411)] = {"mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN"}
-        self.tick()
-        self.gh.merge[pk(1411)] = {"mergeable": "CONFLICTING"}
-        self.assertEqual(len(self.tick()), 1)
+        self.assertEqual(self.tick(force=True), [])
 
-    def test_a_forced_pass_raises_it_again(self):
-        self.gh.merge[pk(1411)] = {"mergeable": "CONFLICTING"}
+    def test_ci_flapping_on_a_behind_pr_does_not_raise_it_again(self):
+        self.gh.merge[pk(1411)] = dict(APPROVED_BEHIND)
         self.tick()
-        self.assertEqual(len(self.tick(force=True)), 1)
+        self.gh.rollup[pk(1411)] = "PENDING"
+        self.tick()
+        self.gh.rollup[pk(1411)] = "SUCCESS"
+        self.assertEqual(self.tick(), [])
+
+    def test_a_change_of_kind_on_the_same_head_is_raised(self):
+        self.gh.merge[pk(1411)] = dict(APPROVED_BEHIND)
+        self.tick()
+        self.gh.merge[pk(1411)] = {"mergeable": "CONFLICTING"}
+        self.assertEqual([e["kind"] for e in self.tick()], ["conflicting"])
 
     def test_approved_green_and_behind_is_raised(self):
         self.gh.merge[pk(1411)] = dict(APPROVED_BEHIND)

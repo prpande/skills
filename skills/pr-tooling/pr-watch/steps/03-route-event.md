@@ -173,8 +173,7 @@ nothing; the stream's end that follows is planned.
 ## G. Conflicting authored PR
 
 The base moved and the PR no longer merges cleanly. The poller raises
-this once per head, and again on its daily check while the conflict
-stands. Nothing here pushes.
+this once per head. Nothing here pushes.
 
 1. `gh pr view <N> --repo <owner>/<repo> --json mergeable,baseRefName,headRefOid`.
    Stop and post nothing unless `mergeable` is `CONFLICTING`.
