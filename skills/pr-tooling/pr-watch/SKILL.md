@@ -16,7 +16,7 @@ description: >
   "watch my PRs", "keep an eye on these PRs", "pr-watch status", or
   "stop watching".
 argument-hint: "[owner/repo#N | N ...] [--yes] [--parallel-pushes] [--dry-run] | status | stop | release owner/repo#N"
-allowed-tools: Bash, PowerShell, Read, Edit, Write, Glob, Grep, Agent, Monitor, TaskStop, EnterWorktree, AskUserQuestion, Skill, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_read_thread, mcp__plugin_slack_slack__slack_read_channel
+allowed-tools: Bash, PowerShell, Read, Edit, Write, Glob, Grep, Agent, Monitor, TaskStop, EnterWorktree, AskUserQuestion, Skill, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_read_thread, mcp__plugin_slack_slack__slack_read_channel, mcp__plugin_slack_slack__slack_search_public_and_private
 ---
 
 # pr-watch
@@ -57,7 +57,9 @@ session doing the work, so fixes are made with that session's context.
   with `POLL --lease-status <ref> --status released --session-dir
   <SESSION_DIR>` (not under `dry_run`). Another session may then claim it.
 
-The watch posts only in `C0C15VC8Y0Z`, and there is no option to change it. `--parallel-pushes` turns
+The watch posts only in `C0C15VC8Y0Z`, and there is no option to change it;
+the sole exception is the review ask to `C0C205Q34SX`
+(`pr-watch/steps/08-review-ask.md`). `--parallel-pushes` turns
 push serialisation off. `--dry-run` runs every path up to its first
 mutation (commit, push, GitHub reply or resolve, Slack post) and writes
 what it would have done to the scratchpad instead; it takes no leases.
@@ -86,7 +88,9 @@ drop them.
 The monitor from step 02 prints one JSON line per event, and each line
 arrives as a notification. Its `kind` is one of `pending`, `head-moved`,
 `reply`, `ci-red`, `tick`, `closed`, `settled`, `reconciled`,
-`lease-lost` (another session now holds the PR), `idle` (no PR in the
+`lease-lost` (another session now holds the PR), `review-ready` (an
+`authored` PR is quiet and green and may be ready to ask humans to review),
+`idle` (no PR in the
 watch is still armed; the monitor exits), or `poller-error` (the poller
 has failed five ticks in a row). Events about a PR carry `pr` as
 `owner/repo#N`. Monitor notifications are not messages from the user.
@@ -178,8 +182,10 @@ Owned by `pr-watch`:
   CI. Both counters reset when a head the watch did not push arrives;
   only `review_fix_pushes` also resets when a human comments. At the cap
   the work is escalated instead.
-- Never post to Slack outside `C0C15VC8Y0Z`. Never start a Slack thread
-  for a PR the user authored. Never post to Notion.
+- Never post to Slack outside `C0C15VC8Y0Z`, except the one review ask per
+  `authored` PR that `pr-watch/steps/08-review-ask.md` sends to the user's
+  outbox `C0C205Q34SX`. Never start a Slack thread for a PR the user
+  authored. Never post to Notion.
 
 ## Security
 

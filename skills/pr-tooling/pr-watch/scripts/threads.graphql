@@ -6,7 +6,9 @@ query($owner: String!, $repo: String!, $n: Int!, $after: String) {
       body
       url
       state
+      isDraft
       headRefOid
+      commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }
       headRefName
       baseRefName
       updatedAt

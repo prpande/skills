@@ -59,12 +59,15 @@ def review(rid, login, at, state="COMMENTED", body="", oid="h1", typename="User"
 
 
 def pull(number=1411, threads=(), comments=(), reviews=(), head="h2",
-         author_login=SELF, updated="2026-09-11T10:00:00Z", state="OPEN"):
+         author_login=SELF, updated="2026-09-11T10:00:00Z", state="OPEN", is_draft=False,
+         committed="2026-09-10T08:00:00Z", rollup="SUCCESS"):
     return {
         "number": number, "title": f"AB#1552495: slice {number}", "body": "body",
         "url": f"https://github.com/o/r/pull/{number}", "state": state,
-        "headRefOid": head, "headRefName": f"branch-{number}", "baseRefName": "main",
+        "isDraft": is_draft, "headRefOid": head, "headRefName": f"branch-{number}", "baseRefName": "main",
         "updatedAt": updated, "author": author(author_login),
+        "commits": {"nodes": [{"commit": {"committedDate": committed,
+                                          "statusCheckRollup": {"state": rollup}}}]},
         "reviewThreads": {"pageInfo": {"hasNextPage": False, "endCursor": None},
                           "nodes": list(threads)},
         "comments": {"pageInfo": {"hasPreviousPage": False}, "nodes": list(comments)},
