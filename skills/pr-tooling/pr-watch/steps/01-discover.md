@@ -65,8 +65,10 @@ resume:
   `stopped` stays `stopped`, with its lease untouched, unless this is a
   bare `/pr-watch` or the invocation names it; then §5 claims it and §7
   sets it `armed` once the claim succeeds.
-- `push_queue`, `channel_id`, `serialize_pushes`, and `bot_allowlist`
-  are kept. `session_id` stays `SESSION_ID`.
+- `push_queue`, `serialize_pushes`, and `bot_allowlist` are kept.
+  `channel_id` is kept when it is `C0C15VC8Y0Z`; any other value is set
+  to `C0C15VC8Y0Z`, and `slack_ts` is set to `null` in the progress file
+  of every PR in the watch, since those values belong to another channel. `session_id` stays `SESSION_ID`.
 
 Otherwise start from an empty set.
 
@@ -179,7 +181,7 @@ Write `watch.json` per `pr-watch/references/watch-state-schema.md`
 
 - `session_id` `SESSION_ID`, `claude_pid` `CLAUDE_PID`, `self_login`
   `SELF`, and `origin_worktree` `ORIGIN`;
-- `channel_id` from `--channel` or `C0C15VC8Y0Z`, `serialize_pushes`
+- `channel_id` `C0C15VC8Y0Z`, `serialize_pushes`
   `false` only under `--parallel-pushes`, and `dry_run` from `--dry-run`;
 - `stopped_at` kept as it is; §7 clears it;
 - `push_queue` kept from a resume, else `[]`;
@@ -235,7 +237,7 @@ write that already holds an `authored` PR's baseline (below):
 
 - all PRs: `posted_reply_ids`, `settled_ids`, and `escalated_ids` as
   `[]`, `handled_top_level_ids` as `{}`, `slack_ts` as `null`;
-- `authored` adds `ci_reruns`, `ci_rerun_queued`, `ci_handled`, and
+- `authored` adds `slack_root_checked` as `false`, `ci_reruns`, `ci_rerun_queued`, `ci_handled`, and
   `ci_log_retries` as `[]`; `ci_log_occurrence` and `cap_notified_head`
   as `null`; `ci_fix_pushes` and `review_fix_pushes` as `0`;
   `last_pushed_head`, `queued_head`, `queued_at`, `wait_notice_at`,

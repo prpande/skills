@@ -57,8 +57,8 @@ so work that arrived in the gap comes through as its own event.
 
 Any other ending is the poller exiting or dying, and the notice carries
 its exit code or its output instead. Arm it again, keep the new task id,
-and post "Watch monitor restarted." in each PR thread that has a root
-(`pr-watch/steps/06-notify.md`), so the thread records the gap. If the
+and post "Watch monitor restarted." in each PR thread whose progress file
+has a `slack_ts` (`pr-watch/steps/06-notify.md`), so the thread records the gap. If the
 next arming ends the same way rather than at its deadline, stop
 re-arming and tell the user what the notice said; the watch is down
 until they fix it.

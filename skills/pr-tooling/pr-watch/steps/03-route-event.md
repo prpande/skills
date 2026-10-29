@@ -26,7 +26,7 @@ check, and a note about the poller's own state file.
 | `settled` | section D |
 | `lease-lost` | section E |
 | `idle` | section F |
-| `reconciled` | post "The daily check picked up work the event stream missed." in each listed `armed` PR's thread (`pr-watch/steps/06-notify.md`) |
+| `reconciled` | post "The daily check picked up work the event stream missed." in the thread of each listed `armed` PR whose progress file has a `slack_ts` (`pr-watch/steps/06-notify.md`) |
 | `poller-error` | post "The watch poller has failed five ticks in a row: <error>. No events are handled until this is fixed." in each PR thread that has a root (`slack_ts` set in its progress file), with the event's `error` (`pr-watch/steps/06-notify.md`, "poller error") |
 
 A monitor that exits with code 3 (its claude process is gone) is never

@@ -5,7 +5,7 @@ import copy
 
 COMMON_START = {"posted_reply_ids": [], "settled_ids": [], "escalated_ids": [],
                 "handled_top_level_ids": {}, "slack_ts": None}
-AUTHORED_START = {"ci_reruns": [], "ci_rerun_queued": [], "ci_handled": [], "ci_log_retries": [],
+AUTHORED_START = {"slack_root_checked": False, "ci_reruns": [], "ci_rerun_queued": [], "ci_handled": [], "ci_log_retries": [],
                   "ci_log_occurrence": None, "cap_notified_head": None, "ci_fix_pushes": 0,
                   "review_fix_pushes": 0, "last_pushed_head": None, "queued_head": None,
                   "queued_at": None, "wait_notice_at": None, "retry_after": None,

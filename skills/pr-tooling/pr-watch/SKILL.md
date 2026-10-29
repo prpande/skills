@@ -9,13 +9,14 @@ description: >
   their required CI checks green by rerunning flakes and fixing real
   failures. On PRs the user reviewed it
   re-checks the user's findings when the author pushes and replies on
-  the user's own threads. Reports to a private Slack channel, one thread
-  per PR. Ends on its own once no PR in it is still armed. Use when the
+  the user's own threads. Posts only in the user's PR Slack channel, as replies in the
+  PR's existing thread, and never starts a thread for a PR the user
+  authored. Ends on its own once no PR in it is still armed. Use when the
   user says "/pr-watch",
   "watch my PRs", "keep an eye on these PRs", "pr-watch status", or
   "stop watching".
-argument-hint: "[owner/repo#N | N ...] [--yes] [--channel <id>] [--parallel-pushes] [--dry-run] | status | stop | release owner/repo#N"
-allowed-tools: Bash, PowerShell, Read, Edit, Write, Glob, Grep, Agent, Monitor, TaskStop, EnterWorktree, AskUserQuestion, Skill, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_read_thread
+argument-hint: "[owner/repo#N | N ...] [--yes] [--parallel-pushes] [--dry-run] | status | stop | release owner/repo#N"
+allowed-tools: Bash, PowerShell, Read, Edit, Write, Glob, Grep, Agent, Monitor, TaskStop, EnterWorktree, AskUserQuestion, Skill, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_read_thread, mcp__plugin_slack_slack__slack_read_channel
 ---
 
 # pr-watch
@@ -35,7 +36,7 @@ session doing the work, so fixes are made with that session's context.
 | `/pr-watch owner/repo#N ...` | those PRs; role from the live author |
 | `/pr-watch N ...` | a bare number is a PR in the current directory's repo |
 | `--yes` | skip the "Watch these PRs?" confirm |
-| `--channel`, `--parallel-pushes`, `--dry-run` | as below |
+| `--parallel-pushes`, `--dry-run` | as below |
 | `/pr-watch status` | every PR in this session's watch, across repos |
 | `/pr-watch stop` | stop this session's monitor; its leases become `stopped` |
 | `/pr-watch release owner/repo#N` | drop one PR; its lease becomes `released` |
@@ -56,8 +57,7 @@ session doing the work, so fixes are made with that session's context.
   with `POLL --lease-status <ref> --status released --session-dir
   <SESSION_DIR>` (not under `dry_run`). Another session may then claim it.
 
-`--channel` defaults to `C0C15VC8Y0Z`. Passing a channel id is the user's
-authorisation to post there; post nowhere else. `--parallel-pushes` turns
+The watch posts only in `C0C15VC8Y0Z`, and there is no option to change it. `--parallel-pushes` turns
 push serialisation off. `--dry-run` runs every path up to its first
 mutation (commit, push, GitHub reply or resolve, Slack post) and writes
 what it would have done to the scratchpad instead; it takes no leases.
@@ -178,8 +178,8 @@ Owned by `pr-watch`:
   CI. Both counters reset when a head the watch did not push arrives;
   only `review_fix_pushes` also resets when a human comments. At the cap
   the work is escalated instead.
-- Never post to Slack outside the configured channel. Never post to
-  Notion.
+- Never post to Slack outside `C0C15VC8Y0Z`. Never start a Slack thread
+  for a PR the user authored. Never post to Notion.
 
 ## Security
 

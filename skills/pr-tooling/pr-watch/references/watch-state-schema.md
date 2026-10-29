@@ -69,7 +69,7 @@ has neither the retry nor the cleanup.
 | `session_id` | string (UUID) | The session that armed the watch; also the `session_id` in every library lock this watch takes |
 | `claude_pid` | integer | `CLAUDE_PID` of the session's claude process; the monitor exits when that process is gone |
 | `self_login` | string | `gh api user --jq .login` at arm |
-| `channel_id` | string | Slack channel for notifications |
+| `channel_id` | string | Slack channel for notifications; always `C0C15VC8Y0Z` |
 | `origin_worktree` | string (absolute path) | Where the session returns after every fix |
 | `serialize_pushes` | boolean | `false` only with `--parallel-pushes` |
 | `bot_allowlist` | array of logins | Logins always classified as bots, whatever type GitHub reports |
@@ -86,7 +86,7 @@ Per PR in `prs`:
 | `role` | `authored` \| `reviewed` | From the PR's live author at discovery |
 | `worktree` | string or absent | Absolute path; `authored` only |
 | `branch` | string | Head branch name |
-| `title`, `url` | string | For Slack roots |
+| `title`, `url` | string | For the Slack root of a `reviewed` PR |
 | `status` | string | `armed`, `stopped`, `released`, `closed` or `lost`. The poller ticks only `armed` PRs. `lost` means another session claimed the lease; this session no longer acts on the PR |
 
 ## `<N>.progress.json`: written only by the lease holder's session
@@ -97,7 +97,8 @@ push caps and the Slack thread carry across the handover.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `slack_ts` | string or null | The PR's Slack root |
+| `slack_ts` | string or null | The PR's Slack thread root: the routine's thread, or for a `reviewed` PR the user's own. Null until `pr-watch/steps/06-notify.md` "Finding the thread" finds or starts one |
+| `slack_root_checked` | boolean | `authored` only. `true` once a recorded `slack_ts` has been confirmed to be a root the routine posted |
 | `posted_reply_ids` | array of node ids | Replies this watch posted (GraphQL `id`, not `databaseId`) |
 | `settled_ids` | array of node ids | Comments that close a tail with no reply: first-arm baseline, Filter B skips, acknowledged threads |
 | `escalated_ids` | array of node ids | Comments sent to Slack as needing the user |

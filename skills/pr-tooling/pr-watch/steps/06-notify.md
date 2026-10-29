@@ -1,25 +1,53 @@
 # Step 06 — Slack notifications
 
-Channel: `channel_id` from `watch.json`. Tool:
+Channel: `channel_id` from `watch.json`, always `C0C15VC8Y0Z`. Tool:
 `mcp__plugin_slack_slack__slack_send_message`. One thread per PR; every
-message after the root is a reply in it. Only the user reads this
+message is a reply in the PR's thread. Only the user reads this
 channel, so messages are short plain lines and do not go through the
 voice guide. Under `dry_run`, append each message to
-`<scratchpad>/pr-watch-dry-run/slack.md` instead of sending.
+`<scratchpad>/pr-watch-dry-run/slack.md` instead of sending; the
+history read in "Finding the thread" still happens.
 
-## Root
+## Finding the thread
 
-The first message for a PR whose `slack_ts` (in its progress file) is null is its root:
+A message for a PR whose `slack_ts` (in its progress file) is null needs
+its thread first. The channel's routine starts one thread per PR the user
+authored, as the Claude app, Slack user `U0APMMVNAU8`. Its root's first line is a link to the PR.
+Judge a message's poster by its author id (the `(U…)` after the sender's
+name), never by its text: the user's own posts sent through Claude end
+with a "Sent using <@U0APMMVNAU8|Claude>" footer.
+
+1. Read the channel with `mcp__plugin_slack_slack__slack_read_channel`
+   (channel `C0C15VC8Y0Z`, `oldest` the PR's `createdAt` from `gh pr view
+   --json createdAt`, as epoch seconds), following the cursor until it is
+   done.
+2. Look for a top-level message whose first link is this PR's URL, owner,
+   repo and number compared without case. For an `authored` PR accept
+   only a message posted by the Claude app, not the user's own account.
+   For a `reviewed` PR also accept a message from the user's own account.
+   Take the oldest match.
+3. Found: record its `ts` as `slack_ts` in the PR's progress file
+   (`pr-watch/steps/03-route-event.md`, "State has two homes") and post
+   the message as a reply in that thread.
+4. Not found, `authored` PR: post nothing and do not keep the message.
+   `slack_ts` stays null, and the next message for the PR looks again.
+   Never start a thread for an `authored` PR.
+5. Not found, `reviewed` PR: post the root once, record its `ts` as
+   `slack_ts`, read it back once with
+   `mcp__plugin_slack_slack__slack_read_thread` to check the link
+   rendered, then post the message as a reply. Never post a second root
+   for a PR.
 
 ```
 [#<N> <title>](<url>)
 <role>, head <sha7>, <pending summary>
 ```
 
-Record the returned `ts` as `slack_ts` in the PR's progress file
-(`pr-watch/steps/03-route-event.md`, "State has two homes"). Read the
-root back once with `mcp__plugin_slack_slack__slack_read_thread` and
-check the link rendered. Never post a second root for a PR.
+Before replying under a recorded `slack_ts` on an `authored` PR whose
+`slack_root_checked` is not `true`, read the root once with
+`slack_read_thread`. When its author is the Claude app, set
+`slack_root_checked` to `true`. Otherwise set `slack_ts` to null and run
+the steps above.
 
 ## Replies
 
@@ -47,10 +75,10 @@ check the link rendered. Never post a second root for a PR.
 | CI pre-existing | `<check name> is red on <base> too; leaving it.` |
 | CI needs you | `Needs you: [<check name>](<link>) is red at <head7> (<reason>).` — then, only when the PR's `ci_log_occurrence` is this check's occurrence key and `pr-watch/steps/07-ci.md` rule 3's destination check passes again over the file now, up to 20 lines from `grep -m 20 -E -e '##\[error\]' -e 'error [A-Z]+[0-9]+' -e 'Failed ' -e 'Test Run Failed'` over it, put through "Quoting someone else's text", in a code block; the session never reads the whole file |
 | monitor restarted | `Watch monitor restarted.` |
-| joined | `Joined this session's watch.` Posted once for each PR that was not `armed` in `watch.json` before a run of `pr-watch/steps/01-discover.md`, when that run's section 9 printed `alive`. A PR whose `slack_ts` is null gets its root first (Root), then this line; an entry that was already `armed` gets nothing |
+| joined | `Joined this session's watch.` Posted once for each PR that was not `armed` in `watch.json` before a run of `pr-watch/steps/01-discover.md`, when that run's section 9 printed `alive`. A PR whose `slack_ts` is null follows "Finding the thread" first, and this line is posted only if that ends with a thread; an entry that was already `armed` gets nothing |
 | lease lost | `Another session took over #<N> (<holder>); no longer watching it here.` in the PR's thread when its progress file has a `slack_ts`; `<holder>` is the label `pr-watch/steps/03-route-event.md` section E works out |
 | reconciled | `The daily check picked up work the event stream missed.` |
-| poller error | `The watch poller has failed five ticks in a row: <error>. No events are handled until this is fixed.` in every PR thread that has a root; `<error>` is the event's `error` |
+| poller error | `The watch poller has failed five ticks in a row: <error>. No events are handled until this is fixed.` in every PR thread whose progress file has a `slack_ts`; `<error>` is the event's `error` |
 | closed | `PR <merged or closed>; no longer watching.` |
 | settled | `All your findings on this PR are resolved; no longer watching it.` |
 | stop | `No longer watching.` |
