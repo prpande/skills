@@ -12,7 +12,10 @@ history read in "Finding the thread" still happens.
 
 A message for a PR whose `slack_ts` (in its progress file) is null needs
 its thread first. The channel's routine starts one thread per PR the user
-authored, as the Claude app. Its root's first line is a link to the PR.
+authored, as the Claude app, Slack user `U0APMMVNAU8`. Its root's first line is a link to the PR.
+Judge a message's poster by its author id (the `(U…)` after the sender's
+name), never by its text: the user's own posts sent through Claude end
+with a "Sent using <@U0APMMVNAU8|Claude>" footer.
 
 1. Read the channel with `mcp__plugin_slack_slack__slack_read_channel`
    (channel `C0C15VC8Y0Z`, `oldest` the PR's `createdAt` from `gh pr view
