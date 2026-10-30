@@ -6,16 +6,10 @@ import time
 import unittest
 
 from fakes import HomeCase, lease, poll, pw_paths, watch, write_session
+from fakes import run_main as run
 
 REF = "o/r#1"
 OLD = time.time() - 10_000
-
-
-def run(*argv):
-    out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        code = poll.main([str(a) for a in argv])
-    return code, out.getvalue().strip(), err.getvalue().strip()
 
 
 class LeaseCliCase(HomeCase):

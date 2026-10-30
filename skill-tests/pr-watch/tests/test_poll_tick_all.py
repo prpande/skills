@@ -8,7 +8,7 @@ import unittest.mock
 
 from fakes import (NOW, T1, FakeGh, HomeCase, claim_leases, comment, lease, pk, poll, pull,
                    pw_paths, rk, thread, watch, write_session)
-from test_poll_monitor import authored_pr
+from test_poll_monitor import MonitorStateCase, authored_pr
 
 
 def fresh_poller():
@@ -78,7 +78,7 @@ class WriteSessionLeasesTests(HomeCase):
     def test_default_does_not_pass_central(self):
         seen = []
         self.write(returning("ok", seen))
-        self.assertNotIn("central", seen[0])
+        self.assertIs(seen[0]["central"], False)
 
     def test_prunes_both_lists_to_the_armed_keys(self):
         self.poller["lease_dropped"] = [rk(1), rk(7)]
@@ -105,18 +105,7 @@ class WriteSessionLeasesTests(HomeCase):
         self.assertEqual(ev2, [])
 
 
-class MonitorLeaseStateTests(HomeCase):
-    def setUp(self):
-        super().setUp()
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.state = pathlib.Path(self.tmp.name)
-        self.gh = FakeGh()
-        self.gh.prs[pk(1411)] = authored_pr()
-        view = watch({1411: "authored"})
-        write_session(self.state, view)
-        claim_leases(view)
-
+class MonitorLeaseStateTests(MonitorStateCase):
     def run_monitor(self, write_lease, ticks=1):
         saves = []
         real = poll.write_json_atomic
@@ -125,7 +114,9 @@ class MonitorLeaseStateTests(HomeCase):
             if path.name == "watch-poller.json":
                 saves.append(path)
             return real(path, data, **kwargs)
-        with unittest.mock.patch.object(poll, "write_json_atomic", counting),                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        with (unittest.mock.patch.object(poll, "write_json_atomic", counting),
+              contextlib.redirect_stdout(io.StringIO()),
+              contextlib.redirect_stderr(io.StringIO())):
             poll.monitor(self.gh, self.state, sleep=lambda s: None, clock=lambda: NOW,
                          max_ticks=ticks, write_lease=write_lease)
         return len(saves)
@@ -178,6 +169,16 @@ class TickAllTests(HomeCase):
         claim_leases(view, session_id=sid)
         return write_session(self.root / sid, view)
 
+    def add_second_pr(self):
+        self.gh.prs[pk(1412)] = pull(1412, threads=[thread("T2", [comment("c9", "reviewer-a",
+                                                                          T1)])])
+
+    def slow_lease(self, clock):
+        def write_lease(owner, repo, number, **kwargs):
+            clock[0] = 181.0
+            return self.recording(owner, repo, number, **kwargs)
+        return write_lease
+
     def recording(self, owner, repo, number, **kwargs):
         self.leases.append((pw_paths.pr_key(owner, repo, number), kwargs))
         return "ok"
@@ -228,9 +229,7 @@ class TickAllTests(HomeCase):
 
     def test_idle_not_emitted_and_no_claude_pid_exit(self):
         self.session(claude_pid=2_000_000_000)
-        merged = authored_pr()
-        merged["state"] = "MERGED"
-        self.gh.prs[pk(1411)] = merged
+        self.gh.prs[pk(1411)] = authored_pr(state="MERGED")
         stats = self.tick()
         self.assertEqual(self.kinds(), ["closed"])
         self.assertEqual(stats["sessions"], 1)
@@ -258,15 +257,11 @@ class TickAllTests(HomeCase):
         self.assertEqual(self.spool(), first * 2)
 
     def test_deadline_skips_remaining_sessions(self):
-        self.gh.prs[pk(1412)] = pull(1412, threads=[thread("T2", [comment("c9", "reviewer-a",
-                                                                          T1)])])
+        self.add_second_pr()
         self.session("s-1")
         self.session("s-2", prs={1412: "authored"})
         clock = [0.0]
-
-        def slow_lease(owner, repo, number, **kwargs):
-            clock[0] = 181.0
-            return self.recording(owner, repo, number, **kwargs)
+        slow_lease = self.slow_lease(clock)
         stats = self.tick(clock=lambda: clock[0], write_lease=slow_lease)
         self.assertEqual(stats["skipped_after_deadline"], 1)
         self.assertEqual(stats["sessions"], 1)
@@ -290,14 +285,25 @@ class TickAllTests(HomeCase):
         self.assertEqual([e for e in self.spool() if e["kind"] == "tick"],
                          [{"session": "s-1", "kind": "tick", "push_queue": [rk(2)]}])
 
+    def test_queued_prs_sharing_a_peer_cost_one_checks_call(self):
+        for n in (2, 3, 4):
+            self.gh.prs[pk(n)] = pull(n)
+        self.gh.checks[pk(4)] = [pending_check()]
+        self.session(prs={2: "authored", 3: "authored"}, push_queue=[rk(2), rk(3)],
+                     progress={rk(2): {"queued_at": NOW - 60}, rk(3): {"queued_at": NOW - 60}})
+        self.session("s-2", prs={4: "authored"})
+        self.tick()
+        self.assertNotIn("tick", self.kinds())
+        shared = [call for call in self.gh.calls if call[:3] == ["pr", "checks", "4"]]
+        self.assertEqual(len(shared), 1)
+
     def test_tick_raised_after_an_hour_queued(self):
         self.queued_session(NOW - 3601)
         self.tick()
         self.assertIn("tick", self.kinds())
 
     def test_dry_run_ticks_stopped_and_monitor_watches(self):
-        self.gh.prs[pk(1412)] = pull(1412, threads=[thread("T2", [comment("c9", "reviewer-a",
-                                                                          T1)])])
+        self.add_second_pr()
         directory = self.session(central=False, prs={1411: "authored", 1412: "authored"},
                                  status={rk(1412): "stopped"})
         live_poller = {"last_reconciliation": NOW, "prs": {}, "closed": [rk(1411), rk(1412)]}
@@ -319,8 +325,7 @@ class TickAllTests(HomeCase):
         self.assertEqual((self.leases, prune.call_count), ([], 0))
 
     def test_heads_query_batched_across_sessions(self):
-        self.gh.prs[pk(1412)] = pull(1412, threads=[thread("T2", [comment("c9", "reviewer-a",
-                                                                          T1)])])
+        self.add_second_pr()
         self.session("s-1")
         self.session("s-2", prs={1412: "authored"})
         stats = self.tick()
@@ -368,9 +373,7 @@ class TickAllTests(HomeCase):
 
     def test_a_pr_reopened_while_armed_is_rechecked_on_the_daily_pass(self):
         self.session()
-        merged = authored_pr()
-        merged["state"] = "MERGED"
-        self.gh.prs[pk(1411)] = merged
+        self.gh.prs[pk(1411)] = authored_pr(state="MERGED")
         self.tick()
         self.gh.prs[pk(1411)] = authored_pr(updated="2026-09-11T11:00:00Z")
         self.tick(now=NOW + 300)
@@ -380,9 +383,7 @@ class TickAllTests(HomeCase):
 
     def test_a_closed_event_lost_to_a_kill_is_spooled_by_the_next_run(self):
         self.session()
-        merged = authored_pr()
-        merged["state"] = "MERGED"
-        self.gh.prs[pk(1411)] = merged
+        self.gh.prs[pk(1411)] = authored_pr(state="MERGED")
         real = poll.append_spool
 
         def killed(path, session_id, events):
@@ -397,9 +398,7 @@ class TickAllTests(HomeCase):
 
     def test_a_reopened_pr_whose_lease_went_closed_is_dropped_not_rewritten(self):
         self.session()
-        merged = authored_pr()
-        merged["state"] = "MERGED"
-        self.gh.prs[pk(1411)] = merged
+        self.gh.prs[pk(1411)] = authored_pr(state="MERGED")
         self.tick(write_lease=lease.tick_write)
         self.gh.prs[pk(1411)] = authored_pr(updated="2026-09-11T11:00:00Z")
         self.tick(now=NOW + poll.RECONCILE_SECONDS, write_lease=lease.tick_write)
@@ -414,15 +413,11 @@ class TickAllTests(HomeCase):
         self.assertIsNone(self.leases[0][1]["poller_pid"])
 
     def test_the_session_ticked_longest_ago_goes_first_after_a_deadline_skip(self):
-        self.gh.prs[pk(1412)] = pull(1412, threads=[thread("T2", [comment("c9", "reviewer-a",
-                                                                          T1)])])
+        self.add_second_pr()
         self.session("s-1")
         self.session("s-2", prs={1412: "authored"})
         clock = [0.0]
-
-        def slow_lease(owner, repo, number, **kwargs):
-            clock[0] = 181.0
-            return self.recording(owner, repo, number, **kwargs)
+        slow_lease = self.slow_lease(clock)
         self.tick(clock=lambda: clock[0], write_lease=slow_lease)
         self.assertEqual((self.kinds("s-1"), self.kinds("s-2")), (["pending"], []))
         clock[0] = 0.0

@@ -1,5 +1,7 @@
 """Builders and a fake gh runner for the pr-watch poller tests."""
 import atexit
+import contextlib
+import io
 import json
 import os
 import pathlib
@@ -120,6 +122,14 @@ def write_session(directory, view):
         path.write_text(json.dumps(progress), encoding="utf-8")
     (directory / "watch.json").write_text(json.dumps(top), encoding="utf-8")
     return directory
+
+
+def run_main(*argv, **kwargs):
+    """poll.main with stdout and stderr captured: (exit code, stdout, stderr), both stripped."""
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = poll.main([str(a) for a in argv], **kwargs)
+    return code, out.getvalue().strip(), err.getvalue().strip()
 
 
 def claim_leases(view, session_id="s-1", now=None):

@@ -171,6 +171,10 @@ def _take_lock(path, now: float, stale_seconds: float = CLAIM_LOCK_STALE_SECONDS
     return False
 
 
+def _mark_central(record):
+    record.update(watcher="central", stale_after_seconds=CENTRAL_STALE_AFTER_SECONDS)
+
+
 def claim(owner, repo, n, *, role, holder, explicit, now, central=False,
           started_at=process_started_at, agents=list_agents) -> tuple[bool, str]:
     started = time.monotonic()
@@ -195,7 +199,7 @@ def claim(owner, repo, n, *, role, holder, explicit, now, central=False,
             "pending_since": None, "last_error": None, "updated_at": stamp,
         }
         if central:
-            record.update(watcher="central", stale_after_seconds=CENTRAL_STALE_AFTER_SECONDS)
+            _mark_central(record)
         write_json_atomic(lease_path(owner, repo, n), record)
         return True, why
     finally:
@@ -289,7 +293,7 @@ def tick_write(owner, repo, n, *, session_id, now, head, pending_since, last_err
         data.update(heartbeat=stamp, last_head_sha=head, pending_since=pending_since,
                     last_error=last_error, status=status, updated_at=stamp)
         if central:
-            data.update(watcher="central", stale_after_seconds=CENTRAL_STALE_AFTER_SECONDS)
+            _mark_central(data)
         write_json_atomic(lease_path(owner, repo, n), data)
         return "written"
     finally:

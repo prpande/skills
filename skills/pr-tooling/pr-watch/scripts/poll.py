@@ -200,8 +200,9 @@ def is_own_slack_post(body):
 
 def slack_replies_to_handle(replies, human, bots, since):
     since = float(since)
+    allowed = {human, *bots}
     return [r for r in replies
-            if r["author"] in {human, *bots} and float(r["ts"]) >= since
+            if r["author"] in allowed and float(r["ts"]) >= since
             and not is_own_slack_post(r["body"])]
 
 
@@ -265,8 +266,9 @@ def progress_file(session_dir, owner, repo, number, dry_run):
     return progress_path(owner, repo, number)
 
 
-def load_view(session_dir):
-    watch = read_json(session_dir / "watch.json")
+def load_view(session_dir, watch=None):
+    if watch is None:
+        watch = read_json(session_dir / "watch.json")
     dry_run = bool(watch.get("dry_run"))
     prs = {}
     for ref, entry in watch.get("prs", {}).items():
@@ -291,6 +293,11 @@ def load_view(session_dir):
             "ado_orgs": watch.get("ado_orgs", []), "push_queue": watch.get("push_queue", []),
             "session_id": watch.get("session_id"), "claude_pid": watch.get("claude_pid"),
             "dry_run": dry_run, "prs": prs}
+
+
+def armed_entries(view, dropped=()):
+    return {k: e for k, e in view["prs"].items()
+            if e.get("status") == "armed" and k not in dropped}
 
 
 def run_gh(args):
@@ -871,11 +878,27 @@ def lease_head(owner, repo, number):
     return held.get("last_head_sha") if held else None
 
 
+LEASE_LISTS = ("lease_dropped", "lease_warned")
+
+
+def lease_lists(poller):
+    return tuple(list(poller.get(name, ())) for name in LEASE_LISTS)
+
+
+def filter_lease_lists(poller, keep):
+    """Keep only the keys `keep` accepts in the poller's lease lists; True when a list changed."""
+    kept = {name: [k for k in poller.get(name, ()) if keep(k)] for name in LEASE_LISTS}
+    changed = any(kept[name] != list(poller.get(name, ())) for name in LEASE_LISTS)
+    if changed:
+        poller.update(kept)
+    return changed
+
+
 def write_session_leases(view, armed, poller, closed_before, now, *,
                          write_lease=lease.tick_write, central=False):
-    dropped = set(poller.get("lease_dropped", ())) & set(armed)
-    warned_missing = set(poller.get("lease_warned", ())) & set(armed)
-    extra = {"central": True} if central else {}
+    filter_lease_lists(poller, armed.__contains__)
+    dropped = set(poller.get("lease_dropped", ()))
+    warned_missing = set(poller.get("lease_warned", ()))
     silenced, lease_events, unclosed = set(), [], set()
     for key, entry in armed.items():
         if key in closed_before or key in dropped:
@@ -891,7 +914,8 @@ def write_session_leases(view, armed, poller, closed_before, now, *,
                 owner, repo, number, session_id=view["session_id"], now=now, head=head,
                 pending_since=iso_utc(since) if since and not closing else None,
                 last_error=poller["errors"].get(key),
-                poller_pid=None if central else os.getpid(), status="closed" if closing else "armed", **extra)
+                poller_pid=None if central else os.getpid(), status="closed" if closing else "armed",
+                central=central)
         except OSError as exc:
             warn(f"lease for {key}: {type(exc).__name__}: {exc}")
             result = "failed"
@@ -967,9 +991,9 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
             now = int(clock())
             last = poller.get("last_reconciliation", 0)
             due = now - last >= RECONCILE_SECONDS
-            all_armed = {k for k, e in view["prs"].items() if e.get("status") == "armed"}
-            dropped = set(poller.get("lease_dropped", ())) & all_armed
-            armed = {k: e for k, e in view["prs"].items() if k in all_armed - dropped}
+            all_armed = armed_entries(view)
+            dropped = set(poller.get("lease_dropped", ())) & set(all_armed)
+            armed = armed_entries(view, dropped)
             ticked_view = dict(view, prs=armed)
             closed_before = set(poller.get("closed", [])) & set(armed)
             # forced first tick covers a resume; only the timed pass may claim a "reconciled" miss
@@ -987,14 +1011,13 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
             # an unsaved tick prints nothing; the next tick recomputes it from the old file
             save(poller)
             if not view["dry_run"]:
-                lease_state = (poller.get("lease_dropped", []), poller.get("lease_warned", []))
+                lease_state = lease_lists(poller)
                 silenced, lease_events, unclosed = write_session_leases(
-                    view, {k: view["prs"][k] for k in all_armed}, poller, closed_before, now,
-                    write_lease=write_lease)
+                    view, all_armed, poller, closed_before, now, write_lease=write_lease)
                 dropped = set(poller["lease_dropped"])
                 if unclosed:
                     poller["closed"] = [k for k in poller["closed"] if k not in unclosed]
-                if unclosed or lease_state != (poller["lease_dropped"], poller["lease_warned"]):
+                if unclosed or lease_state != lease_lists(poller):
                     save(poller)
                 events = silence_events(events, lease_events, silenced, silenced | dropped)
                 if ticks == 1 or due:
@@ -1037,25 +1060,35 @@ class Session(NamedTuple):
     poller_fault: bool
 
 
-def queue_peers(view, owner, repo, number):
+def queue_peers(view, owner, repo, number, leased=None):
+    """`leased` is lease.armed_peers(owner, repo, None) when the caller already read it."""
     peers = {e["number"] for e in view["prs"].values()
              if (e["owner"], e["repo"]) == (owner, repo) and e.get("role") == "authored"
              and e.get("status") == "armed"}
-    peers.update(lease.armed_peers(owner, repo, number))
+    peers.update(lease.armed_peers(owner, repo, None) if leased is None else leased)
     peers.discard(number)
     return sorted(peers)
 
 
-def has_pending_check(gh, owner, repo, number):
+def has_pending_check(gh, owner, repo, number, memo=None):
+    """`memo` caches the answer per PR for one run."""
+    key = (owner, repo, number)
+    if memo is not None and key in memo:
+        return memo[key]
     try:
         checks = required_checks(gh, repo_slug(owner, repo), number)
     except PR_FAULTS:
-        return False
-    return any(c.get("bucket") == "pending" for c in checks)
+        pending = False
+    else:
+        pending = any(c.get("bucket") == "pending" for c in checks)
+    if memo is not None:
+        memo[key] = pending
+    return pending
 
 
-def tick_gate(gh, view, poller, now):
+def tick_gate(gh, view, poller, now, memo=None):
     """True when some queued PR could drain now (step 04 section 8 step 1 would not stop it)."""
+    leased = {}
     for key in view.get("push_queue", []):
         try:
             owner, repo, number = parse_ref(key)
@@ -1064,8 +1097,10 @@ def tick_gate(gh, view, poller, now):
         queued_at = view["prs"].get(key, {}).get("queued_at")
         if isinstance(queued_at, (int, float)) and now - queued_at >= QUEUE_WAIT_SECONDS:
             return True
-        if not any(has_pending_check(gh, owner, repo, n)
-                   for n in queue_peers(view, owner, repo, number)):
+        if (owner, repo) not in leased:
+            leased[owner, repo] = lease.armed_peers(owner, repo, None)
+        if not any(has_pending_check(gh, owner, repo, n, memo)
+                   for n in queue_peers(view, owner, repo, number, leased[owner, repo])):
             return True
     return False
 
@@ -1094,7 +1129,7 @@ def load_session(directory, dry_run, files, now):
         return None
     if not dry_run and watch.get("watcher") != "central":
         return None
-    view = load_view(directory)
+    view = load_view(directory, watch)
     poller, poller_fault = read_poller(directory / files.poller)
     force = now - poller.get("last_reconciliation", 0) >= RECONCILE_SECONDS
     if force:
@@ -1103,32 +1138,21 @@ def load_session(directory, dry_run, files, now):
     if dry_run:
         ticked = {k: e for k, e in view["prs"].items() if e.get("status") in REPORTED_STATUSES}
     else:
-        dropped = set(poller.get("lease_dropped", ()))
-        ticked = {k: e for k, e in view["prs"].items()
-                  if e.get("status") == "armed" and k not in dropped}
+        ticked = armed_entries(view, set(poller.get("lease_dropped", ())))
     return Session(directory, view, poller, ticked, force, poller_fault)
-
-
-def ends_torn(path):
-    try:
-        with path.open("rb") as handle:
-            if handle.seek(0, os.SEEK_END) == 0:
-                return False
-            handle.seek(-1, os.SEEK_END)
-            return handle.read(1) != b"\n"
-    except FileNotFoundError:
-        return False
 
 
 def append_spool(path, session_id, events):
     if not events:
         return
     lines = "".join(json.dumps({"session": session_id, **e}) + "\n" for e in events)
-    # a run killed mid-write leaves a partial last line; keep the next event off it
-    if ends_torn(path):
-        lines = "\n" + lines
-    with path.open("a", encoding="utf-8", newline="\n") as handle:
-        handle.write(lines)
+    with path.open("a+b") as handle:
+        # a run killed mid-write leaves a partial last line; keep the next event off it
+        torn = False
+        if handle.seek(0, os.SEEK_END):
+            handle.seek(-1, os.SEEK_END)
+            torn = handle.read(1) != b"\n"
+        handle.write((("\n" if torn else "") + lines).encode("utf-8"))
 
 
 def session_id_of(session):
@@ -1136,26 +1160,24 @@ def session_id_of(session):
 
 
 def prune_lease_lists(session, files, armed):
-    poller = session.poller
-    kept = {name: sorted(set(poller.get(name, ())) & set(armed))
-            for name in ("lease_dropped", "lease_warned")}
-    if any(kept[name] != poller.get(name, []) for name in kept):
-        poller.update(kept)
-        write_json_atomic(session.directory / files.poller, poller)
+    if filter_lease_lists(session.poller, armed.__contains__):
+        write_json_atomic(session.directory / files.poller, session.poller)
 
 
-def tick_session(gh, session, heads, now, live, files, write_lease):
+def is_live(session, files):
+    return files is LIVE_FILES and not session.view["dry_run"]
+
+
+def tick_session(gh, session, heads, now, files, write_lease, gate_memo=None):
     """One monitor tick for a session without idle or claude_pid checks; returns
-    (events spooled, forced) or None when nothing in it is armed."""
+    the events spooled, or None when nothing in it is armed."""
     view, poller, ticked = session.view, session.poller, session.ticked
-    live = live and not view["dry_run"]
-    all_armed = {k: e for k, e in view["prs"].items() if e.get("status") == "armed"}
+    live = is_live(session, files)
+    all_armed = armed_entries(view)
     if not ticked:
         if live:
             prune_lease_lists(session, files, all_armed)
         return None
-    if isinstance(heads, Exception):
-        raise heads
     last, force = poller.get("last_reconciliation", 0), session.force
     closed_before = set(poller.get("closed", [])) & set(ticked)
     before = {n: (p.get("last_signature"), p.get("last_ci_signature"))
@@ -1167,7 +1189,7 @@ def tick_session(gh, session, heads, now, live, files, write_lease):
         if missed:
             warn(f"session {session_id_of(session)}: reconciled {', '.join(missed)}")
     events = [e for e in events if e["kind"] != "tick"]
-    if tick_gate(gh, view, poller, now):
+    if tick_gate(gh, view, poller, now, gate_memo):
         events.append({"kind": "tick", "push_queue": list(view["push_queue"])})
     if live:
         silenced, lease_events, unclosed = write_session_leases(
@@ -1181,7 +1203,7 @@ def tick_session(gh, session, heads, now, live, files, write_lease):
     poller.pop("failed_ticks", None)
     poller["last_tick_at"] = now
     write_json_atomic(session.directory / files.poller, poller)
-    return events, force and live
+    return events
 
 
 def record_failure(session, files, exc):
@@ -1230,13 +1252,13 @@ def tick_all(gh, sessions_root, now, *, dry_run=False, deadline_s=180, clock=tim
         for repo, numbers in head_groups(session.ticked,
                                          session.poller.get("closed", [])).items():
             groups.setdefault(repo, set()).update(numbers)
-    heads = {}
+    heads, heads_error, gate_memo = {}, None, {}
     if groups:
         try:
             heads = fetch_heads(counting_gh, {repo: sorted(ns) for repo, ns in groups.items()})
         except Exception as exc:  # each session records it as its own failed tick
             warn(f"heads query: {type(exc).__name__}: {exc}")
-            heads = exc
+            heads_error = exc
     forced = False
     sessions.sort(key=lambda s: (s.poller.get("last_tick_at", 0), s.directory.name))
     for session in sessions:
@@ -1244,17 +1266,18 @@ def tick_all(gh, sessions_root, now, *, dry_run=False, deadline_s=180, clock=tim
             stats["skipped_after_deadline"] += 1
             continue
         try:
-            outcome = tick_session(counting_gh, session, heads, now, not dry_run, files,
-                                   write_lease)
+            if heads_error is not None and session.ticked:
+                raise heads_error
+            events = tick_session(counting_gh, session, heads, now, files, write_lease, gate_memo)
         except Exception as exc:  # a standing watch must outlive any single failure
             warn(f"session {session.directory.name}: {type(exc).__name__}: {exc}")
             stats["errors"] += 1
             stats["events"] += record_failure(session, files, exc)
             continue
-        if outcome is not None:
+        if events is not None:
             stats["sessions"] += 1
-            stats["events"] += len(outcome[0])
-            forced = forced or outcome[1]
+            stats["events"] += len(events)
+            forced = forced or (session.force and is_live(session, files))
     if forced:
         try:
             lease.prune_closed(now)
@@ -1590,6 +1613,26 @@ def assert_author(gh, repo_slug, number):
     return 3
 
 
+def slack_args(args):
+    """The Slack replies --tails should handle, or [] without --slack; ValueError on bad usage."""
+    if not args.slack:
+        return []
+    if not args.tails:
+        raise ValueError("--slack needs --tails")
+    if not (args.slack_human and args.slack_since):
+        raise ValueError("--slack needs --slack-human and --slack-since")
+    bots = [b for b in args.slack_bots.split(",") if b]
+    if not all(SLACK_ID.fullmatch(i) for i in [args.slack_human, *bots]):
+        raise ValueError("--slack-human and --slack-bots take Slack user ids")
+    if not SLACK_TS.fullmatch(args.slack_since):
+        raise ValueError("--slack-since must be a Slack ts")
+    try:
+        return slack_replies_to_handle(load_slack(args.slack), args.slack_human,
+                                       bots, args.slack_since)
+    except ValueError as exc:
+        raise ValueError(f"--slack: {exc}") from exc
+
+
 def main(argv=None, gh=run_gh):
     parser = argparse.ArgumentParser(prog="poll.py", description="pr-watch poller")
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -1665,21 +1708,10 @@ def main(argv=None, gh=run_gh):
         parser.error("--assert-author needs --repo owner/name")
     if (args.ci_log or args.ci_rerun) and not (args.repo and args.session_dir):
         parser.error("--ci-log and --ci-rerun need --repo owner/name and --session-dir")
-    if args.slack and not args.tails:
-        parser.error("--slack needs --tails")
-    if args.slack:
-        if not (args.slack_human and args.slack_since):
-            parser.error("--slack needs --slack-human and --slack-since")
-        bots = [b for b in args.slack_bots.split(",") if b]
-        if not all(SLACK_ID.fullmatch(i) for i in [args.slack_human, *bots]):
-            parser.error("--slack-human and --slack-bots take Slack user ids")
-        if not SLACK_TS.fullmatch(args.slack_since):
-            parser.error("--slack-since must be a Slack ts")
-        try:
-            args.slack = slack_replies_to_handle(load_slack(args.slack), args.slack_human,
-                                                 bots, args.slack_since)
-        except ValueError as exc:
-            parser.error(f"--slack: {exc}")
+    try:
+        args.slack_replies = slack_args(args)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.dry_run and not args.tick_all:
         parser.error("--dry-run needs --tick-all")
     if args.central and not args.claim:
@@ -1705,10 +1737,7 @@ def main(argv=None, gh=run_gh):
 def forget_lease_silencing(session_dir, key):
     path = session_dir / LIVE_FILES.poller
     poller, _ = read_poller(path)
-    kept = {name: [k for k in poller.get(name, ()) if k != key]
-            for name in ("lease_dropped", "lease_warned")}
-    if any(kept[name] != list(poller.get(name, ())) for name in kept):
-        poller.update(kept)
+    if filter_lease_lists(poller, lambda k: k != key):
         write_json_atomic(path, poller)
 
 
@@ -1859,7 +1888,7 @@ def run_mode(args, gh):
     if args.baseline:
         payload = baseline(pr, me, allow)
     elif args.tails:
-        payload = tails_payload(pr, entry, me, allow, slack=args.slack,
+        payload = tails_payload(pr, entry, me, allow, slack=args.slack_replies,
                                 slack_human=args.slack_human)
     elif args.review_ready:
         payload = review_ready_payload(gh, view, entry, pr, time.time())

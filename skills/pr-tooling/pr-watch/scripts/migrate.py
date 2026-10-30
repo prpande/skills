@@ -177,8 +177,8 @@ def identity_ok(claude_pid, my_pid, procs) -> str | None:
 def leftover_monitors(session_dir, claude_pid, procs) -> list[int]:
     if not claude_pid:
         return []
-    return [proc["pid"] for proc in _monitors_for(procs, "--session-dir", session_dir)
-            if claude_ancestor(proc["pid"], procs) != claude_pid]
+    return [pid for pid in session_monitors(session_dir, procs)
+            if claude_ancestor(pid, procs) != claude_pid]
 
 
 def session_monitors(session_dir, procs) -> list[int]:

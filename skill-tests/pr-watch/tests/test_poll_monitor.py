@@ -10,9 +10,9 @@ from fakes import (ACTIONS, NOW, SELF, T0, T1, FakeGh, HomeCase, claim_leases, c
                    pull, review, rk, thread, watch, write_session)
 
 
-def authored_pr(updated="2026-09-11T10:00:00Z", extra=()):
+def authored_pr(updated="2026-09-11T10:00:00Z", extra=(), state="OPEN"):
     return pull(1411, threads=[thread("T1", [comment("c1", "reviewer-a", T0), *extra])],
-                updated=updated)
+                updated=updated, state=state)
 
 
 def reviewed_pr(head="h1", replies=(), updated="2026-09-11T10:00:00Z"):
@@ -318,10 +318,13 @@ class RetryAfterTests(unittest.TestCase):
         self.assertEqual(len(self.tick(NOW + 1200)), 2)
 
 
-class MonitorLoopTests(HomeCase):
+class MonitorStateCase(HomeCase):
+    """A session directory holding one armed authored PR with a claimed lease."""
+
     def setUp(self):
         super().setUp()
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.state = pathlib.Path(self.tmp.name)
         self.gh = FakeGh()
         self.gh.prs[pk(1411)] = authored_pr()
@@ -329,9 +332,8 @@ class MonitorLoopTests(HomeCase):
         write_session(self.state, view)
         claim_leases(view)
 
-    def tearDown(self):
-        self.tmp.cleanup()
 
+class MonitorLoopTests(MonitorStateCase):
     def run_monitor(self, ticks, clock=NOW):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
