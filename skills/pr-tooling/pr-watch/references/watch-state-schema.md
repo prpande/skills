@@ -7,7 +7,7 @@ lives in a repo's main checkout. Each file has exactly one writer.
 PW_HOME/
   sessions/<session-id>/        SESSION_DIR
     watch.json                  session; written only by the session
-    watch-poller.json           written only by POLL --monitor and --tick-all
+    watch-poller.json           written by POLL --monitor, --tick-all and --claim
     watch-poller.dry-run.json   written only by POLL --tick-all --dry-run
     events.jsonl                spool of central events; appended only by POLL --tick-all
     slack-<reply_ts>.json       Slack thread replies for one slack-reply event; written and deleted only by the session
@@ -146,9 +146,10 @@ writes of the entry), and, `authored` PRs only, `ci_retried_at` (the same,
 for the CI branch; spent independently, so a standing CI-only failure does
 not keep forcing the pending set too), and, `reviewed` PRs only,
 `compared` (`[old head, new head, changed paths]` of the last compare, so
-the same head range is not fetched again). `review` maps an `authored` PR key to `checked` (`[head, updatedAt]` of the last review-ready evaluation) and `emitted` (the head a `review-ready` event was last raised for), so the event comes once per head. `merge` maps an `authored` PR key to `<kind>:<head>` of the last `conflicting` or `behind-ready` event, so each comes once per head between forced ticks; a forced tick raises it again until the progress file's `merge_notified` records it. `lease_dropped` and `lease_warned` (central ticks) record the leases whose
+the same head range is not fetched again). `review` maps an `authored` PR key to `checked` (`[head, updatedAt]` of the last review-ready evaluation) and `emitted` (the head a `review-ready` event was last raised for), so the event comes once per head. `merge` maps an `authored` PR key to `<kind>:<head>` of the last `conflicting` or `behind-ready` event, so each comes once per head between forced ticks; a forced tick raises it again until the progress file's `merge_notified` records it. `lease_dropped` and `lease_warned` record the leases whose
 loss and whose write fault have already been reported, so each is raised
-once; `failed_ticks` counts consecutive failed runs of this session (five
+once. `--claim` removes the claimed PR from both; every other writer merges
+the on-disk lists before saving, so a claim made during its run survives; `failed_ticks` counts consecutive failed runs of this session (five
 spool one `poller-error`); `closed` is cleared on the daily forced pass, so
 a closed PR is re-checked. Deleting the file makes the next
 tick a full reconciliation. `poller_pid` and `claude_pid` are recorded

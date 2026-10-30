@@ -966,8 +966,9 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
         beat()
         return gh(args)
 
-    def save(poller):
-        write_json_atomic(session_dir / "watch-poller.json", poller)
+    def save(view, poller):
+        save_session_poller(
+            Session(session_dir, view, poller, {}, False, False, loaded_leases), LIVE_FILES)
 
     claude_pid = claude_identity(session_dir)
     claude_started = started_at(claude_pid) if claude_pid else None
@@ -988,6 +989,7 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
                 poller["closed"] = []
                 poller["lease_dropped"] = []
                 poller["lease_warned"] = []
+            loaded_leases = lease_lists(poller)
             now = int(clock())
             last = poller.get("last_reconciliation", 0)
             due = now - last >= RECONCILE_SECONDS
@@ -1009,7 +1011,7 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
             poller.update(poller_pid=os.getpid(), claude_pid=claude_pid,
                           claude_started_at=iso_utc(claude_started) if claude_started else None)
             # an unsaved tick prints nothing; the next tick recomputes it from the old file
-            save(poller)
+            save(view, poller)
             if not view["dry_run"]:
                 lease_state = lease_lists(poller)
                 silenced, lease_events, unclosed = write_session_leases(
@@ -1018,7 +1020,7 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
                 if unclosed:
                     poller["closed"] = [k for k in poller["closed"] if k not in unclosed]
                 if unclosed or lease_state != lease_lists(poller):
-                    save(poller)
+                    save(view, poller)
                 events = silence_events(events, lease_events, silenced, silenced | dropped)
                 if ticks == 1 or due:
                     try:
@@ -1079,7 +1081,7 @@ def has_pending_check(gh, owner, repo, number, memo=None):
     try:
         checks = required_checks(gh, repo_slug(owner, repo), number)
     except PR_FAULTS:
-        pending = False
+        pending = True
     else:
         pending = any(c.get("bucket") == "pending" for c in checks)
     if memo is not None:
@@ -1212,15 +1214,18 @@ def tick_session(gh, session, heads, now, files, write_lease, gate_memo=None):
         if missed:
             warn(f"session {session_id_of(session)}: reconciled {', '.join(missed)}")
     events = [e for e in events if e["kind"] != "tick"]
-    if tick_gate(gh, view, poller, now, gate_memo):
-        events.append({"kind": "tick", "push_queue": list(view["push_queue"])})
+    silenced, lease_events, gone = set(), [], set()
     if live:
         silenced, lease_events, unclosed = write_session_leases(
             view, all_armed, poller, closed_before, now, write_lease=write_lease, central=True)
         if unclosed:
             poller["closed"] = [k for k in poller["closed"] if k not in unclosed]
-        events = silence_events(events, lease_events, silenced,
-                                silenced | set(poller["lease_dropped"]))
+        gone = silenced | set(poller["lease_dropped"])
+    queue = [k for k in view["push_queue"] if k not in gone]
+    if queue and tick_gate(gh, dict(view, push_queue=queue), poller, now, gate_memo):
+        events.append({"kind": "tick", "push_queue": queue})
+    if live:
+        events = silence_events(events, lease_events, silenced, gone)
     # spooled before the save: a failed save re-raises these next run, and orch dedupes them
     append_spool(session.directory / files.spool, session_id_of(session), events)
     poller.pop("failed_ticks", None)

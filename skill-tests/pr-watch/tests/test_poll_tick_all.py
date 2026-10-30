@@ -210,6 +210,28 @@ class TickAllTests(HomeCase):
         saved = json.loads(poller_path.read_text(encoding="utf-8"))
         self.assertEqual(saved["lease_dropped"], [rk(1412)])
 
+    def test_the_monitor_save_keeps_a_claim_made_during_its_tick(self):
+        self.add_second_pr()
+        directory = self.session(central=False, prs={1411: "authored", 1412: "authored"})
+        poller_path = directory / "watch-poller.json"
+        armed = {"go": False}
+
+        def gh(args):
+            if armed["go"]:
+                armed["go"] = False
+                poll.forget_lease_silencing(directory, rk(1411))
+            return self.gh(args)
+
+        def sleep(seconds):
+            poller_path.write_text(json.dumps({"lease_dropped": [rk(1411)]}), encoding="utf-8")
+            armed["go"] = True
+
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            poll.monitor(gh, directory, sleep=sleep, clock=lambda: NOW, max_ticks=2,
+                         write_lease=self.recording)
+        saved = json.loads(poller_path.read_text(encoding="utf-8"))
+        self.assertEqual(saved["lease_dropped"], [])
+
     def test_skips_non_central_sessions(self):
         self.session(central=False)
         stats = self.tick()
@@ -297,6 +319,25 @@ class TickAllTests(HomeCase):
         self.tick(now=NOW + 300)
         self.assertEqual([e for e in self.spool() if e["kind"] == "tick"],
                          [{"session": "s-1", "kind": "tick", "push_queue": [rk(2)]}])
+
+    def test_a_peer_whose_checks_fault_keeps_the_gate_closed(self):
+        self.queued_session(NOW - 60)
+        self.gh.fail_checks.add(pk(3))
+        self.tick()
+        self.assertNotIn("tick", self.kinds())
+
+    def test_a_lease_lost_key_past_the_wait_does_not_open_the_gate(self):
+        for n in (1, 2, 3):
+            self.gh.prs[pk(n)] = pull(n)
+        self.gh.checks[pk(3)] = [pending_check()]
+        self.session(prs={1: "authored", 2: "authored", 3: "authored"},
+                     push_queue=[rk(1), rk(2)],
+                     progress={rk(1): {"queued_at": NOW - 3601}, rk(2): {"queued_at": NOW - 60}})
+
+        def lose_first(owner, repo, number, **kwargs):
+            return "lost" if number == 1 else "ok"
+        self.tick(write_lease=lose_first)
+        self.assertEqual(self.kinds(), ["lease-lost"])
 
     def test_queued_prs_sharing_a_peer_cost_one_checks_call(self):
         for n in (2, 3, 4):
