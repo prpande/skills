@@ -10,6 +10,7 @@ PW_HOME/
     watch-poller.json           written only by POLL --monitor and --tick-all
     watch-poller.dry-run.json   written only by POLL --tick-all --dry-run
     events.jsonl                spool of central events; appended only by POLL --tick-all
+    slack-<reply_ts>.json       Slack thread replies for one slack-reply event; written and deleted only by the session
     events.dry-run.jsonl        the same for --tick-all --dry-run
     watch-heartbeat             written only by POLL --monitor
     watch-seen.json             written only by POLL --report and --reseed
@@ -128,7 +129,9 @@ push caps and the Slack thread carry across the handover.
 
 ## `watch-poller.json`: written only by `POLL --monitor` and `--tick-all`
 
-`last_reconciliation` (epoch seconds), `last_tick_event` (epoch seconds),
+`last_reconciliation` (epoch seconds), `last_tick_at` (epoch seconds of the
+last successful `--tick-all` tick; the oldest session ticks first),
+`last_tick_event` (epoch seconds),
 `last_tick_queue` (array), `closed` (array of PR keys; a key no longer in
 `watch.json` `prs` is dropped at the start of each tick), `errors` (PR key
 to the lease `last_error` value for each PR the last tick could not
@@ -162,7 +165,8 @@ dedupes by signature. `--tick-all --dry-run` writes `events.dry-run.jsonl`
 and `watch-poller.dry-run.json` instead and takes no leases. The
 orchestrator reads the spool and sends the session each event as a
 `/pr-watch event` message; the spool holds kinds, PR ids and SHAs, no
-comment text.
+comment text, except that `poller-error` lines carry the raw error text
+(the orchestrator drops it).
 
 ## `watch-heartbeat`: written only by `POLL --monitor`
 

@@ -67,7 +67,7 @@ heartbeat is written by the orchestrator's `poll.py --tick-all`, and the
 holder's liveness is judged by the process alone. An `--explicit` claim
 (the user named the PR in another session) takes over an `armed` central
 lease whose holder process is not running, even while its heartbeat is
-fresh. An unattended claim never does.
+fresh. An unattended claim never does while the heartbeat is fresh.
 
 A holder process is alive when a process with `holder.pid` exists and
 its creation time is within 2 seconds of `holder.pid_started_at`.

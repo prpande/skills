@@ -14,8 +14,8 @@ that arms one has a central exception pointing back here.
 `/pr-watch event <json>` runs this step on the JSON it was given, as if the
 Monitor had printed it as one line. When the step finishes, end the turn.
 Arm nothing and restart no watcher. The orchestrator sends the same kinds
-the Monitor prints, but `idle` (section F) cannot arrive for a central
-watch. A `tick` has no `pr`; `poller-error` and `lease-lost` route as the
+the Monitor prints, but `idle` (section F) and `reconciled` (the poller sends it to its
+warn log) cannot arrive for a central watch. A `tick` has no `pr`; `poller-error` and `lease-lost` route as the
 table shows.
 
 1. Parse the notification line as JSON. A line that does not parse is
@@ -243,7 +243,8 @@ Steps 3 to 6 below say which of section A's steps apply.
    "author": "<Slack user id>", "body": "<text>"}]` to
    `<SESSION_DIR>/slack-<reply_ts>.json`. Do not filter by hand.
 4. Run `POLL --tails <key> --slack <SESSION_DIR>/slack-<reply_ts>.json
-   --slack-human <event human> --slack-bots <event bots, comma-separated>
+   --slack-human <event human> --slack-bots <event bots, comma-separated;
+   omit the flag when `bots` is empty>
    --slack-since <event reply_ts> --session-dir <SESSION_DIR>`. The poller
    drops replies from other authors, older than `reply_ts`, or posted by
    this session (ending in the "Sent using Claude" footer), and anything
@@ -260,4 +261,6 @@ Steps 3 to 6 below say which of section A's steps apply.
    Fixes go to the PR as commits; the answer goes as a reply in the same
    Slack thread (`pr-watch/steps/04-fix-path.md` section 7, "Slack reply
    answer" in step 06). Record `handled_top_level_ids["slack:<ts>"]` for
-   each reply after its answer was posted.
+   each reply after its answer was posted. Then delete
+   `<SESSION_DIR>/slack-<reply_ts>.json`, so Slack text does not pile up
+   on disk.

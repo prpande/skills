@@ -1,7 +1,7 @@
 # Step 02 — Arm the monitor
 
-A central watch (`--central`) never arms a Monitor; step 01 section 9
-ends there for it.
+A central watch (`--central`, or a saved `"watcher": "central"`) never
+arms a Monitor; step 01 section 9 ends there for it.
 
 ## Arm
 

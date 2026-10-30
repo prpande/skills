@@ -200,7 +200,10 @@ Write `watch.json` per `pr-watch/references/watch-state-schema.md`
 
 A central watch (`watcher` kept from a resume, or `--central`) keeps
 `"watcher": "central"` in `watch.json`, and so does every later write of
-this file in this step and in the steps that follow.
+this file in this step and in the steps that follow. The field is already
+in `watch.json` only on a resume; on a fresh `--central` run it is written
+by section 9 step 4 alone, after the down check, and "keeps" applies only
+where `watch.json` already has it.
 
 The lease needs `session_id` and `claude_pid` from this file, so write it
 before the first claim.
