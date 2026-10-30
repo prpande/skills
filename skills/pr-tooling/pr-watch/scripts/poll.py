@@ -805,8 +805,8 @@ def lease_head(owner, repo, number):
 
 def write_session_leases(view, armed, poller, closed_before, now, *,
                          write_lease=lease.tick_write, central=False):
-    dropped = set(poller.get("lease_dropped", ()))
-    warned_missing = set(poller.get("lease_warned", ()))
+    dropped = set(poller.get("lease_dropped", ())) & set(armed)
+    warned_missing = set(poller.get("lease_warned", ())) & set(armed)
     extra = {"central": True} if central else {}
     silenced, lease_events, unclosed = set(), [], set()
     for key, entry in armed.items():
@@ -885,12 +885,13 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
             if ticks == 1:
                 # a PR closed under an earlier monitor may have been reopened and re-armed
                 poller["closed"] = []
+                poller["lease_dropped"] = []
+                poller["lease_warned"] = []
             now = int(clock())
             last = poller.get("last_reconciliation", 0)
             due = now - last >= RECONCILE_SECONDS
             all_armed = {k for k, e in view["prs"].items() if e.get("status") == "armed"}
             dropped = set(poller.get("lease_dropped", ())) & all_armed
-            poller["lease_dropped"] = sorted(dropped)
             armed = {k: e for k, e in view["prs"].items() if k in all_armed - dropped}
             ticked_view = dict(view, prs=armed)
             closed_before = set(poller.get("closed", [])) & set(armed)
@@ -909,9 +910,10 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
             # an unsaved tick prints nothing; the next tick recomputes it from the old file
             save(poller)
             if not view["dry_run"]:
-                lease_state = (poller["lease_dropped"], poller.get("lease_warned", []))
+                lease_state = (poller.get("lease_dropped", []), poller.get("lease_warned", []))
                 silenced, lease_events, unclosed = write_session_leases(
-                    view, armed, poller, closed_before, now, write_lease=write_lease)
+                    view, {k: view["prs"][k] for k in all_armed}, poller, closed_before, now,
+                    write_lease=write_lease)
                 dropped = set(poller["lease_dropped"])
                 if unclosed:
                     poller["closed"] = [k for k in poller["closed"] if k not in unclosed]
