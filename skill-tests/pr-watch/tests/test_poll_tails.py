@@ -236,6 +236,14 @@ class OwnPostTests(unittest.TestCase):
     def test_rendered_footer(self):
         self.assertTrue(poll.is_own_slack_post("done\n\nSent using Claude"))
 
+    def test_slack_bold_footer_as_read_back_from_a_thread(self):
+        self.assertTrue(poll.is_own_slack_post(
+            "No longer watching.\n*Sent using* <@U0APMMVNAU8|Claude>"))
+
+    def test_quoted_footer_followed_by_more_words_is_not_own(self):
+        self.assertFalse(poll.is_own_slack_post(
+            "your footer says Sent using Claude but I disagree with the rename"))
+
     def test_trailing_whitespace(self):
         self.assertTrue(poll.is_own_slack_post("done\nSent using Claude  \n\n"))
 

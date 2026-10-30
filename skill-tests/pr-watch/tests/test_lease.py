@@ -425,6 +425,23 @@ class WriteTests(LeaseCase):
                 self.assertEqual(result, "inactive")
                 self.assertEqual(path.read_bytes(), before)
 
+    def test_closing_an_already_closed_lease_of_this_session_counts_as_written(self):
+        self.put(status="closed")
+        path = pw_paths.lease_path("o", "r", 1)
+        before = path.read_bytes()
+        result = lease.tick_write("o", "r", 1, session_id="s-1", now=NOW, head="x",
+                                  pending_since=None, last_error=None, poller_pid=None,
+                                  status="closed")
+        self.assertEqual(result, "written")
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_closing_a_closed_lease_of_another_session_is_lost(self):
+        self.put(status="closed")
+        result = lease.tick_write("o", "r", 1, session_id="s-2", now=NOW, head="x",
+                                  pending_since=None, last_error=None, poller_pid=None,
+                                  status="closed")
+        self.assertEqual(result, "lost")
+
     def test_tick_write_cannot_close_a_non_armed_lease(self):
         self.put(status="released")
         before = pw_paths.lease_path("o", "r", 1).read_bytes()

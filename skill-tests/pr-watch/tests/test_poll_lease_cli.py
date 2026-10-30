@@ -53,6 +53,22 @@ class ClaimCliTests(LeaseCliCase):
         record = lease.read_lease("o", "r", 1)
         self.assertEqual((record["watcher"], record["stale_after_seconds"]), ("central", 900))
 
+    def test_claim_clears_the_pr_from_the_sessions_lease_silencing(self):
+        d = self.session("s-a")
+        key = pw_paths.pr_key("o", "r", 1)
+        (d / "watch-poller.json").write_text(json.dumps({
+            "lease_dropped": [key, "o/r#2"], "lease_warned": [key], "closed": []}),
+            encoding="utf-8")
+        self.assertEqual(run("--claim", REF, "--session-dir", d, "--role", "authored")[0], 0)
+        saved = json.loads((d / "watch-poller.json").read_text(encoding="utf-8"))
+        self.assertEqual((saved["lease_dropped"], saved["lease_warned"], saved["closed"]),
+                         (["o/r#2"], [], []))
+
+    def test_claim_without_a_poller_file_creates_none(self):
+        d = self.session("s-a")
+        run("--claim", REF, "--session-dir", d, "--role", "authored")
+        self.assertFalse((d / "watch-poller.json").exists())
+
     def test_claim_without_central_flag_writes_a_monitor_lease(self):
         run("--claim", REF, "--session-dir", self.session("s-a"), "--role", "authored")
         self.assertEqual(lease.read_lease("o", "r", 1)["stale_after_seconds"], 300)

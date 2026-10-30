@@ -283,7 +283,7 @@ def tick_write(owner, repo, n, *, session_id, now, head, pending_since, last_err
         if data["holder"].get("session_id") != session_id:
             return "lost"
         if data.get("status") != "armed":
-            return "inactive"
+            return "written" if status == data.get("status") == "closed" else "inactive"
         stamp = iso_utc(now)
         data["holder"]["poller_pid"] = poller_pid
         data.update(heartbeat=stamp, last_head_sha=head, pending_since=pending_since,

@@ -378,6 +378,57 @@ class TickAllTests(HomeCase):
         self.tick(now=NOW + poll.RECONCILE_SECONDS)
         self.assertEqual(self.kinds(), ["closed", "pending"])
 
+    def test_a_closed_event_lost_to_a_kill_is_spooled_by_the_next_run(self):
+        self.session()
+        merged = authored_pr()
+        merged["state"] = "MERGED"
+        self.gh.prs[pk(1411)] = merged
+        real = poll.append_spool
+
+        def killed(path, session_id, events):
+            raise KeyboardInterrupt
+        with unittest.mock.patch.object(poll, "append_spool", killed):
+            with self.assertRaises(KeyboardInterrupt):
+                self.tick(write_lease=lease.tick_write)
+        self.assertEqual(lease.read_lease("o", "r", 1411)["status"], "closed")
+        self.assertEqual(self.kinds(), [])
+        self.tick(now=NOW + 300, write_lease=lease.tick_write)
+        self.assertEqual(self.kinds(), ["closed"])
+
+    def test_a_reopened_pr_whose_lease_went_closed_is_dropped_not_rewritten(self):
+        self.session()
+        merged = authored_pr()
+        merged["state"] = "MERGED"
+        self.gh.prs[pk(1411)] = merged
+        self.tick(write_lease=lease.tick_write)
+        self.gh.prs[pk(1411)] = authored_pr(updated="2026-09-11T11:00:00Z")
+        self.tick(now=NOW + poll.RECONCILE_SECONDS, write_lease=lease.tick_write)
+        self.assertEqual(self.kinds(), ["closed"])
+        self.assertEqual(lease.read_lease("o", "r", 1411)["status"], "closed")
+        saved = json.loads((self.root / "s-1" / "watch-poller.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["lease_dropped"], [rk(1411)])
+
+    def test_central_leases_carry_no_poller_pid(self):
+        self.session()
+        self.tick()
+        self.assertIsNone(self.leases[0][1]["poller_pid"])
+
+    def test_the_session_ticked_longest_ago_goes_first_after_a_deadline_skip(self):
+        self.gh.prs[pk(1412)] = pull(1412, threads=[thread("T2", [comment("c9", "reviewer-a",
+                                                                          T1)])])
+        self.session("s-1")
+        self.session("s-2", prs={1412: "authored"})
+        clock = [0.0]
+
+        def slow_lease(owner, repo, number, **kwargs):
+            clock[0] = 181.0
+            return self.recording(owner, repo, number, **kwargs)
+        self.tick(clock=lambda: clock[0], write_lease=slow_lease)
+        self.assertEqual((self.kinds("s-1"), self.kinds("s-2")), (["pending"], []))
+        clock[0] = 0.0
+        self.tick(now=NOW + 300, clock=lambda: clock[0], write_lease=slow_lease)
+        self.assertEqual((self.kinds("s-1"), self.kinds("s-2")), (["pending"], ["pending"]))
+
     def test_a_missing_sessions_root_is_an_empty_run(self):
         stats = self.tick()
         self.assertEqual(stats, {"sessions": 0, "events": 0, "gh_calls": 0,

@@ -174,7 +174,8 @@ def comment_record(item, surface, self_login, allowlist, thread=None):
 
 SLACK_TS = re.compile(r"\d+\.\d+")
 SLACK_ID = re.compile(r"[UWB][A-Z0-9]{6,}")
-OWN_POST_FOOTER = re.compile(r"Sent using\s*(?:<@U0APMMVNAU8|Claude)")
+OWN_POST_FOOTER = re.compile(
+    r"[*_]?Sent using[*_]?\s*(?:<@U0APMMVNAU8(?:\|[^>]*)?>|@?Claude\b)\s*$")
 
 
 def load_slack(path):
@@ -890,7 +891,7 @@ def write_session_leases(view, armed, poller, closed_before, now, *,
                 owner, repo, number, session_id=view["session_id"], now=now, head=head,
                 pending_since=iso_utc(since) if since and not closing else None,
                 last_error=poller["errors"].get(key),
-                poller_pid=os.getpid(), status="closed" if closing else "armed", **extra)
+                poller_pid=None if central else os.getpid(), status="closed" if closing else "armed", **extra)
         except OSError as exc:
             warn(f"lease for {key}: {type(exc).__name__}: {exc}")
             result = "failed"
@@ -1178,6 +1179,7 @@ def tick_session(gh, session, heads, now, live, files, write_lease):
     # spooled before the save: a failed save re-raises these next run, and orch dedupes them
     append_spool(session.directory / files.spool, session_id_of(session), events)
     poller.pop("failed_ticks", None)
+    poller["last_tick_at"] = now
     write_json_atomic(session.directory / files.poller, poller)
     return events, force and live
 
@@ -1236,6 +1238,7 @@ def tick_all(gh, sessions_root, now, *, dry_run=False, deadline_s=180, clock=tim
             warn(f"heads query: {type(exc).__name__}: {exc}")
             heads = exc
     forced = False
+    sessions.sort(key=lambda s: (s.poller.get("last_tick_at", 0), s.directory.name))
     for session in sessions:
         if clock() - start >= deadline_s:
             stats["skipped_after_deadline"] += 1
@@ -1699,6 +1702,16 @@ def main(argv=None, gh=run_gh):
         return 1
 
 
+def forget_lease_silencing(session_dir, key):
+    path = session_dir / LIVE_FILES.poller
+    poller, _ = read_poller(path)
+    kept = {name: [k for k in poller.get(name, ()) if k != key]
+            for name in ("lease_dropped", "lease_warned")}
+    if any(kept[name] != list(poller.get(name, ())) for name in kept):
+        poller.update(kept)
+        write_json_atomic(path, poller)
+
+
 def lease_mode(args):
     watch = read_json(args.session_dir / "watch.json")
     session_id = watch.get("session_id")
@@ -1733,6 +1746,7 @@ def lease_mode(args):
     ok, why = lease.claim(owner, repo, number, role=args.role, holder=holder,
                           explicit=args.explicit, now=now, central=args.central)
     if ok:
+        forget_lease_silencing(args.session_dir, pr_key(owner, repo, number))
         print(why)
         return 0
     print(f"pr-watch: cannot claim {pr_key(owner, repo, number)}: {why}", file=sys.stderr)
