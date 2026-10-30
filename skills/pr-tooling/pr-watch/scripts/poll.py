@@ -1058,6 +1058,7 @@ class Session(NamedTuple):
     ticked: dict
     force: bool
     poller_fault: bool
+    leases_at_load: tuple = ()
 
 
 def queue_peers(view, owner, repo, number, leased=None):
@@ -1139,7 +1140,7 @@ def load_session(directory, dry_run, files, now):
         ticked = {k: e for k, e in view["prs"].items() if e.get("status") in REPORTED_STATUSES}
     else:
         ticked = armed_entries(view, set(poller.get("lease_dropped", ())))
-    return Session(directory, view, poller, ticked, force, poller_fault)
+    return Session(directory, view, poller, ticked, force, poller_fault, lease_lists(poller))
 
 
 def append_spool(path, session_id, events):
@@ -1159,9 +1160,31 @@ def session_id_of(session):
     return session.view.get("session_id") or session.directory.name
 
 
+def keep_concurrent_claims(session, files):
+    """A claim clears its PR from the lease lists on disk while this run holds the old lists;
+    keep an in-memory key only if it is still on disk or this run added it."""
+    try:
+        disk, corrupt = read_poller(session.directory / files.poller)
+    except OSError:
+        return
+    if corrupt:
+        return
+    for name, loaded in zip(LEASE_LISTS, session.leases_at_load):
+        on_disk = set(disk.get(name, ()))
+        was_loaded = set(loaded)
+        mem = session.poller.get(name)
+        if mem is not None:
+            session.poller[name] = [k for k in mem if k in on_disk or k not in was_loaded]
+
+
+def save_session_poller(session, files):
+    keep_concurrent_claims(session, files)
+    write_json_atomic(session.directory / files.poller, session.poller)
+
+
 def prune_lease_lists(session, files, armed):
     if filter_lease_lists(session.poller, armed.__contains__):
-        write_json_atomic(session.directory / files.poller, session.poller)
+        save_session_poller(session, files)
 
 
 def is_live(session, files):
@@ -1202,7 +1225,7 @@ def tick_session(gh, session, heads, now, files, write_lease, gate_memo=None):
     append_spool(session.directory / files.spool, session_id_of(session), events)
     poller.pop("failed_ticks", None)
     poller["last_tick_at"] = now
-    write_json_atomic(session.directory / files.poller, poller)
+    save_session_poller(session, files)
     return events
 
 

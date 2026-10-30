@@ -197,6 +197,19 @@ class TickAllTests(HomeCase):
     def kinds(self, sid="s-1", name="events.jsonl"):
         return [e["kind"] for e in self.spool(sid, name)]
 
+    def test_a_claim_during_the_run_is_not_overwritten_by_the_save(self):
+        self.add_second_pr()
+        directory = self.session(prs={1411: "authored", 1412: "authored"})
+        poller_path = directory / "watch-poller.json"
+        poller_path.write_text(json.dumps({"lease_dropped": [rk(1411)]}), encoding="utf-8")
+
+        def claim_then_lose(owner, repo, number, **kwargs):
+            poll.forget_lease_silencing(directory, rk(1411))
+            return "lost"
+        self.tick(write_lease=claim_then_lose)
+        saved = json.loads(poller_path.read_text(encoding="utf-8"))
+        self.assertEqual(saved["lease_dropped"], [rk(1412)])
+
     def test_skips_non_central_sessions(self):
         self.session(central=False)
         stats = self.tick()
