@@ -2,7 +2,9 @@
 
 Deterministic; no model runs here. Reads the session-owned watch.json and
 never writes it. The monitor writes watch-poller.json, watch-heartbeat and the lease of
-each PR it ticks; --report and --reseed write watch-seen.json. Modes are listed in main().
+each PR it ticks; --tick-all writes watch-poller.json, the events.jsonl spool and the
+leases of every central watch; --report and --reseed write watch-seen.json. Modes are
+listed in main().
 """
 from __future__ import annotations
 
@@ -26,13 +28,15 @@ if __name__ == "__main__":
 
 import lease
 from pw_io import GhError, as_pid, no_window, read_json, write_json_atomic
-from pw_paths import NAME, iso_utc, parse_iso, parse_ref, pr_key, progress_path, repo_slug
+from pw_paths import (NAME, iso_utc, parse_iso, parse_ref, pr_key, progress_path, repo_slug,
+                      sessions_root)
 from pw_progress import starting_progress
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 TICK_SECONDS = 60
 RECONCILE_SECONDS = 24 * 60 * 60
 TICK_EVENT_RETRY_SECONDS = 600
+QUEUE_WAIT_SECONDS = 3600
 CHECK_FIELDS = "name,state,bucket,link,workflow,completedAt"
 FAILED_ROLLUP = ("FAILURE", "ERROR")
 FAILED_BASE = ("failure", "error", "timed_out")
@@ -718,7 +722,24 @@ def check_mergeability(view, poller, key, node, force, events):
                    "base": node.get("baseRefName")})
 
 
-def tick_once(gh, view, poller, now, force=False):
+def head_groups(prs, closed):
+    groups = {}
+    for key in sorted(prs):
+        entry = prs[key]
+        if key not in closed:
+            groups.setdefault((entry["owner"], entry["repo"]), []).append(entry["number"])
+    return groups
+
+
+def fetch_heads(gh, groups):
+    """(owner, repo) -> {"p<N>": node or None}, or None for a repo the query could not resolve."""
+    query, aliases = tick_query(groups)
+    data = graphql(gh, query, {}, allow_partial=True)
+    return {repo: data.get(alias) for alias, repo in aliases.items()}
+
+
+def tick_once(gh, view, poller, now, force=False, heads=None):
+    """`heads` is a fetch_heads result covering this view; without one the tick queries it."""
     events = []
     poller.setdefault("prs", {})
     closed = poller.setdefault("closed", [])
@@ -726,16 +747,12 @@ def tick_once(gh, view, poller, now, force=False):
     poller.pop("unreachable", None)
     errors = poller["errors"] = {}
     poller["heads"] = {}
-    groups = {}
-    for key in sorted(view["prs"]):
-        entry = view["prs"][key]
-        if key not in closed:
-            groups.setdefault((entry["owner"], entry["repo"]), []).append(entry["number"])
+    groups = head_groups(view["prs"], closed)
     if groups:
-        query, aliases = tick_query(groups)
-        heads = graphql(gh, query, {}, allow_partial=True)
-        for alias, (owner, repo) in aliases.items():
-            nodes = heads.get(alias)
+        if heads is None:
+            heads = fetch_heads(gh, groups)
+        for owner, repo in sorted(groups):
+            nodes = heads.get((owner, repo))
             if nodes is None:
                 warn(f"{repo_slug(owner, repo)}: repository missing from the heads query; "
                      "skipping its PRs this tick")
@@ -852,6 +869,15 @@ def write_session_leases(view, armed, poller, closed_before, now, *,
     return silenced, lease_events, unclosed
 
 
+def silence_events(events, lease_events, silenced, gone):
+    """Drop events of silenced PRs and `gone` keys from a tick's push queue; lease events lead."""
+    kept = lease_events + [
+        dict(e, push_queue=[k for k in e["push_queue"] if k not in gone])
+        if e["kind"] == "tick" else e
+        for e in events if e.get("pr") not in silenced]
+    return [e for e in kept if e["kind"] != "tick" or e["push_queue"]]
+
+
 def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
             write_lease=lease.tick_write, holder_alive=lease.holder_alive,
             started_at=lease.process_started_at):
@@ -919,12 +945,7 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
                     poller["closed"] = [k for k in poller["closed"] if k not in unclosed]
                 if unclosed or lease_state != (poller["lease_dropped"], poller["lease_warned"]):
                     save(poller)
-                gone = silenced | dropped
-                events = lease_events + [
-                    dict(e, push_queue=[k for k in e["push_queue"] if k not in gone])
-                    if e["kind"] == "tick" else e
-                    for e in events if e.get("pr") not in silenced]
-                events = [e for e in events if e["kind"] != "tick" or e["push_queue"]]
+                events = silence_events(events, lease_events, silenced, silenced | dropped)
                 if ticks == 1 or due:
                     try:
                         lease.prune_closed(now)
@@ -945,6 +966,212 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
             sleep(TICK_SECONDS)
             beat()
     return 0
+
+
+class TickFiles(NamedTuple):
+    poller: str
+    spool: str
+
+
+LIVE_FILES = TickFiles("watch-poller.json", "events.jsonl")
+DRY_RUN_FILES = TickFiles("watch-poller.dry-run.json", "events.dry-run.jsonl")
+
+
+class Session(NamedTuple):
+    directory: pathlib.Path
+    view: dict
+    poller: dict
+    ticked: dict
+
+
+def queue_peers(view, owner, repo, number):
+    peers = {e["number"] for e in view["prs"].values()
+             if (e["owner"], e["repo"]) == (owner, repo) and e.get("role") == "authored"
+             and e.get("status") == "armed"}
+    peers.update(lease.armed_peers(owner, repo, number))
+    peers.discard(number)
+    return sorted(peers)
+
+
+def has_pending_check(gh, owner, repo, number):
+    try:
+        checks = required_checks(gh, repo_slug(owner, repo), number)
+    except PR_FAULTS:
+        return False
+    return any(c.get("bucket") == "pending" for c in checks)
+
+
+def tick_gate(gh, view, poller, now):
+    """True when some queued PR could drain now (step 04 section 8 step 1 would not stop it)."""
+    for key in view.get("push_queue", []):
+        try:
+            owner, repo, number = parse_ref(key)
+        except ValueError:
+            continue
+        queued_at = view["prs"].get(key, {}).get("queued_at")
+        if isinstance(queued_at, (int, float)) and now - queued_at >= QUEUE_WAIT_SECONDS:
+            return True
+        if not any(has_pending_check(gh, owner, repo, n)
+                   for n in queue_peers(view, owner, repo, number)):
+            return True
+    return False
+
+
+def session_dirs(root):
+    if not root.is_dir():
+        return []
+    return sorted(p for p in root.iterdir() if p.is_dir())
+
+
+def load_session(directory, dry_run, files):
+    """The session to tick, or None when its watch is not central (a dry run takes every watch)."""
+    watch = read_json(directory / "watch.json")
+    if not dry_run and watch.get("watcher") != "central":
+        return None
+    view = load_view(directory)
+    poller = read_json(directory / files.poller, default={})
+    if not isinstance(poller, dict):
+        raise ValueError(f"{files.poller} is not an object")
+    if dry_run:
+        ticked = {k: e for k, e in view["prs"].items() if e.get("status") in REPORTED_STATUSES}
+    else:
+        dropped = set(poller.get("lease_dropped", ()))
+        ticked = {k: e for k, e in view["prs"].items()
+                  if e.get("status") == "armed" and k not in dropped}
+    return Session(directory, view, poller, ticked)
+
+
+def append_spool(path, session_id, events):
+    if events:
+        with path.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write("".join(json.dumps({"session": session_id, **e}) + "\n" for e in events))
+
+
+def session_id_of(session):
+    return session.view.get("session_id") or session.directory.name
+
+
+def prune_lease_lists(session, files, armed):
+    poller = session.poller
+    kept = {name: sorted(set(poller.get(name, ())) & set(armed))
+            for name in ("lease_dropped", "lease_warned")}
+    if any(kept[name] != poller.get(name, []) for name in kept):
+        poller.update(kept)
+        write_json_atomic(session.directory / files.poller, poller)
+
+
+def tick_session(gh, session, heads, now, live, files, write_lease):
+    """One monitor tick for a session without idle or claude_pid checks; returns
+    (events spooled, forced) or None when nothing in it is armed."""
+    view, poller, ticked = session.view, session.poller, session.ticked
+    live = live and not view["dry_run"]
+    all_armed = {k: e for k, e in view["prs"].items() if e.get("status") == "armed"}
+    if not ticked:
+        if live:
+            prune_lease_lists(session, files, all_armed)
+        return None
+    if isinstance(heads, Exception):
+        raise heads
+    last = poller.get("last_reconciliation", 0)
+    force = now - last >= RECONCILE_SECONDS
+    closed_before = set(poller.get("closed", [])) & set(ticked)
+    before = {n: (p.get("last_signature"), p.get("last_ci_signature"))
+              for n, p in poller.get("prs", {}).items()}
+    events = tick_once(gh, dict(view, prs=ticked), poller, now, force=force, heads=heads)
+    if force:
+        poller["last_reconciliation"] = now
+        missed = missed_prs(before, poller["prs"], events) if last else []
+        if missed:
+            warn(f"session {session_id_of(session)}: reconciled {', '.join(missed)}")
+    events = [e for e in events if e["kind"] != "tick"]
+    if tick_gate(gh, view, poller, now):
+        events.append({"kind": "tick", "push_queue": list(view["push_queue"])})
+    if live:
+        silenced, lease_events, unclosed = write_session_leases(
+            view, all_armed, poller, closed_before, now, write_lease=write_lease, central=True)
+        if unclosed:
+            poller["closed"] = [k for k in poller["closed"] if k not in unclosed]
+        events = silence_events(events, lease_events, silenced,
+                                silenced | set(poller["lease_dropped"]))
+    # spooled before the save: a failed save re-raises these next run, and orch dedupes them
+    append_spool(session.directory / files.spool, session_id_of(session), events)
+    poller.pop("failed_ticks", None)
+    write_json_atomic(session.directory / files.poller, poller)
+    return events, force and live
+
+
+def record_failure(session, files, exc):
+    """Count a failed tick in the saved poller state; the POLLER_ERROR_AFTER-th spools poller-error."""
+    path = session.directory / files.poller
+    try:
+        poller = read_json(path, default={})
+        poller["failed_ticks"] = int(poller.get("failed_ticks") or 0) + 1
+        events = ([{"kind": "poller-error", "error": str(exc)}]
+                  if poller["failed_ticks"] == POLLER_ERROR_AFTER else [])
+        append_spool(session.directory / files.spool, session_id_of(session), events)
+        write_json_atomic(path, poller)
+    except Exception as again:  # the run must go on to the other sessions
+        warn(f"session {session.directory.name}: recording the failure: "
+             f"{type(again).__name__}: {again}")
+        return 0
+    return len(events)
+
+
+def tick_all(gh, sessions_root, now, *, dry_run=False, deadline_s=180, clock=time.monotonic,
+             write_lease=lease.tick_write):
+    start = clock()
+    stats = {"sessions": 0, "events": 0, "gh_calls": 0, "skipped_after_deadline": 0, "errors": 0}
+
+    def counting_gh(args):
+        stats["gh_calls"] += 1
+        return gh(args)
+
+    files = DRY_RUN_FILES if dry_run else LIVE_FILES
+    sessions = []
+    for directory in session_dirs(sessions_root):
+        try:
+            session = load_session(directory, dry_run, files)
+        except Exception as exc:  # one bad session dir must not stop every other watch
+            warn(f"session {directory.name} skipped: {type(exc).__name__}: {exc}")
+            stats["errors"] += 1
+            continue
+        if session is not None:
+            sessions.append(session)
+    groups = {}
+    for session in sessions:
+        for repo, numbers in head_groups(session.ticked,
+                                         session.poller.get("closed", [])).items():
+            groups.setdefault(repo, set()).update(numbers)
+    heads = {}
+    if groups:
+        try:
+            heads = fetch_heads(counting_gh, {repo: sorted(ns) for repo, ns in groups.items()})
+        except Exception as exc:  # each session records it as its own failed tick
+            warn(f"heads query: {type(exc).__name__}: {exc}")
+            heads = exc
+    forced = False
+    for session in sessions:
+        if clock() - start >= deadline_s:
+            stats["skipped_after_deadline"] += 1
+            continue
+        try:
+            outcome = tick_session(counting_gh, session, heads, now, not dry_run, files,
+                                   write_lease)
+        except Exception as exc:  # a standing watch must outlive any single failure
+            warn(f"session {session.directory.name}: {type(exc).__name__}: {exc}")
+            stats["errors"] += 1
+            stats["events"] += record_failure(session, files, exc)
+            continue
+        if outcome is not None:
+            stats["sessions"] += 1
+            stats["events"] += len(outcome[0])
+            forced = forced or outcome[1]
+    if forced:
+        try:
+            lease.prune_closed(now)
+        except OSError as exc:
+            warn(f"prune: {exc}")
+    return stats
 
 
 def all_ids(pr):
@@ -1279,6 +1506,8 @@ def main(argv=None, gh=run_gh):
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--monitor", action="store_true",
                       help="print one JSON line per actionable change, forever")
+    mode.add_argument("--tick-all", action="store_true",
+                      help="tick every central watch once, spool its events, print run stats")
     mode.add_argument("--report", action="store_true", help="print ATTENTION, NEW, STANDING")
     mode.add_argument("--reseed", action="store_true", help="accept every current id as seen")
     mode.add_argument("--baseline", metavar="REF", help="print the first-arm baseline")
@@ -1319,6 +1548,9 @@ def main(argv=None, gh=run_gh):
                       help="end this session's pollers left by an earlier claude process")
     mode.add_argument("--monitor-alive", action="store_true",
                       help="print alive or down for this session's monitor")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="with --tick-all: every armed or stopped watch, its own files, "
+                             "no leases")
     parser.add_argument("--role", choices=("authored", "reviewed"), help="with --claim")
     parser.add_argument("--explicit", action="store_true",
                         help="with --claim: the user named this PR")
@@ -1334,6 +1566,8 @@ def main(argv=None, gh=run_gh):
         parser.error("--assert-author needs --repo owner/name")
     if (args.ci_log or args.ci_rerun) and not (args.repo and args.session_dir):
         parser.error("--ci-log and --ci-rerun need --repo owner/name and --session-dir")
+    if args.dry_run and not args.tick_all:
+        parser.error("--dry-run needs --tick-all")
     if args.claim and not args.role:
         parser.error("--claim needs --role")
     if args.lease_status and not args.status:
@@ -1343,7 +1577,7 @@ def main(argv=None, gh=run_gh):
     if (args.discover or args.find_clone) and not args.session_id:
         parser.error("--discover and --find-clone need --session-id")
     if (args.assert_author is None and args.repo_peers is None and args.session_dir is None
-            and not (args.discover or args.find_clone or args.check_identity)):
+            and not (args.discover or args.find_clone or args.check_identity or args.tick_all)):
         parser.error("--session-dir is required for this mode")
     try:
         return run_mode(args, gh)
@@ -1458,6 +1692,10 @@ def run_mode(args, gh):
         return 0
     if args.claim or args.lease_status or args.push_lock:
         return lease_mode(args)
+    if args.tick_all:
+        stats = tick_all(gh, sessions_root(), int(time.time()), dry_run=args.dry_run)
+        print(json.dumps(stats), flush=True)
+        return 0
     if args.monitor:
         return monitor(gh, args.session_dir)
     if args.report or args.reseed:
