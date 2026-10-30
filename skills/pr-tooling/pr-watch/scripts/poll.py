@@ -982,6 +982,8 @@ class Session(NamedTuple):
     view: dict
     poller: dict
     ticked: dict
+    force: bool
+    poller_fault: bool
 
 
 def queue_peers(view, owner, repo, number):
@@ -1023,28 +1025,59 @@ def session_dirs(root):
     return sorted(p for p in root.iterdir() if p.is_dir())
 
 
-def load_session(directory, dry_run, files):
-    """The session to tick, or None when its watch is not central (a dry run takes every watch)."""
-    watch = read_json(directory / "watch.json")
+def read_poller(path):
+    """(poller state, corrupt); a corrupt or non-object file reads as empty, like a first tick."""
+    try:
+        poller = read_json(path, default={})
+    except ValueError:
+        return {}, True
+    return (poller, False) if isinstance(poller, dict) else ({}, True)
+
+
+def load_session(directory, dry_run, files, now):
+    """The session to tick, or None when it has no watch.json (step 01 deletes it once
+    nothing is armed) or its watch is not central (a dry run takes every watch)."""
+    try:
+        watch = read_json(directory / "watch.json")
+    except FileNotFoundError:
+        return None
     if not dry_run and watch.get("watcher") != "central":
         return None
     view = load_view(directory)
-    poller = read_json(directory / files.poller, default={})
-    if not isinstance(poller, dict):
-        raise ValueError(f"{files.poller} is not an object")
+    poller, poller_fault = read_poller(directory / files.poller)
+    force = now - poller.get("last_reconciliation", 0) >= RECONCILE_SECONDS
+    if force:
+        # the daily pass re-checks PRs closed earlier, in case one was reopened while armed
+        poller["closed"] = []
     if dry_run:
         ticked = {k: e for k, e in view["prs"].items() if e.get("status") in REPORTED_STATUSES}
     else:
         dropped = set(poller.get("lease_dropped", ()))
         ticked = {k: e for k, e in view["prs"].items()
                   if e.get("status") == "armed" and k not in dropped}
-    return Session(directory, view, poller, ticked)
+    return Session(directory, view, poller, ticked, force, poller_fault)
+
+
+def ends_torn(path):
+    try:
+        with path.open("rb") as handle:
+            if handle.seek(0, os.SEEK_END) == 0:
+                return False
+            handle.seek(-1, os.SEEK_END)
+            return handle.read(1) != b"\n"
+    except FileNotFoundError:
+        return False
 
 
 def append_spool(path, session_id, events):
-    if events:
-        with path.open("a", encoding="utf-8", newline="\n") as handle:
-            handle.write("".join(json.dumps({"session": session_id, **e}) + "\n" for e in events))
+    if not events:
+        return
+    lines = "".join(json.dumps({"session": session_id, **e}) + "\n" for e in events)
+    # a run killed mid-write leaves a partial last line; keep the next event off it
+    if ends_torn(path):
+        lines = "\n" + lines
+    with path.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(lines)
 
 
 def session_id_of(session):
@@ -1072,8 +1105,7 @@ def tick_session(gh, session, heads, now, live, files, write_lease):
         return None
     if isinstance(heads, Exception):
         raise heads
-    last = poller.get("last_reconciliation", 0)
-    force = now - last >= RECONCILE_SECONDS
+    last, force = poller.get("last_reconciliation", 0), session.force
     closed_before = set(poller.get("closed", [])) & set(ticked)
     before = {n: (p.get("last_signature"), p.get("last_ci_signature"))
               for n, p in poller.get("prs", {}).items()}
@@ -1104,7 +1136,7 @@ def record_failure(session, files, exc):
     """Count a failed tick in the saved poller state; the POLLER_ERROR_AFTER-th spools poller-error."""
     path = session.directory / files.poller
     try:
-        poller = read_json(path, default={})
+        poller, _ = read_poller(path)
         poller["failed_ticks"] = int(poller.get("failed_ticks") or 0) + 1
         events = ([{"kind": "poller-error", "error": str(exc)}]
                   if poller["failed_ticks"] == POLLER_ERROR_AFTER else [])
@@ -1130,13 +1162,17 @@ def tick_all(gh, sessions_root, now, *, dry_run=False, deadline_s=180, clock=tim
     sessions = []
     for directory in session_dirs(sessions_root):
         try:
-            session = load_session(directory, dry_run, files)
+            session = load_session(directory, dry_run, files, now)
         except Exception as exc:  # one bad session dir must not stop every other watch
             warn(f"session {directory.name} skipped: {type(exc).__name__}: {exc}")
             stats["errors"] += 1
             continue
-        if session is not None:
-            sessions.append(session)
+        if session is None:
+            continue
+        if session.poller_fault:
+            warn(f"session {directory.name}: {files.poller} unreadable; ticking from empty state")
+            stats["errors"] += 1
+        sessions.append(session)
     groups = {}
     for session in sessions:
         for repo, numbers in head_groups(session.ticked,

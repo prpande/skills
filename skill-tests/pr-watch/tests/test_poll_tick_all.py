@@ -333,12 +333,50 @@ class TickAllTests(HomeCase):
         (self.root / "s-0" / "watch.json").write_text("{not json", encoding="utf-8")
         (self.root / "s-00").mkdir()
         self.session("s-2")
-        self.session("s-3", prs={1412: "authored"})
-        self.gh.prs[pk(1412)] = pull(1412)
-        (self.root / "s-3" / "watch-poller.json").write_text("[", encoding="utf-8")
         stats = self.tick()
-        self.assertEqual(stats["errors"], 3)
+        self.assertEqual(stats["errors"], 1)
         self.assertEqual(self.kinds("s-2"), ["pending"])
+
+    def test_a_session_dir_without_watch_json_is_skipped_silently(self):
+        (self.root / "s-0").mkdir(parents=True)
+        stats = self.tick()
+        self.assertEqual((stats["errors"], stats["sessions"]), (0, 0))
+
+    def test_a_corrupt_poller_is_ticked_from_empty_state(self):
+        for body in ("[", "[]"):
+            with self.subTest(body=body):
+                directory = self.session()
+                (directory / "events.jsonl").unlink(missing_ok=True)
+                (directory / "watch-poller.json").write_text(body, encoding="utf-8")
+                self.leases = []
+                stats = self.tick()
+                self.assertEqual(stats["errors"], 1)
+                self.assertEqual(self.kinds(), ["pending"])
+                self.assertEqual([(key, kw["central"]) for key, kw in self.leases],
+                                 [(rk(1411), True)])
+                saved = json.loads((directory / "watch-poller.json").read_text(encoding="utf-8"))
+                self.assertEqual(saved["last_reconciliation"], NOW)
+
+    def test_a_torn_spool_tail_stays_on_its_own_line(self):
+        directory = self.session()
+        (directory / "events.jsonl").write_text('{"session": "s-1", "ki', encoding="utf-8")
+        self.tick()
+        lines = (directory / "events.jsonl").read_text(encoding="utf-8").split("\n")
+        self.assertEqual(lines[0], '{"session": "s-1", "ki')
+        self.assertEqual(json.loads(lines[1])["kind"], "pending")
+        self.assertEqual(lines[2:], [""])
+
+    def test_a_pr_reopened_while_armed_is_rechecked_on_the_daily_pass(self):
+        self.session()
+        merged = authored_pr()
+        merged["state"] = "MERGED"
+        self.gh.prs[pk(1411)] = merged
+        self.tick()
+        self.gh.prs[pk(1411)] = authored_pr(updated="2026-09-11T11:00:00Z")
+        self.tick(now=NOW + 300)
+        self.assertEqual(self.kinds(), ["closed"])
+        self.tick(now=NOW + poll.RECONCILE_SECONDS)
+        self.assertEqual(self.kinds(), ["closed", "pending"])
 
     def test_a_missing_sessions_root_is_an_empty_run(self):
         stats = self.tick()
@@ -398,8 +436,10 @@ class TickAllCliTests(HomeCase):
         self.assertEqual((held["watcher"], held["stale_after_seconds"]), ("central", 900))
 
     def test_dry_run_needs_tick_all(self):
-        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            poll.main(["--report", "--dry-run", "--session-dir", "x"])
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit):
+            poll.main(["--monitor", "--dry-run", "--session-dir", "x"])
+        self.assertIn("--dry-run needs --tick-all", err.getvalue())
 
 
 if __name__ == "__main__":
