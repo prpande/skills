@@ -803,6 +803,55 @@ def lease_head(owner, repo, number):
     return held.get("last_head_sha") if held else None
 
 
+def write_session_leases(view, armed, poller, closed_before, now, *,
+                         write_lease=lease.tick_write, central=False):
+    dropped = set(poller.get("lease_dropped", ()))
+    warned_missing = set(poller.get("lease_warned", ()))
+    extra = {"central": True} if central else {}
+    silenced, lease_events, unclosed = set(), [], set()
+    for key, entry in armed.items():
+        if key in closed_before or key in dropped:
+            continue
+        closing = key in poller["closed"]
+        owner, repo, number = entry["owner"], entry["repo"], entry["number"]
+        head = poller["heads"].get(key)
+        if head is None:
+            head = lease_head(owner, repo, number)
+        since = poller["prs"].get(key, {}).get("pending_since")
+        try:
+            result = write_lease(
+                owner, repo, number, session_id=view["session_id"], now=now, head=head,
+                pending_since=iso_utc(since) if since and not closing else None,
+                last_error=poller["errors"].get(key),
+                poller_pid=os.getpid(), status="closed" if closing else "armed", **extra)
+        except OSError as exc:
+            warn(f"lease for {key}: {type(exc).__name__}: {exc}")
+            result = "failed"
+        if closing and result in ("busy", "failed"):
+            # the closed event waits for the next tick, which sees the close again
+            unclosed.add(key)
+            silenced.add(key)
+        elif result == "lost":
+            silenced.add(key)
+            dropped.add(key)
+            try:
+                holder = (lease.read_with_retry(owner, repo, number) or {}).get("holder", {})
+            except OSError:
+                holder = {}
+            warn(f"lease for {key} is held by another session")
+            lease_events.append({"pr": key, "kind": "lease-lost",
+                                 "holder": holder.get("session_id")})
+        elif result == "inactive":
+            silenced.add(key)
+            dropped.add(key)
+        elif result == "missing" and key not in warned_missing:
+            warned_missing.add(key)
+            warn(f"no lease file for {key}")
+    poller["lease_dropped"] = sorted(dropped)
+    poller["lease_warned"] = sorted(warned_missing)
+    return silenced, lease_events, unclosed
+
+
 def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
             write_lease=lease.tick_write, holder_alive=lease.holder_alive,
             started_at=lease.process_started_at):
@@ -819,53 +868,10 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
     def save(poller):
         write_json_atomic(session_dir / "watch-poller.json", poller)
 
-    def write_leases(view, armed, poller, closed_before, now, dropped, warned_missing):
-        silenced, lease_events, unclosed = set(), [], set()
-        for key, entry in armed.items():
-            if key in closed_before:
-                continue
-            closing = key in poller["closed"]
-            owner, repo, number = entry["owner"], entry["repo"], entry["number"]
-            head = poller["heads"].get(key)
-            if head is None:
-                head = lease_head(owner, repo, number)
-            since = poller["prs"].get(key, {}).get("pending_since")
-            try:
-                result = write_lease(
-                    owner, repo, number, session_id=view["session_id"], now=now, head=head,
-                    pending_since=iso_utc(since) if since and not closing else None,
-                    last_error=poller["errors"].get(key),
-                    poller_pid=os.getpid(), status="closed" if closing else "armed")
-            except OSError as exc:
-                warn(f"lease for {key}: {type(exc).__name__}: {exc}")
-                result = "failed"
-            if closing and result in ("busy", "failed"):
-                # the closed event waits for the next tick, which sees the close again
-                unclosed.add(key)
-                silenced.add(key)
-            elif result == "lost":
-                silenced.add(key)
-                dropped.add(key)
-                try:
-                    holder = (lease.read_with_retry(owner, repo, number) or {}).get("holder", {})
-                except OSError:
-                    holder = {}
-                warn(f"lease for {key} is held by another session")
-                lease_events.append({"pr": key, "kind": "lease-lost",
-                                     "holder": holder.get("session_id")})
-            elif result == "inactive":
-                silenced.add(key)
-                dropped.add(key)
-            elif result == "missing" and key not in warned_missing:
-                warned_missing.add(key)
-                warn(f"no lease file for {key}")
-        return silenced, lease_events, unclosed
-
     claude_pid = claude_identity(session_dir)
     claude_started = started_at(claude_pid) if claude_pid else None
     if claude_pid and claude_started is None and IS_WINDOWS:
         return CLAUDE_GONE_EXIT
-    dropped, warned_missing = set(), set()
     ticks = failed_ticks = 0
     while max_ticks is None or ticks < max_ticks:
         ticks += 1
@@ -883,7 +889,8 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
             last = poller.get("last_reconciliation", 0)
             due = now - last >= RECONCILE_SECONDS
             all_armed = {k for k, e in view["prs"].items() if e.get("status") == "armed"}
-            dropped &= all_armed
+            dropped = set(poller.get("lease_dropped", ())) & all_armed
+            poller["lease_dropped"] = sorted(dropped)
             armed = {k: e for k, e in view["prs"].items() if k in all_armed - dropped}
             ticked_view = dict(view, prs=armed)
             closed_before = set(poller.get("closed", [])) & set(armed)
@@ -902,10 +909,13 @@ def monitor(gh, session_dir, sleep=time.sleep, clock=time.time, max_ticks=None,
             # an unsaved tick prints nothing; the next tick recomputes it from the old file
             save(poller)
             if not view["dry_run"]:
-                silenced, lease_events, unclosed = write_leases(
-                    view, armed, poller, closed_before, now, dropped, warned_missing)
+                lease_state = (poller["lease_dropped"], poller.get("lease_warned", []))
+                silenced, lease_events, unclosed = write_session_leases(
+                    view, armed, poller, closed_before, now, write_lease=write_lease)
+                dropped = set(poller["lease_dropped"])
                 if unclosed:
                     poller["closed"] = [k for k in poller["closed"] if k not in unclosed]
+                if unclosed or lease_state != (poller["lease_dropped"], poller["lease_warned"]):
                     save(poller)
                 gone = silenced | dropped
                 events = lease_events + [
