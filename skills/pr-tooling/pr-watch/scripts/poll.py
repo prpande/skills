@@ -172,7 +172,42 @@ def comment_record(item, surface, self_login, allowlist, thread=None):
     }
 
 
-def tails_payload(pr, watch_pr, self_login, allowlist):
+SLACK_TS = re.compile(r"\d+\.\d+")
+
+
+def load_slack(path):
+    try:
+        replies = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"cannot read {path}: {exc}") from exc
+    if not isinstance(replies, list):
+        raise ValueError(f"{path} must hold a JSON list of replies")
+    for reply in replies:
+        if (not isinstance(reply, dict)
+                or not all(isinstance(reply.get(k), str) for k in ("ts", "author", "body"))):
+            raise ValueError(f"{path}: every reply needs string ts, author and body")
+        if not SLACK_TS.fullmatch(reply["ts"]):
+            raise ValueError(f"{path}: {reply['ts']!r} is not a Slack ts")
+    return replies
+
+
+def slack_record(reply):
+    return {
+        "id": f"slack:{reply['ts']}",
+        "surface": "slack",
+        "author": reply["author"],
+        "author_type": "User",
+        "created_at": iso_utc(float(reply["ts"])),
+        "updated_at": None,
+        "path": None,
+        "line": None,
+        "body": reply["body"],
+        "thread_id": None,
+        "is_resolved": None,
+    }
+
+
+def tails_payload(pr, watch_pr, self_login, allowlist, slack=None):
     posted = set(watch_pr.get("posted_reply_ids", []))
     threads, top = pending(pr, watch_pr, self_login, allowlist)
     out = []
@@ -192,7 +227,9 @@ def tails_payload(pr, watch_pr, self_login, allowlist):
         "url": pr["url"], "head": pr["headRefOid"], "base": pr["baseRefName"],
         "branch": pr["headRefName"],
         "threads": out,
-        "top_level": [comment_record(i, s, self_login, allowlist) for s, i in top],
+        "top_level": [comment_record(i, s, self_login, allowlist) for s, i in top]
+                     + [slack_record(r) for r in slack or []
+                        if f"slack:{r['ts']}" not in watch_pr.get("handled_top_level_ids", {})],
     }
 
 
@@ -1595,6 +1632,8 @@ def main(argv=None, gh=run_gh):
     parser.add_argument("--explicit", action="store_true",
                         help="with --claim: the user named this PR")
     parser.add_argument("--status", choices=("stopped", "released"), help="with --lease-status")
+    parser.add_argument("--slack", metavar="FILE",
+                        help="with --tails: JSON list of {ts, author, body} Slack thread replies")
     parser.add_argument("--session-dir", type=pathlib.Path,
                         help="<pr-watch home>/sessions/<session id>")
     parser.add_argument("--session-id", help="with --discover and --find-clone")
@@ -1606,6 +1645,13 @@ def main(argv=None, gh=run_gh):
         parser.error("--assert-author needs --repo owner/name")
     if (args.ci_log or args.ci_rerun) and not (args.repo and args.session_dir):
         parser.error("--ci-log and --ci-rerun need --repo owner/name and --session-dir")
+    if args.slack and not args.tails:
+        parser.error("--slack needs --tails")
+    if args.slack:
+        try:
+            args.slack = load_slack(args.slack)
+        except ValueError as exc:
+            parser.error(f"--slack: {exc}")
     if args.dry_run and not args.tick_all:
         parser.error("--dry-run needs --tick-all")
     if args.central and not args.claim:
@@ -1774,7 +1820,7 @@ def run_mode(args, gh):
     if args.baseline:
         payload = baseline(pr, me, allow)
     elif args.tails:
-        payload = tails_payload(pr, entry, me, allow)
+        payload = tails_payload(pr, entry, me, allow, slack=args.slack)
     elif args.review_ready:
         payload = review_ready_payload(gh, view, entry, pr, time.time())
     else:

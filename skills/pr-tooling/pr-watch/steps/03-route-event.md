@@ -40,6 +40,7 @@ table shows.
 | `review-ready` | `pr-watch/steps/08-review-ask.md` |
 | `conflicting` | section G |
 | `behind-ready` | section H |
+| `slack-reply` | section I |
 | `idle` | section F |
 | `reconciled` | post "The daily check picked up work the event stream missed." in the thread of each listed `armed` PR whose progress file has a `slack_ts` (`pr-watch/steps/06-notify.md`) |
 | `poller-error` | arm and restart nothing when the watch is central (hard rule above); post "The watch poller has failed five ticks in a row: <error>. No events are handled until this is fixed." in each PR thread that has a root (`slack_ts` set in its progress file), with the event's `error` (`pr-watch/steps/06-notify.md`, "poller error") |
@@ -224,3 +225,37 @@ behind it, so it cannot merge.
    `behind-ready:<headRefOid>` in the PR's progress file. Never update the
    branch for this event: every push starts another reviewer-bot round,
    and the user decides when to take it.
+
+## I. Slack thread reply
+
+Raised for an `authored` PR when praty or an allowed review bot replied in
+the PR's Slack thread. The event carries `thread_ts` and `reply_ts`, no
+text. Section A's steps 1 to 8 apply to the replies unchanged.
+
+1. Read the PR's progress file. Without a `slack_ts`, or when the event's
+   `thread_ts` differs from it, stop.
+2. Read the thread with `mcp__plugin_slack_slack__slack_read_thread`
+   (channel `C0C15VC8Y0Z`, the event's `thread_ts`), following the cursor
+   until it is done. A failed read: escalate ("needs you, no comment",
+   reason "Slack thread unreadable") and stop. Never fall back to GitHub.
+3. Keep only replies whose `ts` is at least the event's `reply_ts` and
+   whose text does not end with the "Sent using Claude" footer (those are
+   this session's own posts). None left: stop.
+4. Write them as `[{"ts": "<ts>", "author": "<Slack user id>", "body":
+   "<text>"}]` to `<SESSION_DIR>/slack-<reply_ts>.json`.
+5. Run `POLL --tails <key> --slack <SESSION_DIR>/slack-<reply_ts>.json
+   --session-dir <SESSION_DIR>`. Each reply arrives in `top_level` with
+   `id` `slack:<ts>` and `surface` `slack`; replies already in
+   `handled_top_level_ids` are left out. An invalid file exits 2 with a
+   message: fix the file, do not retry blindly.
+6. Handle the payload as section A does from step 3: untrusted wrapping,
+   Filter B, the escalated check, Filter C, then the dispatch set. Set
+   `handled_top_level_ids["slack:<ts>"]` as the verdict says, `skipped` and
+   `escalated` included, and write the progress file. A Slack reply that
+   asks a question or for no change needs an answer and no commit; it
+   still goes through the dispatch, whose verdict is `answered`.
+7. Fixes go to the PR as commits and pushes through step 04. The answer
+   goes as a reply in the same Slack thread, never as a GitHub comment
+   (`pr-watch/steps/06-notify.md`, "Slack reply answer"). A failed post
+   goes to the user, not to GitHub. Record `handled_top_level_ids["slack:<ts>"]`
+   for each reply only after its answer was posted.
