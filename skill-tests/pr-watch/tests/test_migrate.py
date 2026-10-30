@@ -389,6 +389,13 @@ class CliTests(WatchDirCase):
         self.assertEqual([7001, 7003], sorted(json.loads(out)))
         self.assertEqual({7001, 7003}, {c.args[0] for c in kill.call_args_list})
 
+    def test_end_session_monitors_with_no_pollers_prints_empty_list(self):
+        with mock.patch.object(migrate, "end_tree") as kill:
+            code, out, _ = self.run_cli(["--end-session-monitors", "--session-dir", str(self.tmp)],
+                                        {"CLAUDE_PID": "4242"}, [proc(1, 0, "bash.exe")])
+        self.assertEqual((0, []), (code, json.loads(out)))
+        kill.assert_not_called()
+
     def test_every_mode_but_check_identity_refuses_without_claude_pid(self):
         procs = [proc(7000, 1, "bash.exe"), proc(7001, 7000, "python.exe", session_cmd(self.tmp))]
         session = ["--session-dir", str(self.tmp)]

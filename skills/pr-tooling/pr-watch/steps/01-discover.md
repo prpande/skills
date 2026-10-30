@@ -69,6 +69,9 @@ resume:
   `channel_id` is kept when it is `C0C15VC8Y0Z`; any other value is set
   to `C0C15VC8Y0Z`, and `slack_ts` is set to `null` in the progress file
   of every PR in the watch, since those values belong to another channel. `session_id` stays `SESSION_ID`.
+- `watcher` is kept. A watch whose `watch.json` has `"watcher": "central"`
+  stays central, whether or not `--central` was passed: this invocation
+  is treated as `--central` in §5 and §9 and arms no Monitor.
 
 Otherwise start from an empty set.
 
@@ -195,6 +198,10 @@ Write `watch.json` per `pr-watch/references/watch-state-schema.md`
   after its claim: a running monitor reloads `watch.json` every tick and
   would otherwise act on a PR this session does not hold yet.
 
+A central watch (`watcher` kept from a resume, or `--central`) keeps
+`"watcher": "central"` in `watch.json`, and so does every later write of
+this file in this step and in the steps that follow.
+
 The lease needs `session_id` and `claude_pid` from this file, so write it
 before the first claim.
 
@@ -204,7 +211,9 @@ Otherwise claim each kept entry whose `status` is `armed` or `lost`, each
 kept `stopped` entry §2 marked for re-arming, and each candidate, one command each:
 `POLL --claim <owner/repo#N> --role <role> --session-dir <SESSION_DIR>`,
 adding `--explicit` for a PR the user named in this invocation, and
-`--central` under `--central`. It prints:
+`--central` when the watch is central (the flag was passed, or `watch.json`
+already has `"watcher": "central"`, which covers a bare `/pr-watch` and
+new refs joining a central watch). It prints:
 
 - `claimed`: the lease was free or released.
 - `reclaimed`: the lease was already this session's.
@@ -364,20 +373,25 @@ protocol updates its `session_id` when it reclaims.
 
 ## 9. Arm or join
 
-Under `--central`, arm no Monitor and do not go to step 02:
+When the watch is central (`--central` passed, or `watch.json` already has
+`"watcher": "central"`), arm no Monitor and do not go to step 02:
 
 1. `TaskStop` the remembered Monitor task, if there is one.
 2. Run `POLL --end-session-monitors --session-dir <SESSION_DIR>`. It ends
    every `--monitor` poller for this session directory, whatever its
    claude ancestor, and prints the pids it ended as a JSON list.
 3. Run `POLL --monitor-alive --session-dir <SESSION_DIR>`. When it does not
-   print `down`, do not write `"watcher": "central"`; tell the user the
+   print `down`, do not write `"watcher": "central"`. The leases are
+   already claimed as central with nothing ticking them, so release each
+   one claimed in this run with `POLL --lease-status <owner/repo#N>
+   --status released --session-dir <SESSION_DIR>`, then tell the user the
    monitor could not be ended and stop.
-4. Write `"watcher": "central"` into `watch.json` and stop. From here the
+4. Write `"watcher": "central"` into `watch.json` (already there on a
+   resume) and stop. From here the
    orchestrator ticks the watch and delivers events as `/pr-watch event`
    messages (`pr-watch/steps/03-route-event.md`).
 
-Otherwise run `POLL --monitor-alive --session-dir <SESSION_DIR>`. Run it
+Otherwise (a Monitor watch) run `POLL --monitor-alive --session-dir <SESSION_DIR>`. Run it
 after the entries above are written, never on a remembered task id:
 
 - `alive`: a monitor of this session is already running. Arm nothing; its

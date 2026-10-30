@@ -6,6 +6,11 @@ Section C and the `reconciled` and `poller-error` lines act on the event
 as given: a PR the poller saw closed or merged, a note about the daily
 check, and a note about the poller's own state file.
 
+Hard rule: when `watch.json` has `"watcher": "central"`, no step in this
+file arms, re-arms or restarts a Monitor or any watcher, whatever the
+event kind (F, `poller-error` and `lease-lost` included). Each branch below
+that arms one has a central exception pointing back here.
+
 `/pr-watch event <json>` runs this step on the JSON it was given, as if the
 Monitor had printed it as one line. When the step finishes, end the turn.
 Arm nothing and restart no watcher. The orchestrator sends the same kinds
@@ -37,7 +42,7 @@ table shows.
 | `behind-ready` | section H |
 | `idle` | section F |
 | `reconciled` | post "The daily check picked up work the event stream missed." in the thread of each listed `armed` PR whose progress file has a `slack_ts` (`pr-watch/steps/06-notify.md`) |
-| `poller-error` | post "The watch poller has failed five ticks in a row: <error>. No events are handled until this is fixed." in each PR thread that has a root (`slack_ts` set in its progress file), with the event's `error` (`pr-watch/steps/06-notify.md`, "poller error") |
+| `poller-error` | arm and restart nothing when the watch is central (hard rule above); post "The watch poller has failed five ticks in a row: <error>. No events are handled until this is fixed." in each PR thread that has a root (`slack_ts` set in its progress file), with the event's `error` (`pr-watch/steps/06-notify.md`, "poller error") |
 
 A monitor that exits with code 3 (its claude process is gone) is never
 seen by a live session; no route handles it.
@@ -165,7 +170,8 @@ Another session claimed the PR's lease; the event's `holder` is that
 session's id, or null. Name the holder by the `name` (`[Tag]Name`) of the
 `claude agents --json` entry whose `sessionId` is that id, else the id
 itself, else "an unidentified session". Set the entry's `status` to `lost`, remove the
-PR's key from `push_queue`, and write `watch.json`. Post one line in the
+PR's key from `push_queue`, and write `watch.json`. On a central watch arm nothing (hard rule above).
+Post one line in the
 PR's thread (when its progress file has a `slack_ts`) naming the holder
 (`pr-watch/steps/06-notify.md`, "lease lost"). Do nothing else for this PR; the fix path, re-review and CI never
 run for a `lost` entry.
@@ -174,7 +180,8 @@ run for a `lost` entry.
 
 The monitor found no `armed` PR left and ended. A central watch has no
 monitor, so this never arrives for one. Re-read `watch.json`.
-When any entry's `status` is `armed`, arm a new monitor per
+For a central watch do nothing (hard rule above). Otherwise, when any
+entry's `status` is `armed`, arm a new monitor per
 `pr-watch/steps/02-arm-monitor.md`. Otherwise do nothing and post
 nothing; the stream's end that follows is planned.
 
