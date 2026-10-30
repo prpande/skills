@@ -173,6 +173,8 @@ def comment_record(item, surface, self_login, allowlist, thread=None):
 
 
 SLACK_TS = re.compile(r"\d+\.\d+")
+SLACK_ID = re.compile(r"[UWB][A-Z0-9]{6,}")
+OWN_POST_FOOTER = re.compile(r"Sent using\s*(?:<@U0APMMVNAU8|Claude)")
 
 
 def load_slack(path):
@@ -191,12 +193,23 @@ def load_slack(path):
     return replies
 
 
-def slack_record(reply):
+def is_own_slack_post(body):
+    return bool(OWN_POST_FOOTER.search(body.strip()[-120:]))
+
+
+def slack_replies_to_handle(replies, human, bots, since):
+    since = float(since)
+    return [r for r in replies
+            if r["author"] in {human, *bots} and float(r["ts"]) >= since
+            and not is_own_slack_post(r["body"])]
+
+
+def slack_record(reply, human):
     return {
         "id": f"slack:{reply['ts']}",
         "surface": "slack",
         "author": reply["author"],
-        "author_type": "User",
+        "author_type": "User" if reply["author"] == human else "Bot",
         "created_at": iso_utc(float(reply["ts"])),
         "updated_at": None,
         "path": None,
@@ -207,7 +220,7 @@ def slack_record(reply):
     }
 
 
-def tails_payload(pr, watch_pr, self_login, allowlist, slack=None):
+def tails_payload(pr, watch_pr, self_login, allowlist, slack=None, slack_human=None):
     posted = set(watch_pr.get("posted_reply_ids", []))
     threads, top = pending(pr, watch_pr, self_login, allowlist)
     out = []
@@ -228,7 +241,7 @@ def tails_payload(pr, watch_pr, self_login, allowlist, slack=None):
         "branch": pr["headRefName"],
         "threads": out,
         "top_level": [comment_record(i, s, self_login, allowlist) for s, i in top]
-                     + [slack_record(r) for r in slack or []
+                     + [slack_record(r, slack_human) for r in slack or []
                         if f"slack:{r['ts']}" not in watch_pr.get("handled_top_level_ids", {})],
     }
 
@@ -1634,6 +1647,10 @@ def main(argv=None, gh=run_gh):
     parser.add_argument("--status", choices=("stopped", "released"), help="with --lease-status")
     parser.add_argument("--slack", metavar="FILE",
                         help="with --tails: JSON list of {ts, author, body} Slack thread replies")
+    parser.add_argument("--slack-human", metavar="ID", help="with --slack: the human whose replies count")
+    parser.add_argument("--slack-bots", metavar="ID,ID", default="",
+                        help="with --slack: review bots whose replies count")
+    parser.add_argument("--slack-since", metavar="TS", help="with --slack: oldest reply ts to keep")
     parser.add_argument("--session-dir", type=pathlib.Path,
                         help="<pr-watch home>/sessions/<session id>")
     parser.add_argument("--session-id", help="with --discover and --find-clone")
@@ -1648,8 +1665,16 @@ def main(argv=None, gh=run_gh):
     if args.slack and not args.tails:
         parser.error("--slack needs --tails")
     if args.slack:
+        if not (args.slack_human and args.slack_since):
+            parser.error("--slack needs --slack-human and --slack-since")
+        bots = [b for b in args.slack_bots.split(",") if b]
+        if not all(SLACK_ID.fullmatch(i) for i in [args.slack_human, *bots]):
+            parser.error("--slack-human and --slack-bots take Slack user ids")
+        if not SLACK_TS.fullmatch(args.slack_since):
+            parser.error("--slack-since must be a Slack ts")
         try:
-            args.slack = load_slack(args.slack)
+            args.slack = slack_replies_to_handle(load_slack(args.slack), args.slack_human,
+                                                 bots, args.slack_since)
         except ValueError as exc:
             parser.error(f"--slack: {exc}")
     if args.dry_run and not args.tick_all:
@@ -1820,7 +1845,8 @@ def run_mode(args, gh):
     if args.baseline:
         payload = baseline(pr, me, allow)
     elif args.tails:
-        payload = tails_payload(pr, entry, me, allow, slack=args.slack)
+        payload = tails_payload(pr, entry, me, allow, slack=args.slack,
+                                slack_human=args.slack_human)
     elif args.review_ready:
         payload = review_ready_payload(gh, view, entry, pr, time.time())
     else:

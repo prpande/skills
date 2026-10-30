@@ -106,7 +106,7 @@ push caps and the Slack thread carry across the handover.
 | `posted_reply_ids` | array of node ids | Replies this watch posted (GraphQL `id`, not `databaseId`) |
 | `settled_ids` | array of node ids | Comments that close a tail with no reply: first-arm baseline, Filter B skips, acknowledged threads |
 | `escalated_ids` | array of node ids | Comments sent to Slack as needing the user |
-| `handled_top_level_ids` | object id to disposition | `baseline`, `skipped`, `escalated`, `parsed`, or the fixer verdict. A Slack thread reply is keyed `slack:<reply ts>`. Findings parsed out of an anchor comment are keyed `<anchor id>\|<path>\|<title>` (`pr-watch/references/known-bots-overlay.md`) |
+| `handled_top_level_ids` | object id to disposition | `baseline`, `skipped`, `escalated`, `parsed`, or the fixer verdict. A Slack thread reply is keyed `slack:<reply ts>`; its event is `{"kind":"slack-reply","pr","thread_ts","reply_ts","human","bots"}`. Findings parsed out of an anchor comment are keyed `<anchor id>\|<path>\|<title>` (`pr-watch/references/known-bots-overlay.md`) |
 | `last_pushed_head` | string or null | `authored` only. Sha of the last push this watch made |
 | `ci_fix_pushes` | integer | `authored` only. CI fix commits since the last head the watch did not push, queued ones included; reset to 0 when a `ci-red` arrives on such a head; cap 3 |
 | `review_fix_pushes` | integer | `authored` only. Fix commits for dispatch sets with no human record since the last head the watch did not push, queued ones included; reset to 0 when a fix arrives on such a head or any dispatch set holds a human record; cap 3 |

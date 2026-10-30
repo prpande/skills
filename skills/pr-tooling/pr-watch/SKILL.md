@@ -100,7 +100,8 @@ arrives as a notification. Its `kind` is one of `pending`, `head-moved`,
 `conflicting` (an `authored` PR no longer merges cleanly into its base),
 `behind-ready` (an `authored` PR is approved, or needs no review, and is
 green but behind a base that requires branches to be up to date),
-`slack-reply` (a new reply in the PR's Slack thread; central watches only),
+`slack-reply` (a new reply in the PR's Slack thread, with `thread_ts`,
+`reply_ts`, `human` and `bots`; central watches only),
 `idle` (no PR in the
 watch is still armed; the monitor exits), or `poller-error` (the poller
 has failed five ticks in a row). Events about a PR carry `pr` as

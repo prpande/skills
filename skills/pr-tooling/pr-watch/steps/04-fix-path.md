@@ -303,7 +303,13 @@ No returns in section 5: go to section 7, then section 9.
 
 For each return with something to say. A return whose `feedback_id`
 starts with `ci:` came from `pr-watch/steps/07-ci.md` and gets no reply
-on GitHub.
+on GitHub. A return whose `feedback_id` starts with `slack:` came from a
+Slack thread reply (`pr-watch/steps/03-route-event.md` section I): its
+reply goes to the PR's Slack thread through `pr-watch/steps/06-notify.md`
+("Slack reply answer"), never to GitHub, and steps 2 to 4 below do not run
+for it beyond setting `handled_top_level_ids[<record id>]` to the verdict
+once the post succeeded. The drain's step 3.6 runs this section, so the
+same carve-out applies there.
 
 Before the first reply or resolve of a pass, run
 `POLL --assert-author <N> --repo <owner>/<repo>`. Non-zero: post nothing,

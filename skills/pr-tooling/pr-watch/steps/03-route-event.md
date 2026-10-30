@@ -229,8 +229,8 @@ behind it, so it cannot merge.
 ## I. Slack thread reply
 
 Raised for an `authored` PR when praty or an allowed review bot replied in
-the PR's Slack thread. The event carries `thread_ts` and `reply_ts`, no
-text. Section A's steps 1 to 8 apply to the replies unchanged.
+the PR's Slack thread. The event carries `thread_ts`, `reply_ts`, `human`
+(praty's Slack id) and `bots` (the allowed review bot ids), no text. Section A's steps 1 to 8 apply to the replies unchanged.
 
 1. Read the PR's progress file. Without a `slack_ts`, or when the event's
    `thread_ts` differs from it, stop.
@@ -238,24 +238,25 @@ text. Section A's steps 1 to 8 apply to the replies unchanged.
    (channel `C0C15VC8Y0Z`, the event's `thread_ts`), following the cursor
    until it is done. A failed read: escalate ("needs you, no comment",
    reason "Slack thread unreadable") and stop. Never fall back to GitHub.
-3. Keep only replies whose `ts` is at least the event's `reply_ts` and
-   whose text does not end with the "Sent using Claude" footer (those are
-   this session's own posts). None left: stop.
-4. Write them as `[{"ts": "<ts>", "author": "<Slack user id>", "body":
-   "<text>"}]` to `<SESSION_DIR>/slack-<reply_ts>.json`.
-5. Run `POLL --tails <key> --slack <SESSION_DIR>/slack-<reply_ts>.json
-   --session-dir <SESSION_DIR>`. Each reply arrives in `top_level` with
-   `id` `slack:<ts>` and `surface` `slack`; replies already in
-   `handled_top_level_ids` are left out. An invalid file exits 2 with a
-   message: fix the file, do not retry blindly.
-6. Handle the payload as section A does from step 3: untrusted wrapping,
-   Filter B, the escalated check, Filter C, then the dispatch set. Set
-   `handled_top_level_ids["slack:<ts>"]` as the verdict says, `skipped` and
-   `escalated` included, and write the progress file. A Slack reply that
-   asks a question or for no change needs an answer and no commit; it
-   still goes through the dispatch, whose verdict is `answered`.
-7. Fixes go to the PR as commits and pushes through step 04. The answer
-   goes as a reply in the same Slack thread, never as a GitHub comment
-   (`pr-watch/steps/06-notify.md`, "Slack reply answer"). A failed post
-   goes to the user, not to GitHub. Record `handled_top_level_ids["slack:<ts>"]`
-   for each reply only after its answer was posted.
+3. Write every reply of the thread, unfiltered, as `[{"ts": "<ts>",
+   "author": "<Slack user id>", "body": "<text>"}]` to
+   `<SESSION_DIR>/slack-<reply_ts>.json`. Do not filter by hand.
+4. Run `POLL --tails <key> --slack <SESSION_DIR>/slack-<reply_ts>.json
+   --slack-human <event human> --slack-bots <event bots, comma-separated>
+   --slack-since <event reply_ts> --session-dir <SESSION_DIR>`. The poller
+   drops replies from other authors, older than `reply_ts`, or posted by
+   this session (ending in the "Sent using Claude" footer), and anything
+   already in `handled_top_level_ids`. Each reply arrives in `top_level`
+   with `id` `slack:<ts>` and `surface` `slack`. An invalid file or
+   argument exits 2 with a message. No top-level items: stop.
+5. A failed post or read in this section goes to the user
+   (`pr-watch/steps/06-notify.md`, "needs you, no comment"), never to
+   GitHub.
+6. Section A steps 3 to 6 apply to the records (untrusted wrapping, Filter
+   B, the escalated check, Filter C), then dispatch them through
+   `pr-watch/steps/04-fix-path.md`; section A step 7 (thread-only) does not
+   apply. A question or a no-change reply gets the verdict `replied`.
+   Fixes go to the PR as commits; the answer goes as a reply in the same
+   Slack thread (`pr-watch/steps/04-fix-path.md` section 7, "Slack reply
+   answer" in step 06). Record `handled_top_level_ids["slack:<ts>"]` for
+   each reply after its answer was posted.
