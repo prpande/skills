@@ -230,7 +230,8 @@ behind it, so it cannot merge.
 
 Raised for an `authored` PR when praty or an allowed review bot replied in
 the PR's Slack thread. The event carries `thread_ts`, `reply_ts`, `human`
-(praty's Slack id) and `bots` (the allowed review bot ids), no text. Section A's steps 1 to 8 apply to the replies unchanged.
+(praty's Slack id) and `bots` (the allowed review bot ids), no text.
+Steps 3 to 6 below say which of section A's steps apply.
 
 1. Read the PR's progress file. Without a `slack_ts`, or when the event's
    `thread_ts` differs from it, stop.

@@ -312,7 +312,8 @@ once the post succeeded. The drain's step 3.6 runs this section, so the
 same carve-out applies there.
 
 Before the first reply or resolve of a pass, run
-`POLL --assert-author <N> --repo <owner>/<repo>`. Non-zero: post nothing,
+`POLL --assert-author <N> --repo <owner>/<repo>` (not for a `slack:` return, which posts
+only to Slack and needs no GitHub author check). Non-zero: post nothing,
 escalate ("needs you, no comment", reason "reply guard refused"), and go
 to section 9.
 
