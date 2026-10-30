@@ -1582,11 +1582,15 @@ def main(argv=None, gh=run_gh):
                       help="exit 1 when CLAUDE_PID is not this process's claude")
     mode.add_argument("--end-leftover-monitors", action="store_true",
                       help="end this session's pollers left by an earlier claude process")
+    mode.add_argument("--end-session-monitors", action="store_true",
+                      help="end every --monitor poller for this session directory")
     mode.add_argument("--monitor-alive", action="store_true",
                       help="print alive or down for this session's monitor")
     parser.add_argument("--dry-run", action="store_true",
                         help="with --tick-all: every armed or stopped watch, its own files, "
                              "no leases")
+    parser.add_argument("--central", action="store_true",
+                        help="with --claim: hold the lease as a central watch")
     parser.add_argument("--role", choices=("authored", "reviewed"), help="with --claim")
     parser.add_argument("--explicit", action="store_true",
                         help="with --claim: the user named this PR")
@@ -1604,6 +1608,8 @@ def main(argv=None, gh=run_gh):
         parser.error("--ci-log and --ci-rerun need --repo owner/name and --session-dir")
     if args.dry_run and not args.tick_all:
         parser.error("--dry-run needs --tick-all")
+    if args.central and not args.claim:
+        parser.error("--central needs --claim")
     if args.claim and not args.role:
         parser.error("--claim needs --role")
     if args.lease_status and not args.status:
@@ -1654,7 +1660,7 @@ def lease_mode(args):
               "pid_started_at": iso_utc(started) if started is not None else None,
               "poller_pid": None}
     ok, why = lease.claim(owner, repo, number, role=args.role, holder=holder,
-                          explicit=args.explicit, now=now)
+                          explicit=args.explicit, now=now, central=args.central)
     if ok:
         print(why)
         return 0
@@ -1692,6 +1698,12 @@ def migrate_mode(args):
             print(f"pr-watch: {reason}", file=sys.stderr)
             return 1
         return 0
+    if args.end_session_monitors:
+        pids = migrate.session_monitors(args.session_dir, migrate.list_processes())
+        for pid in pids:
+            migrate.end_tree(pid)
+        print(json.dumps(pids))
+        return 0
     if not claude_pid:
         print("pr-watch: CLAUDE_PID is not set", file=sys.stderr)
         return 1
@@ -1716,7 +1728,8 @@ def migrate_mode(args):
 
 def run_mode(args, gh):
     if (args.migrate_scan or args.migrate_import or args.migrate_done or args.check_identity
-            or args.end_leftover_monitors or args.monitor_alive):
+            or args.end_leftover_monitors or args.end_session_monitors
+            or args.monitor_alive):
         return migrate_mode(args)
     if args.discover or args.find_clone:
         return discover_mode(args, gh)

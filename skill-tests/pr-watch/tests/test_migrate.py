@@ -332,6 +332,17 @@ class ListProcessesTests(unittest.TestCase):
             self.assertEqual([], migrate.list_processes())
 
 
+class SessionMonitorTests(WatchDirCase):
+    def test_session_monitors_ignores_ancestor(self):
+        a = tree(4242, "claude.exe", session_cmd(self.tmp), python_pid=300)
+        b = [proc(7000, 1, "bash.exe"), proc(7001, 7000, "python.exe", session_cmd(self.tmp))]
+        self.assertEqual([300, 7001], sorted(migrate.session_monitors(self.tmp, a + b)))
+
+    def test_session_monitors_other_dir_untouched(self):
+        other = [proc(7002, 1, "python.exe", session_cmd(str(self.tmp) + "-2"))]
+        self.assertEqual([], migrate.session_monitors(self.tmp, other))
+
+
 class CliTests(WatchDirCase):
     def run_cli(self, argv, env, procs):
         out, err = io.StringIO(), io.StringIO()
@@ -367,6 +378,16 @@ class CliTests(WatchDirCase):
                                      {"CLAUDE_PID": "4242"}, procs)
         kill.assert_called_once_with(7001)
         self.assertEqual([7001], json.loads(out))
+
+    def test_end_session_monitors_ends_every_poller_and_needs_no_claude_pid(self):
+        procs = [proc(7000, 1, "bash.exe"), proc(7001, 7000, "python.exe", session_cmd(self.tmp)),
+                 proc(7003, 1, "python.exe", session_cmd(self.tmp))]
+        with mock.patch.object(migrate, "end_tree") as kill:
+            code, out, _ = self.run_cli(["--end-session-monitors", "--session-dir", str(self.tmp)],
+                                        {"CLAUDE_PID": ""}, procs)
+        self.assertEqual(0, code)
+        self.assertEqual([7001, 7003], sorted(json.loads(out)))
+        self.assertEqual({7001, 7003}, {c.args[0] for c in kill.call_args_list})
 
     def test_every_mode_but_check_identity_refuses_without_claude_pid(self):
         procs = [proc(7000, 1, "bash.exe"), proc(7001, 7000, "python.exe", session_cmd(self.tmp))]

@@ -46,6 +46,21 @@ class ClaimCliTests(LeaseCliCase):
                          (0, "reclaimed"))
         self.assertEqual(lease.read_lease("o", "r", 1)["holder"]["session_id"], "s-a")
 
+    def test_claim_cli_central_flag_writes_central_lease(self):
+        d = self.session("s-a")
+        self.assertEqual(run("--claim", REF, "--session-dir", d, "--role", "authored",
+                             "--central")[:2], (0, "claimed"))
+        record = lease.read_lease("o", "r", 1)
+        self.assertEqual((record["watcher"], record["stale_after_seconds"]), ("central", 900))
+
+    def test_claim_without_central_flag_writes_a_monitor_lease(self):
+        run("--claim", REF, "--session-dir", self.session("s-a"), "--role", "authored")
+        self.assertEqual(lease.read_lease("o", "r", 1)["stale_after_seconds"], 300)
+
+    def test_central_without_claim_is_a_usage_error(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            run("--report", "--session-dir", self.session("s-a"), "--central")
+
     def test_a_claude_pid_stored_as_text_is_written_as_an_integer(self):
         d = self.session("s-a")
         view = json.loads((d / "watch.json").read_text(encoding="utf-8"))

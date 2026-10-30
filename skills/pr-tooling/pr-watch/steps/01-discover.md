@@ -203,7 +203,8 @@ Under `--dry-run` take no lease and go to §6.
 Otherwise claim each kept entry whose `status` is `armed` or `lost`, each
 kept `stopped` entry §2 marked for re-arming, and each candidate, one command each:
 `POLL --claim <owner/repo#N> --role <role> --session-dir <SESSION_DIR>`,
-adding `--explicit` for a PR the user named in this invocation. It prints:
+adding `--explicit` for a PR the user named in this invocation, and
+`--central` under `--central`. It prints:
 
 - `claimed`: the lease was free or released.
 - `reclaimed`: the lease was already this session's.
@@ -363,7 +364,20 @@ protocol updates its `session_id` when it reclaims.
 
 ## 9. Arm or join
 
-Run `POLL --monitor-alive --session-dir <SESSION_DIR>`. Run it
+Under `--central`, arm no Monitor and do not go to step 02:
+
+1. `TaskStop` the remembered Monitor task, if there is one.
+2. Run `POLL --end-session-monitors --session-dir <SESSION_DIR>`. It ends
+   every `--monitor` poller for this session directory, whatever its
+   claude ancestor, and prints the pids it ended as a JSON list.
+3. Run `POLL --monitor-alive --session-dir <SESSION_DIR>`. When it does not
+   print `down`, do not write `"watcher": "central"`; tell the user the
+   monitor could not be ended and stop.
+4. Write `"watcher": "central"` into `watch.json` and stop. From here the
+   orchestrator ticks the watch and delivers events as `/pr-watch event`
+   messages (`pr-watch/steps/03-route-event.md`).
+
+Otherwise run `POLL --monitor-alive --session-dir <SESSION_DIR>`. Run it
 after the entries above are written, never on a remembered task id:
 
 - `alive`: a monitor of this session is already running. Arm nothing; its

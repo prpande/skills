@@ -6,6 +6,13 @@ Section C and the `reconciled` and `poller-error` lines act on the event
 as given: a PR the poller saw closed or merged, a note about the daily
 check, and a note about the poller's own state file.
 
+`/pr-watch event <json>` runs this step on the JSON it was given, as if the
+Monitor had printed it as one line. When the step finishes, end the turn.
+Arm nothing and restart no watcher. The orchestrator sends the same kinds
+the Monitor prints, but `idle` (section F) cannot arrive for a central
+watch. A `tick` has no `pr`; `poller-error` and `lease-lost` route as the
+table shows.
+
 1. Parse the notification line as JSON. A line that does not parse is
    not an event; ignore it.
 2. Re-read `watch.json`. An event with a `pr` field (every kind except
@@ -165,7 +172,8 @@ run for a `lost` entry.
 
 ## F. Idle
 
-The monitor found no `armed` PR left and ended. Re-read `watch.json`.
+The monitor found no `armed` PR left and ended. A central watch has no
+monitor, so this never arrives for one. Re-read `watch.json`.
 When any entry's `status` is `armed`, arm a new monitor per
 `pr-watch/steps/02-arm-monitor.md`. Otherwise do nothing and post
 nothing; the stream's end that follows is planned.

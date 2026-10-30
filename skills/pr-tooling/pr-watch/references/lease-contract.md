@@ -32,8 +32,9 @@ The file is UTF-8 JSON, one object.
 | `holder.pid` | integer or null | The holder's claude process id |
 | `holder.pid_started_at` | string or null | That process's creation time, ISO-8601 UTC ending `Z`. Windows reuses pids, so a pid counts only with a matching creation time. Null means the holder counts as not alive |
 | `holder.poller_pid` | integer or null | The monitor's python process id; null when no monitor has ticked since the claim |
-| `heartbeat` | string | ISO-8601 UTC ending `Z`. The monitor's last tick for this PR |
-| `stale_after_seconds` | integer | `300`. Age after which `heartbeat` no longer shows a live monitor |
+| `heartbeat` | string | ISO-8601 UTC ending `Z`. The last tick for this PR: the session's monitor, or for a central lease the orchestrator's tick |
+| `stale_after_seconds` | integer | `300` for a monitor lease, `900` for a central one. Age after which `heartbeat` no longer shows a live watcher |
+| `watcher` | string or absent | `central` when the orchestrator's tick, not a session Monitor, ticks the lease; absent on a monitor lease |
 | `status` | string | `armed`, `stopped`, `released` or `closed` |
 | `last_head_sha` | string or null | The PR head at the last tick |
 | `pending_since` | string or null | ISO-8601 UTC. The first tick that saw work not yet handled: an unreplied thread tail, an unhandled red required check, or for a `reviewed` PR a reply on the user's threads not yet answered, or a push since the review that touches a file one of the user's findings is on or comes with an author reply. A push that does neither does not set it. Null when there is none, and on a `closed` lease |
@@ -60,6 +61,13 @@ Right after a claim, `pending_since` and `last_error` are null and
 - `closed`: the PR merged or closed. Nobody acts on it; a session may
   claim it again if the PR is reopened. A closed lease is deleted after
   7 days.
+
+A central lease (`watcher: "central"`) has no monitor and no poller pid. Its
+heartbeat is written by the orchestrator's `poll.py --tick-all`, and the
+holder's liveness is judged by the process alone. An `--explicit` claim
+(the user named the PR in another session) takes over an `armed` central
+lease whose holder process is not running, even while its heartbeat is
+fresh. An unattended claim never does.
 
 A holder process is alive when a process with `holder.pid` exists and
 its creation time is within 2 seconds of `holder.pid_started_at`.
@@ -93,7 +101,8 @@ that tick. The writes are:
   holder is dead: heartbeat older than `stale_after_seconds` and no
   matching process. A `stopped` lease of a dead holder is claimed only
   by a session the user pointed at that PR by name.
-- A tick, from the holder's monitor. It rewrites `heartbeat`,
+- A tick, from the holder's monitor, or for a central lease from the
+  orchestrator's `--tick-all`. It rewrites `heartbeat`,
   `last_head_sha`, `pending_since`, `last_error` and `holder.poller_pid`
   on every `armed` lease it holds, and sets `closed` when the PR closes.
   It writes a lease only while `holder.session_id` is still its own
