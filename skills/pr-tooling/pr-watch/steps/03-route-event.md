@@ -14,7 +14,7 @@ that arms one has a central exception pointing back here.
 `/pr-watch event <json>` runs this step once per JSON line it was given, in
 order, as if the Monitor had printed each as one line. Each line gets the
 full re-read and refetch. A line that does not parse is skipped, not fatal.
-When the step finishes the last line, end the turn.
+When the step finishes the last line of the message, end the turn.
 Arm nothing and restart no watcher. The orchestrator sends the same kinds
 the Monitor prints, but `idle` (section F) and `reconciled` (the poller sends it to its
 warn log) cannot arrive for a central watch. A `tick` has no `pr`; `poller-error` and `lease-lost` route as the
