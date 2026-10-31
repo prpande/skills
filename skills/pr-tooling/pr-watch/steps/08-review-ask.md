@@ -21,6 +21,20 @@ channel. A `reviewed` PR never gets one.
    flight or a local commit not yet pushed (`git -C <worktree> status
    --porcelain` not empty, or `HEAD` not the PR head). A fix is not done
    until it is pushed, and a push resets the quiet window.
+4. Bring the branch up to date before asking, once per PR. Read
+   `baseRefName` (`gh pr view <N> --repo <owner>/<repo> --json baseRefName`),
+   run `git -C <worktree> fetch origin`, then
+   `git -C <worktree> merge-base --is-ancestor origin/<baseRefName> HEAD`.
+   On a non-zero exit while the progress file's `ask_base_update` is
+   null: run `pr-watch/steps/04-fix-path.md` section 11 (base update) and
+   stop without asking. On its outcome `conflicting`, `escalated`,
+   `queued` or `pushed`, set `ask_base_update` to the PR head read before
+   it and write the progress file; on any other outcome write nothing.
+   A push restarts the quiet window, and the poller raises `review-ready`
+   again once the PR is green and quiet; after a conflict or an
+   escalation it comes once the user's own push makes the PR green. When
+   `ask_base_update` is already set, ask without updating again: the base
+   can move faster than a PR goes quiet.
 
 ## 2. Find the destination
 

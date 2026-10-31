@@ -2,8 +2,10 @@
 
 Entered from step 03 with the PR key `owner/repo#N`, its `--tails`
 payload, and the dispatch set; from a `tick` event at "Drain the push
-queue"; or from `pr-watch/steps/07-ci.md` with a CI fix. One PR at a
-time. Under `dry_run`, every mutation below writes what it would do to
+queue"; from `pr-watch/steps/07-ci.md` with a CI fix; or from
+`pr-watch/steps/03-route-event.md` section H or
+`pr-watch/steps/08-review-ask.md` for a base update (section 11). One PR
+at a time. Under `dry_run`, every mutation below writes what it would do to
 `<scratchpad>/pr-watch-dry-run/<owner>-<repo>-<N>.md` instead.
 
 The key gives `<owner>/<repo>` and `<N>`; every `--repo` below is
@@ -483,3 +485,51 @@ The caller names the files to roll back, as paths relative to
    print nothing. If it prints anything, escalate ("needs you, no
    comment", reason "rollback left changes in the worktree") and go to
    section 9. Changes to other paths are not this rollback's.
+
+## 11. Base update
+
+Brings an `authored` PR's branch up to date with its base and pushes that
+merge. There is no fix, no reply and no thread to resolve, and the push
+does not count toward `review_fix_pushes`. `<base>` is the PR's
+`baseRefName`. The section ends with one outcome, which its caller reads:
+`skipped`, `up-to-date`, `rehearsed`, `conflicting`, `escalated`,
+`queued` or `pushed`.
+
+1. Section 2 steps 1, 2, 3a and 3b, with an empty dispatch set as the
+   formatter runs them, so a drain of a queued merge replies to nothing.
+   When section 2 stops on another session's lock, the outcome is
+   `skipped`.
+2. `git -C <worktree> fetch origin`. When `git -C <worktree> status
+   --porcelain` is not empty, or `HEAD` is not the PR head
+   (`gh pr view <N> --repo <owner>/<repo> --json headRefOid`), the
+   outcome is `skipped`; go to section 9. A fix is in flight, and its own
+   push merges the base (section 5 step 6).
+3. `git -C <worktree> merge-base --is-ancestor origin/<base> HEAD`. Exit
+   0: the outcome is `up-to-date`; go to section 9.
+4. Under `dry_run`, write `git -C <worktree> merge --no-edit
+   origin/<base>` and the push that would follow to
+   `<scratchpad>/pr-watch-dry-run/<owner>-<repo>-<N>.md`; the outcome is
+   `rehearsed`, and nothing else in this section runs. Go to section 9.
+5. `git -C <worktree> merge --no-ff --no-commit origin/<base>`. On a
+   conflict, `git -C <worktree> merge --abort`, post "conflicting"
+   (`pr-watch/steps/06-notify.md`) with the conflicting paths, set
+   `merge_notified` to `conflicting:<PR head>`, write the progress file,
+   and go to section 9 with the outcome `conflicting`. Never resolve the
+   conflict here.
+6. Run the build and test commands that "Command detection" in
+   `pr-loop-lib/steps/04.5-local-verify.md` finds, under its "Execution
+   rules". Its skip condition and its failure flow do not apply: there is
+   no fixer to retry. When a command fails, or `git -C <worktree> status
+   --porcelain` shows a change that is not staged or an untracked file,
+   run `git -C <worktree> merge --abort`, escalate ("needs you, no
+   comment", reason "merge with origin/<base> breaks the build; nothing
+   was committed"), and go to section 9 with the outcome `escalated`.
+   When `status --porcelain` still prints anything after the abort, add
+   "the worktree still has changes" to the reason.
+7. `git -C <worktree> commit --no-edit`.
+8. Section 6 (push or queue), with "merged <base>" as what changed. The
+   outcome is `queued` when section 6 queues the PR, `escalated` when it
+   escalates, and `pushed` otherwise. The merge needs no secret scan: it
+   brings in only commits already on the remote, and a conflict aborts
+   rather than being resolved.
+9. Section 9.
