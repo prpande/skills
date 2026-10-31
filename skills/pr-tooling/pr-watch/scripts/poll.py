@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import http.client
 import json
 import os
@@ -462,6 +463,10 @@ class Evaluation(NamedTuple):
     pending: bool
 
 
+def sig_of(signature):
+    return hashlib.sha1(signature.encode()).hexdigest()[:12]
+
+
 def evaluate_ci(gh, entry, node, seen, stored):
     """`seen` dedupes (empty on a forced pass); `stored` is kept when nothing is red."""
     if rollup_state(node) not in FAILED_ROLLUP:
@@ -480,6 +485,7 @@ def evaluate_ci(gh, entry, node, seen, stored):
     if signature == seen.get("last_ci_signature"):
         return Evaluation(None, signature, unhandled)
     event = {"pr": entry_key(entry), "role": "authored", "kind": "ci-red", "head": head,
+             "sig": sig_of(signature),
              "checks": [{"name": c["name"], "workflow": c.get("workflow") or "",
                          "completed_at": c.get("completedAt")} for c in red]}
     return Evaluation(event, signature, unhandled)
@@ -494,7 +500,7 @@ def evaluate_authored(view, pr, entry, prev):
     if signature == prev.get("last_signature"):
         return Evaluation(None, signature, True)
     event = {"pr": entry_key(entry), "role": "authored", "kind": "pending",
-             "threads": [t["id"] for t, _ in threads],
+             "sig": sig_of(signature), "threads": [t["id"] for t, _ in threads],
              "comments": [i["id"] for s, i in top if s == "issue"],
              "reviews": [i["id"] for s, i in top if s == "review"]}
     return Evaluation(event, signature, True)
@@ -538,7 +544,7 @@ def evaluate_reviewed(view, pr, entry, prev, compare):
         if signature == prev.get("last_signature") or not (touches or author_replied):
             return Evaluation(None, signature, review_pending)
         event = {"pr": key, "role": "reviewed", "kind": "head-moved",
-                 "old_head": old, "new_head": new, "touches_my_findings": touches,
+                 "sig": sig_of(signature), "old_head": old, "new_head": new, "touches_my_findings": touches,
                  "author_replied": author_replied}
         return Evaluation(event, signature, review_pending)
     review_pending = not answered
@@ -548,7 +554,7 @@ def evaluate_reviewed(view, pr, entry, prev, compare):
     if signature == prev.get("last_signature"):
         return Evaluation(None, signature, review_pending)
     event = {"pr": key, "role": "reviewed", "kind": "reply",
-             "threads": [tid for tid, thread_replies in replied.items() if thread_replies]}
+             "sig": sig_of(signature), "threads": [tid for tid, thread_replies in replied.items() if thread_replies]}
     return Evaluation(event, signature, review_pending)
 
 

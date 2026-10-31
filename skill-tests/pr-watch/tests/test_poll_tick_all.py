@@ -242,7 +242,7 @@ class TickAllTests(HomeCase):
         self.session()
         stats = self.tick()
         self.assertEqual(self.spool(), [{"session": "s-1", "pr": rk(1411), "role": "authored",
-                                         "kind": "pending", "threads": ["T1"], "comments": [],
+                                         "kind": "pending", "sig": "feb0aa8e6f02", "threads": ["T1"], "comments": [],
                                          "reviews": []}])
         self.assertEqual((stats["sessions"], stats["events"]), (1, 1))
 

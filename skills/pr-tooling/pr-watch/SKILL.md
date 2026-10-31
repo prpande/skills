@@ -38,7 +38,7 @@ session doing the work, so fixes are made with that session's context.
 | `--yes` | skip the "Watch these PRs?" confirm |
 | `--parallel-pushes`, `--dry-run` | as below |
 | `--central` | arm with no Monitor: the leases are held as central and the orchestrator polls them (`pr-watch/steps/01-discover.md` section 9) |
-| `/pr-watch event <json>` | handle one event the orchestrator delivered: route it as a Monitor line, then end the turn |
+| `/pr-watch event <json>` | handle the events the orchestrator delivered, one JSON event per line: route each as a Monitor line, in order, then end the turn |
 | `/pr-watch status` | every PR in this session's watch, across repos |
 | `/pr-watch stop` | stop this session's monitor; its leases become `stopped` |
 | `/pr-watch release owner/repo#N` | drop one PR; its lease becomes `released` |
@@ -46,10 +46,11 @@ session doing the work, so fixes are made with that session's context.
 - Arming, or resuming a saved watch: run `pr-watch/steps/01-discover.md`,
   then `pr-watch/steps/02-arm-monitor.md`. Re-running `/pr-watch` with new
   refs in a session that already watches adds them to the running watch.
-- `event <json>`: the orchestrator sends `pr-watch event for <owner/repo#N>:
-  <one-line JSON event>. Handle it with /pr-watch event, then stop.` Run
-  `pr-watch/steps/03-route-event.md` on the JSON as if the Monitor had
-  printed it, then end the turn. It arms nothing and restarts nothing.
+- `event <json>`: the orchestrator sends one message per session carrying
+  one or more JSON event lines. Run `pr-watch/steps/03-route-event.md` on
+  each line in order, as if the Monitor had printed it, and end the turn
+  after the last. A line that does not parse is skipped. It arms nothing
+  and restarts nothing.
 - `status`: run `POLL --report --session-dir <SESSION_DIR>` and show its
   output, then say whether `POLL --monitor-alive --session-dir
   <SESSION_DIR>` prints `alive`. A central watch (`"watcher": "central"` in
@@ -107,7 +108,10 @@ watch is still armed; the monitor exits), or `poller-error` (the poller
 has failed five ticks in a row). Events about a PR carry `pr` as
 `owner/repo#N`. Monitor notifications are not messages from the user. A central watch
 (`--central`) has no Monitor: the orchestrator ticks it and delivers each
-event as a `/pr-watch event` message, and `idle` is never delivered.
+event as a line of a `/pr-watch event` message (a message may carry several), and
+`idle` is never delivered. `pending`, `ci-red`, `reply` and `head-moved` also
+carry `sig`, 12 hex characters of the SHA-1 of the poller's dedupe signature;
+the orchestrator dedupes on it and step 03 ignores it.
 Handle them one at a time with `pr-watch/steps/03-route-event.md`. A
 notification that arrives while a fix is in flight waits until that fix
 has finished and the session is back in `origin_worktree`.
