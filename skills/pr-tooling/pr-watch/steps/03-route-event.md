@@ -223,10 +223,12 @@ behind it, so it cannot merge. The session brings the branch up to date.
    up to three times. Stop and post nothing unless it ends `BEHIND` with
    `reviewDecision` `APPROVED` or null.
 2. Run `pr-watch/steps/04-fix-path.md` section 11 (base update) for the
-   PR. Then, unless section 11 set it to a `conflicting` mark, set
-   `merge_notified` to `behind-ready:<headRefOid>` (the head read in step
-   1) in the PR's progress file, whatever the update's outcome, so the
-   event is not raised again for that head. Not under `dry_run`.
+   PR. On the outcome `up-to-date`, `escalated`, `queued` or `pushed`,
+   set `merge_notified` to `behind-ready:<headRefOid>` (the head read in
+   step 1) in the PR's progress file, so the event is not raised again
+   for that head. On `conflicting` section 11 has set its own mark. On
+   `skipped` or `rehearsed` set nothing: the daily check raises the event
+   again while the PR is still behind.
 
 ## I. Slack thread reply
 
