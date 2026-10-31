@@ -216,17 +216,17 @@ and again on its daily check while unrecorded. Nothing here pushes.
 
 The PR is approved (or its base requires no review) and its checks are
 green, but its base requires branches to be up to date and the PR is
-behind it, so it cannot merge.
+behind it, so it cannot merge. The session brings the branch up to date.
 
 1. `gh pr view <N> --repo <owner>/<repo> --json mergeStateStatus,reviewDecision,headRefOid,baseRefName`.
    While `mergeStateStatus` is `UNKNOWN`, wait 10 seconds and ask again,
    up to three times. Stop and post nothing unless it ends `BEHIND` with
    `reviewDecision` `APPROVED` or null.
-2. Post "behind" (`pr-watch/steps/06-notify.md`) in the PR's thread. Only
-   when the line was posted, set `merge_notified` to
-   `behind-ready:<headRefOid>` in the PR's progress file. Never update the
-   branch for this event: every push starts another reviewer-bot round,
-   and the user decides when to take it.
+2. Run `pr-watch/steps/04-fix-path.md` section 11 (base update) for the
+   PR. Then, unless section 11 set it to a `conflicting` mark, set
+   `merge_notified` to `behind-ready:<headRefOid>` (the head read in step
+   1) in the PR's progress file, whatever the update's outcome, so the
+   event is not raised again for that head. Not under `dry_run`.
 
 ## I. Slack thread reply
 

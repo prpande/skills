@@ -69,7 +69,6 @@ the steps above.
 | checks unreadable | `Could not read #<M>'s checks: <first stderr line>.` |
 | merge conflict | `Merge with origin/<base> conflicts in <paths>. Fix commit <sha7> is local and unpushed.` |
 | conflicting | `Needs you: conflicts with <base> in <paths>. Nothing pushed.` (`<paths>` comma-separated, at most 10 then `and <k> more`) |
-| behind | `Approved and green, but behind <base>; it can't merge until the branch is updated.` |
 | re-review | `Re-reviewed <old7>..<new7>: <a> addressed, <p> partial, <n> not addressed, <s> superseded.` then one line per finding |
 | Slack reply answer | One short plain reply in the thread the reply was in, under the PR's `slack_ts`: what changed and the `<sha7>` pushed, or the answer to the question. Never a GitHub comment; a failed post is shown to the user instead. (`pr-watch/steps/03-route-event.md` section I) |
 | author reply | `<author> replied on your thread at <path>:<line>:` then the quoted comment in a code block |

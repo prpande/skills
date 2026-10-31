@@ -2,8 +2,10 @@
 
 Entered from step 03 with the PR key `owner/repo#N`, its `--tails`
 payload, and the dispatch set; from a `tick` event at "Drain the push
-queue"; or from `pr-watch/steps/07-ci.md` with a CI fix. One PR at a
-time. Under `dry_run`, every mutation below writes what it would do to
+queue"; from `pr-watch/steps/07-ci.md` with a CI fix; or from
+`pr-watch/steps/03-route-event.md` section H or
+`pr-watch/steps/08-review-ask.md` for a base update (section 11). One PR
+at a time. Under `dry_run`, every mutation below writes what it would do to
 `<scratchpad>/pr-watch-dry-run/<owner>-<repo>-<N>.md` instead.
 
 The key gives `<owner>/<repo>` and `<N>`; every `--repo` below is
@@ -483,3 +485,32 @@ The caller names the files to roll back, as paths relative to
    print nothing. If it prints anything, escalate ("needs you, no
    comment", reason "rollback left changes in the worktree") and go to
    section 9. Changes to other paths are not this rollback's.
+
+## 11. Base update
+
+Brings an `authored` PR's branch up to date with its base and pushes that
+merge. There is no fix, no reply and no thread to resolve, and the push
+does not count toward `review_fix_pushes`. `<base>` is the PR's
+`baseRefName`.
+
+1. Section 2 (relocate and lock).
+2. `git -C <worktree> fetch origin`. When `git -C <worktree> status
+   --porcelain` is not empty, or `HEAD` is not the PR head
+   (`gh pr view <N> --repo <owner>/<repo> --json headRefOid`), stop and
+   go to section 9: a fix is in flight, and its own push merges the base
+   (section 5 step 6).
+3. `git -C <worktree> merge-base --is-ancestor origin/<base> HEAD`. Exit
+   0: the branch is up to date; go to section 9.
+4. `git -C <worktree> merge --no-edit origin/<base>`. On a conflict,
+   `git -C <worktree> merge --abort`, post "conflicting"
+   (`pr-watch/steps/06-notify.md`) with the conflicting paths, set
+   `merge_notified` to `conflicting:<PR head>`, write the progress file,
+   and go to section 9. Never resolve the conflict here.
+5. Run `pr-loop-lib/steps/04.5-local-verify.md`. If it changes any file or
+   fails, do not push: escalate ("needs you, no comment", reason "merge
+   with origin/<base> breaks the build; the merge is local and
+   unpushed"), then section 9.
+6. Section 6 (push or queue), with "merged <base>" as what changed. The
+   merge needs no secret scan: it brings in only commits already on the
+   remote, and a conflict aborts rather than being resolved.
+7. Section 9.
