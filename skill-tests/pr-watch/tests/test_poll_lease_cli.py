@@ -6,16 +6,10 @@ import time
 import unittest
 
 from fakes import HomeCase, lease, poll, pw_paths, watch, write_session
+from fakes import run_main as run
 
 REF = "o/r#1"
 OLD = time.time() - 10_000
-
-
-def run(*argv):
-    out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        code = poll.main([str(a) for a in argv])
-    return code, out.getvalue().strip(), err.getvalue().strip()
 
 
 class LeaseCliCase(HomeCase):
@@ -45,6 +39,37 @@ class ClaimCliTests(LeaseCliCase):
         self.assertEqual(run("--claim", REF, "--session-dir", d, "--role", "authored")[:2],
                          (0, "reclaimed"))
         self.assertEqual(lease.read_lease("o", "r", 1)["holder"]["session_id"], "s-a")
+
+    def test_claim_cli_central_flag_writes_central_lease(self):
+        d = self.session("s-a")
+        self.assertEqual(run("--claim", REF, "--session-dir", d, "--role", "authored",
+                             "--central")[:2], (0, "claimed"))
+        record = lease.read_lease("o", "r", 1)
+        self.assertEqual((record["watcher"], record["stale_after_seconds"]), ("central", 900))
+
+    def test_claim_clears_the_pr_from_the_sessions_lease_silencing(self):
+        d = self.session("s-a")
+        key = pw_paths.pr_key("o", "r", 1)
+        (d / "watch-poller.json").write_text(json.dumps({
+            "lease_dropped": [key, "o/r#2"], "lease_warned": [key], "closed": []}),
+            encoding="utf-8")
+        self.assertEqual(run("--claim", REF, "--session-dir", d, "--role", "authored")[0], 0)
+        saved = json.loads((d / "watch-poller.json").read_text(encoding="utf-8"))
+        self.assertEqual((saved["lease_dropped"], saved["lease_warned"], saved["closed"]),
+                         (["o/r#2"], [], []))
+
+    def test_claim_without_a_poller_file_creates_none(self):
+        d = self.session("s-a")
+        run("--claim", REF, "--session-dir", d, "--role", "authored")
+        self.assertFalse((d / "watch-poller.json").exists())
+
+    def test_claim_without_central_flag_writes_a_monitor_lease(self):
+        run("--claim", REF, "--session-dir", self.session("s-a"), "--role", "authored")
+        self.assertEqual(lease.read_lease("o", "r", 1)["stale_after_seconds"], 300)
+
+    def test_central_without_claim_is_a_usage_error(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            run("--report", "--session-dir", self.session("s-a"), "--central")
 
     def test_a_claude_pid_stored_as_text_is_written_as_an_integer(self):
         d = self.session("s-a")

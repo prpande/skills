@@ -7,7 +7,11 @@ lives in a repo's main checkout. Each file has exactly one writer.
 PW_HOME/
   sessions/<session-id>/        SESSION_DIR
     watch.json                  session; written only by the session
-    watch-poller.json           written only by POLL --monitor
+    watch-poller.json           written by POLL --monitor, --tick-all and --claim
+    watch-poller.dry-run.json   written only by POLL --tick-all --dry-run
+    events.jsonl                spool of central events; appended only by POLL --tick-all
+    slack-<reply_ts>.json       Slack thread replies for one slack-reply event; written and deleted only by the session
+    events.dry-run.jsonl        the same for --tick-all --dry-run
     watch-heartbeat             written only by POLL --monitor
     watch-seen.json             written only by POLL --report and --reseed
     progress/<owner>/<repo>/<N>.progress.json   dry-run watches only
@@ -74,6 +78,7 @@ has neither the retry nor the cleanup.
 | `serialize_pushes` | boolean | `false` only with `--parallel-pushes` |
 | `bot_allowlist` | array of logins | Logins always classified as bots, whatever type GitHub reports |
 | `ado_orgs` | array of strings | Azure DevOps organisations `POLL --ci-log` and `--ci-rerun` may send the PAT to, matched without case; a link to any other organisation, a missing key, or a value that is not a list of strings, fails without a request. The link's org must also match `^[A-Za-z0-9._-]+$` and its project `^[A-Za-z0-9._ %!&()@~-]+$`. Written by `pr-watch/steps/01-discover.md` section 5: `["mindbody"]` for a new watch, and on resume only when the key is missing |
+| `watcher` | string or absent | `central` when the orchestrator's `POLL --tick-all` ticks this watch and the session arms no Monitor; written by `pr-watch/steps/01-discover.md` section 9 only after `POLL --monitor-alive` prints `down`. Absent for a Monitor watch. `--tick-all` ticks only watches that carry it |
 | `dry_run` | boolean | `true` for a `--dry-run` watch. A dry run takes no leases and keeps each PR's progress under `SESSION_DIR/progress/`, so a rehearsal never touches the shared files. A saved watch with `dry_run: true` is never resumed by a non-dry-run invocation |
 | `stopped_at` | integer or null | Epoch seconds `/pr-watch stop` ran; cleared by any arm. Auto-join from `pr-autopilot` and `pr-followup` does nothing while it is set |
 | `push_queue` | array of PR keys | `owner/repo#N` of authored PRs with a local fix commit or a CI rerun waiting for other PRs' checks |
@@ -102,7 +107,7 @@ push caps and the Slack thread carry across the handover.
 | `posted_reply_ids` | array of node ids | Replies this watch posted (GraphQL `id`, not `databaseId`) |
 | `settled_ids` | array of node ids | Comments that close a tail with no reply: first-arm baseline, Filter B skips, acknowledged threads |
 | `escalated_ids` | array of node ids | Comments sent to Slack as needing the user |
-| `handled_top_level_ids` | object id to disposition | `baseline`, `skipped`, `escalated`, `parsed`, or the fixer verdict. Findings parsed out of an anchor comment are keyed `<anchor id>\|<path>\|<title>` (`pr-watch/references/known-bots-overlay.md`) |
+| `handled_top_level_ids` | object id to disposition | `baseline`, `skipped`, `escalated`, `parsed`, or the fixer verdict. A Slack thread reply is keyed `slack:<reply ts>`; its event is `{"kind":"slack-reply","pr","thread_ts","reply_ts","human","bots"}`. Findings parsed out of an anchor comment are keyed `<anchor id>\|<path>\|<title>` (`pr-watch/references/known-bots-overlay.md`) |
 | `last_pushed_head` | string or null | `authored` only. Sha of the last push this watch made |
 | `ci_fix_pushes` | integer | `authored` only. CI fix commits since the last head the watch did not push, queued ones included; reset to 0 when a `ci-red` arrives on such a head; cap 3 |
 | `review_fix_pushes` | integer | `authored` only. Fix commits for dispatch sets with no human record since the last head the watch did not push, queued ones included; reset to 0 when a fix arrives on such a head or any dispatch set holds a human record; cap 3 |
@@ -122,9 +127,11 @@ push caps and the Slack thread carry across the handover.
 | `merge_notified` | string or null | `authored` only. `<kind>:<head>` of the last `conflicting` or `behind-ready` line posted, set by `pr-watch/steps/03-route-event.md` G.3 and H.2; the poller raises neither kind again for that head |
 | `skip_reason` | string or null | `authored` only. The reason of the last "Skipped" line posted; set by step 04's skips, cleared when step 04 section 2 acquires the lock. A skip with the same reason posts no line |
 
-## `watch-poller.json`: written only by `POLL --monitor`
+## `watch-poller.json`: written only by `POLL --monitor` and `--tick-all`
 
-`last_reconciliation` (epoch seconds), `last_tick_event` (epoch seconds),
+`last_reconciliation` (epoch seconds), `last_tick_at` (epoch seconds of the
+last successful `--tick-all` tick; the oldest session ticks first),
+`last_tick_event` (epoch seconds),
 `last_tick_queue` (array), `closed` (array of PR keys; a key no longer in
 `watch.json` `prs` is dropped at the start of each tick), `errors` (PR key
 to the lease `last_error` value for each PR the last tick could not
@@ -139,9 +146,28 @@ writes of the entry), and, `authored` PRs only, `ci_retried_at` (the same,
 for the CI branch; spent independently, so a standing CI-only failure does
 not keep forcing the pending set too), and, `reviewed` PRs only,
 `compared` (`[old head, new head, changed paths]` of the last compare, so
-the same head range is not fetched again). `review` maps an `authored` PR key to `checked` (`[head, updatedAt]` of the last review-ready evaluation) and `emitted` (the head a `review-ready` event was last raised for), so the event comes once per head. `merge` maps an `authored` PR key to `<kind>:<head>` of the last `conflicting` or `behind-ready` event, so each comes once per head between forced ticks; a forced tick raises it again until the progress file's `merge_notified` records it. Deleting the file makes the next
+the same head range is not fetched again). `review` maps an `authored` PR key to `checked` (`[head, updatedAt]` of the last review-ready evaluation) and `emitted` (the head a `review-ready` event was last raised for), so the event comes once per head. `merge` maps an `authored` PR key to `<kind>:<head>` of the last `conflicting` or `behind-ready` event, so each comes once per head between forced ticks; a forced tick raises it again until the progress file's `merge_notified` records it. `lease_dropped` and `lease_warned` record the leases whose
+loss and whose write fault have already been reported, so each is raised
+once. `--claim` removes the claimed PR from both; every other writer merges
+the on-disk lists before saving, so a claim made during its run survives; `failed_ticks` counts consecutive failed runs of this session (five
+spool one `poller-error`); `closed` is cleared on the daily forced pass, so
+a closed PR is re-checked. Deleting the file makes the next
 tick a full reconciliation. `poller_pid` and `claude_pid` are recorded
 for diagnosis; the ancestry checks read the live process list.
+
+## `events.jsonl`: appended only by `POLL --tick-all`
+
+One JSON object per line, `{"session", "pr", "kind", ...}` plus the fields
+of the event kind. `tick` lines carry no `pr`. A line is appended after the
+lease writes and before the poller state is saved, so an event the lease
+writer filtered (lost or closing leases) is never spooled; a kill between
+the append and the save re-raises that tick's events, which the reader
+dedupes by signature. `--tick-all --dry-run` writes `events.dry-run.jsonl`
+and `watch-poller.dry-run.json` instead and takes no leases. The
+orchestrator reads the spool and sends the session each event as a
+`/pr-watch event` message; the spool holds kinds, PR ids and SHAs, no
+comment text, except that `poller-error` lines carry the raw error text
+(the orchestrator drops it).
 
 ## `watch-heartbeat`: written only by `POLL --monitor`
 

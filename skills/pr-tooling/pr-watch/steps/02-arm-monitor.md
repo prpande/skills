@@ -1,5 +1,8 @@
 # Step 02 — Arm the monitor
 
+A central watch (`--central`, or a saved `"watcher": "central"`) never
+arms a Monitor; step 01 section 9 ends there for it.
+
 ## Arm
 
 Run `POLL --monitor-alive --session-dir <SESSION_DIR>`. When it prints
@@ -45,8 +48,10 @@ do not arm again and post no "Watch monitor restarted." line. The next PR
 to join starts a new monitor.
 
 A monitor this session ended on purpose (step 01 section 4 ending an old
-poller, `/pr-watch stop`, or a `release` that leaves no `armed` PR) is
-not armed again and posts nothing.
+poller, step 01 section 9's central switch, `/pr-watch stop`, or a
+`release` that leaves no `armed` PR) is not armed again and posts nothing.
+So is any ending in a session whose `watch.json` has `"watcher": "central"`:
+arm nothing and post nothing.
 
 An expiry notice names the deadline it reached and the number of events
 it delivered ("Monitor expired after 30m with 2 events delivered"). This

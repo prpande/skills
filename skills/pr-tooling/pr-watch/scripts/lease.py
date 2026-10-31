@@ -11,6 +11,7 @@ from pw_paths import (claim_lock_path, home, iso_utc, lease_path, parse_iso, pr_
                       progress_path, push_lock_path)
 
 STALE_AFTER_SECONDS = 300
+CENTRAL_STALE_AFTER_SECONDS = 900
 CLAIM_LOCK_STALE_SECONDS = 60
 PUSH_LOCK_STALE_SECONDS = 300
 CLOSED_RETENTION_SECONDS = 7 * 24 * 3600
@@ -122,6 +123,9 @@ def _decide(old, session_id, explicit, now, started_at, agents) -> tuple[bool, s
     status = old.get("status")
     if status in ("released", "closed"):
         return True, "claimed"
+    if (status == "armed" and old.get("watcher") == "central" and explicit
+            and not holder_alive(old["holder"], started_at)):
+        return True, "taken-over"
     if status == "armed" and _holder_dead(old, now, started_at):
         return True, "taken-over"
     if status == "stopped" and explicit and _holder_dead(old, now, started_at):
@@ -167,8 +171,12 @@ def _take_lock(path, now: float, stale_seconds: float = CLAIM_LOCK_STALE_SECONDS
     return False
 
 
-def claim(owner, repo, n, *, role, holder, explicit, now, started_at=process_started_at,
-          agents=list_agents) -> tuple[bool, str]:
+def _mark_central(record):
+    record.update(watcher="central", stale_after_seconds=CENTRAL_STALE_AFTER_SECONDS)
+
+
+def claim(owner, repo, n, *, role, holder, explicit, now, central=False,
+          started_at=process_started_at, agents=list_agents) -> tuple[bool, str]:
     started = time.monotonic()
     lock = _hold_lock(owner, repo, n, now, CLAIM_LOCK_WAIT_SECONDS)
     if lock is None:
@@ -183,13 +191,16 @@ def claim(owner, repo, n, *, role, holder, explicit, now, started_at=process_sta
         if not ok:
             return False, why
         stamp = iso_utc(now)
-        write_json_atomic(lease_path(owner, repo, n), {
+        record = {
             "schema": 1, "owner": owner, "repo": repo, "number": n, "role": role,
             "holder": {k: holder.get(k) for k in ("session_id", "pid", "pid_started_at", "poller_pid")},
             "heartbeat": stamp, "stale_after_seconds": STALE_AFTER_SECONDS, "status": "armed",
             "last_head_sha": old.get("last_head_sha") if old else None,
             "pending_since": None, "last_error": None, "updated_at": stamp,
-        })
+        }
+        if central:
+            _mark_central(record)
+        write_json_atomic(lease_path(owner, repo, n), record)
         return True, why
     finally:
         lock.unlink(missing_ok=True)
@@ -265,7 +276,7 @@ def set_status(owner, repo, n, status, session_id, now) -> bool:
 
 
 def tick_write(owner, repo, n, *, session_id, now, head, pending_since, last_error, poller_pid,
-               status="armed") -> str:
+               status="armed", central=False) -> str:
     lock = _hold_lock(owner, repo, n, now, TICK_LOCK_WAIT_SECONDS)
     if lock is None:
         return "busy"
@@ -276,11 +287,13 @@ def tick_write(owner, repo, n, *, session_id, now, head, pending_since, last_err
         if data["holder"].get("session_id") != session_id:
             return "lost"
         if data.get("status") != "armed":
-            return "inactive"
+            return "written" if status == data.get("status") == "closed" else "inactive"
         stamp = iso_utc(now)
         data["holder"]["poller_pid"] = poller_pid
         data.update(heartbeat=stamp, last_head_sha=head, pending_since=pending_since,
                     last_error=last_error, status=status, updated_at=stamp)
+        if central:
+            _mark_central(data)
         write_json_atomic(lease_path(owner, repo, n), data)
         return "written"
     finally:

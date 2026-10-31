@@ -10,9 +10,9 @@ from fakes import (ACTIONS, NOW, SELF, T0, T1, FakeGh, HomeCase, claim_leases, c
                    pull, review, rk, thread, watch, write_session)
 
 
-def authored_pr(updated="2026-09-11T10:00:00Z", extra=()):
+def authored_pr(updated="2026-09-11T10:00:00Z", extra=(), state="OPEN"):
     return pull(1411, threads=[thread("T1", [comment("c1", "reviewer-a", T0), *extra])],
-                updated=updated)
+                updated=updated, state=state)
 
 
 def reviewed_pr(head="h1", replies=(), updated="2026-09-11T10:00:00Z"):
@@ -33,7 +33,7 @@ class AuthoredTickTests(unittest.TestCase):
     def test_first_tick_emits_pending(self):
         self.gh.prs[pk(1411)] = authored_pr()
         self.assertEqual(self.tick(), [{"pr": rk(1411), "role": "authored", "kind": "pending",
-                                        "threads": ["T1"], "comments": [], "reviews": []}])
+                                        "sig": "feb0aa8e6f02", "threads": ["T1"], "comments": [], "reviews": []}])
 
     def test_unchanged_pr_is_neither_fetched_nor_reported(self):
         self.gh.prs[pk(1411)] = authored_pr()
@@ -145,7 +145,7 @@ class ReviewedTickTests(unittest.TestCase):
         self.gh.prs[pk(1420)] = reviewed_pr(head="h2")
         self.gh.compare["h1...h2"] = ["src/B.cs"]
         self.assertEqual(self.tick(), [{"pr": rk(1420), "role": "reviewed", "kind": "head-moved",
-                                        "old_head": "h1", "new_head": "h2",
+                                        "sig": "52d434725af8", "old_head": "h1", "new_head": "h2",
                                         "touches_my_findings": True, "author_replied": False}])
 
     def test_head_move_elsewhere_without_a_reply_is_silent(self):
@@ -166,7 +166,7 @@ class ReviewedTickTests(unittest.TestCase):
     def test_author_reply_without_a_push_emits_reply(self):
         self.gh.prs[pk(1420)] = reviewed_pr(head="h1", replies=[comment("a1", "author-b", T1)])
         self.assertEqual(self.tick(), [{"pr": rk(1420), "role": "reviewed", "kind": "reply",
-                                        "threads": ["T9"]}])
+                                        "sig": "41151e38b864", "threads": ["T9"]}])
 
     def test_a_compare_with_no_files_list_does_not_raise(self):
         self.gh.prs[pk(1420)] = reviewed_pr(head="h2")
@@ -318,10 +318,13 @@ class RetryAfterTests(unittest.TestCase):
         self.assertEqual(len(self.tick(NOW + 1200)), 2)
 
 
-class MonitorLoopTests(HomeCase):
+class MonitorStateCase(HomeCase):
+    """A session directory holding one armed authored PR with a claimed lease."""
+
     def setUp(self):
         super().setUp()
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.state = pathlib.Path(self.tmp.name)
         self.gh = FakeGh()
         self.gh.prs[pk(1411)] = authored_pr()
@@ -329,9 +332,8 @@ class MonitorLoopTests(HomeCase):
         write_session(self.state, view)
         claim_leases(view)
 
-    def tearDown(self):
-        self.tmp.cleanup()
 
+class MonitorLoopTests(MonitorStateCase):
     def run_monitor(self, ticks, clock=NOW):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):

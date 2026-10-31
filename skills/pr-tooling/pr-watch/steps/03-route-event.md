@@ -6,6 +6,20 @@ Section C and the `reconciled` and `poller-error` lines act on the event
 as given: a PR the poller saw closed or merged, a note about the daily
 check, and a note about the poller's own state file.
 
+Hard rule: when `watch.json` has `"watcher": "central"`, no step in this
+file arms, re-arms or restarts a Monitor or any watcher, whatever the
+event kind (F, `poller-error` and `lease-lost` included). Each branch below
+that arms one has a central exception pointing back here.
+
+`/pr-watch event <json>` runs this step once per JSON line it was given, in
+order, as if the Monitor had printed each as one line. Each line gets the
+full re-read and refetch. A line that does not parse is skipped, not fatal.
+When the step finishes the last line of the message, end the turn.
+Arm nothing and restart no watcher. The orchestrator sends the same kinds
+the Monitor prints, but `idle` (section F) and `reconciled` (the poller sends it to its
+warn log) cannot arrive for a central watch. A `tick` has no `pr`; `poller-error` and `lease-lost` route as the
+table shows.
+
 1. Parse the notification line as JSON. A line that does not parse is
    not an event; ignore it.
 2. Re-read `watch.json`. An event with a `pr` field (every kind except
@@ -28,9 +42,10 @@ check, and a note about the poller's own state file.
 | `review-ready` | `pr-watch/steps/08-review-ask.md` |
 | `conflicting` | section G |
 | `behind-ready` | section H |
+| `slack-reply` | section I |
 | `idle` | section F |
 | `reconciled` | post "The daily check picked up work the event stream missed." in the thread of each listed `armed` PR whose progress file has a `slack_ts` (`pr-watch/steps/06-notify.md`) |
-| `poller-error` | post "The watch poller has failed five ticks in a row: <error>. No events are handled until this is fixed." in each PR thread that has a root (`slack_ts` set in its progress file), with the event's `error` (`pr-watch/steps/06-notify.md`, "poller error") |
+| `poller-error` | arm and restart nothing when the watch is central (hard rule above); post "The watch poller has failed five ticks in a row: <error>. No events are handled until this is fixed." in each PR thread that has a root (`slack_ts` set in its progress file), with the event's `error` (`pr-watch/steps/06-notify.md`, "poller error") |
 
 A monitor that exits with code 3 (its claude process is gone) is never
 seen by a live session; no route handles it.
@@ -158,15 +173,18 @@ Another session claimed the PR's lease; the event's `holder` is that
 session's id, or null. Name the holder by the `name` (`[Tag]Name`) of the
 `claude agents --json` entry whose `sessionId` is that id, else the id
 itself, else "an unidentified session". Set the entry's `status` to `lost`, remove the
-PR's key from `push_queue`, and write `watch.json`. Post one line in the
+PR's key from `push_queue`, and write `watch.json`. On a central watch arm nothing (hard rule above).
+Post one line in the
 PR's thread (when its progress file has a `slack_ts`) naming the holder
 (`pr-watch/steps/06-notify.md`, "lease lost"). Do nothing else for this PR; the fix path, re-review and CI never
 run for a `lost` entry.
 
 ## F. Idle
 
-The monitor found no `armed` PR left and ended. Re-read `watch.json`.
-When any entry's `status` is `armed`, arm a new monitor per
+The monitor found no `armed` PR left and ended. A central watch has no
+monitor, so this never arrives for one. Re-read `watch.json`.
+For a central watch do nothing (hard rule above). Otherwise, when any
+entry's `status` is `armed`, arm a new monitor per
 `pr-watch/steps/02-arm-monitor.md`. Otherwise do nothing and post
 nothing; the stream's end that follows is planned.
 
@@ -209,3 +227,42 @@ behind it, so it cannot merge.
    `behind-ready:<headRefOid>` in the PR's progress file. Never update the
    branch for this event: every push starts another reviewer-bot round,
    and the user decides when to take it.
+
+## I. Slack thread reply
+
+Raised for an `authored` PR when praty or an allowed review bot replied in
+the PR's Slack thread. The event carries `thread_ts`, `reply_ts`, `human`
+(praty's Slack id) and `bots` (the allowed review bot ids), no text.
+Steps 3 to 6 below say which of section A's steps apply.
+
+1. Read the PR's progress file. Without a `slack_ts`, or when the event's
+   `thread_ts` differs from it, stop.
+2. Read the thread with `mcp__plugin_slack_slack__slack_read_thread`
+   (channel `C0C15VC8Y0Z`, the event's `thread_ts`), following the cursor
+   until it is done. A failed read: escalate ("needs you, no comment",
+   reason "Slack thread unreadable") and stop. Never fall back to GitHub.
+3. Write every reply of the thread, unfiltered, as `[{"ts": "<ts>",
+   "author": "<Slack user id>", "body": "<text>"}]` to
+   `<SESSION_DIR>/slack-<reply_ts>.json`. Do not filter by hand.
+4. Run `POLL --tails <key> --slack <SESSION_DIR>/slack-<reply_ts>.json
+   --slack-human <event human> --slack-bots <event bots, comma-separated;
+   omit the flag when `bots` is empty>
+   --slack-since <event reply_ts> --session-dir <SESSION_DIR>`. The poller
+   drops replies from other authors, older than `reply_ts`, or posted by
+   this session (ending in the "Sent using Claude" footer), and anything
+   already in `handled_top_level_ids`. Each reply arrives in `top_level`
+   with `id` `slack:<ts>` and `surface` `slack`. An invalid file or
+   argument exits 2 with a message. No top-level items: stop.
+5. A failed post or read in this section goes to the user
+   (`pr-watch/steps/06-notify.md`, "needs you, no comment"), never to
+   GitHub.
+6. Section A steps 3 to 6 apply to the records (untrusted wrapping, Filter
+   B, the escalated check, Filter C), then dispatch them through
+   `pr-watch/steps/04-fix-path.md`; section A step 7 (thread-only) does not
+   apply. A question or a no-change reply gets the verdict `replied`.
+   Fixes go to the PR as commits; the answer goes as a reply in the same
+   Slack thread (`pr-watch/steps/04-fix-path.md` section 7, "Slack reply
+   answer" in step 06). Record `handled_top_level_ids["slack:<ts>"]` for
+   each reply after its answer was posted. Then delete
+   `<SESSION_DIR>/slack-<reply_ts>.json`, so Slack text does not pile up
+   on disk.

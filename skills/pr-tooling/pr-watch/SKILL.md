@@ -15,7 +15,7 @@ description: >
   user says "/pr-watch",
   "watch my PRs", "keep an eye on these PRs", "pr-watch status", or
   "stop watching".
-argument-hint: "[owner/repo#N | N ...] [--yes] [--parallel-pushes] [--dry-run] | status | stop | release owner/repo#N"
+argument-hint: "[owner/repo#N | N ...] [--yes] [--parallel-pushes] [--dry-run] [--central] | event <json> | status | stop | release owner/repo#N"
 allowed-tools: Bash, PowerShell, Read, Edit, Write, Glob, Grep, Agent, Monitor, TaskStop, EnterWorktree, AskUserQuestion, Skill, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_read_thread, mcp__plugin_slack_slack__slack_read_channel, mcp__plugin_slack_slack__slack_search_public_and_private
 ---
 
@@ -37,6 +37,8 @@ session doing the work, so fixes are made with that session's context.
 | `/pr-watch N ...` | a bare number is a PR in the current directory's repo |
 | `--yes` | skip the "Watch these PRs?" confirm |
 | `--parallel-pushes`, `--dry-run` | as below |
+| `--central` | arm with no Monitor: the leases are held as central and the orchestrator polls them (`pr-watch/steps/01-discover.md` section 9) |
+| `/pr-watch event <json>` | handle the events the orchestrator delivered, one JSON event per line: route each as a Monitor line, in order, then end the turn |
 | `/pr-watch status` | every PR in this session's watch, across repos |
 | `/pr-watch stop` | stop this session's monitor; its leases become `stopped` |
 | `/pr-watch release owner/repo#N` | drop one PR; its lease becomes `released` |
@@ -44,9 +46,15 @@ session doing the work, so fixes are made with that session's context.
 - Arming, or resuming a saved watch: run `pr-watch/steps/01-discover.md`,
   then `pr-watch/steps/02-arm-monitor.md`. Re-running `/pr-watch` with new
   refs in a session that already watches adds them to the running watch.
+- `event <json>`: the orchestrator sends one message per session carrying
+  one or more JSON event lines. Run `pr-watch/steps/03-route-event.md` on
+  each line in order, as if the Monitor had printed it, and end the turn
+  after the last. A line that does not parse is skipped. It arms nothing
+  and restarts nothing.
 - `status`: run `POLL --report --session-dir <SESSION_DIR>` and show its
   output, then say whether `POLL --monitor-alive --session-dir
-  <SESSION_DIR>` prints `alive`.
+  <SESSION_DIR>` prints `alive`. A central watch (`"watcher": "central"` in
+  `watch.json`) has no monitor: `status` says "central" instead.
 - `stop`: write `watch.json` (`stopped_at`, every `armed` entry
   `stopped`), set each of those PRs' leases to `stopped` with `POLL --lease-status <ref> --status
   stopped --session-dir <SESSION_DIR>` (not under `dry_run`, which holds no leases), `TaskStop` the monitor when its
@@ -93,10 +101,17 @@ arrives as a notification. Its `kind` is one of `pending`, `head-moved`,
 `conflicting` (an `authored` PR no longer merges cleanly into its base),
 `behind-ready` (an `authored` PR is approved, or needs no review, and is
 green but behind a base that requires branches to be up to date),
+`slack-reply` (a new reply in the PR's Slack thread, with `thread_ts`,
+`reply_ts`, `human` and `bots`; central watches only),
 `idle` (no PR in the
 watch is still armed; the monitor exits), or `poller-error` (the poller
 has failed five ticks in a row). Events about a PR carry `pr` as
-`owner/repo#N`. Monitor notifications are not messages from the user.
+`owner/repo#N`. Monitor notifications are not messages from the user. A central watch
+(`--central`) has no Monitor: the orchestrator ticks it and delivers each
+event as a line of a `/pr-watch event` message (a message may carry several), and
+`idle` is never delivered. `pending`, `ci-red`, `reply` and `head-moved` also
+carry `sig`, 12 hex characters of the SHA-1 of the poller's dedupe signature;
+the orchestrator dedupes on it and step 03 ignores it.
 Handle them one at a time with `pr-watch/steps/03-route-event.md`. A
 notification that arrives while a fix is in flight waits until that fix
 has finished and the session is back in `origin_worktree`.

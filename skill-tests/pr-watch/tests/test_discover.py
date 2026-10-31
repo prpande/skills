@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from fakes import SELF, HomeCase, poll, pw_paths
+from fakes import SELF, HomeCase, poll, pw_paths, run_main
 
 import discover
 
@@ -470,10 +470,7 @@ runpy.run_path(poll_py, run_name="__main__")
 
 
 def run_cli(*argv, gh=None):
-    out, err = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        code = poll.main([str(a) for a in argv], gh=gh or FakeDiscoverGh())
-    return code, out.getvalue().strip(), err.getvalue().strip()
+    return run_main(*argv, gh=gh or FakeDiscoverGh())
 
 
 class CliTests(unittest.TestCase):

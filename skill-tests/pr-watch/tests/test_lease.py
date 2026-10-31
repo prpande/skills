@@ -316,8 +316,71 @@ class ClaimTests(LeaseCase):
         self.assertFalse(ok)
         self.assertIn("heartbeat 0s ago", why)
 
+    def central_claim(self, h, *, explicit=False, started_at=dead):
+        return lease.claim("o", "r", 1, role="authored", holder=h, explicit=explicit, now=NOW,
+                           started_at=started_at, agents=lambda: AGENTS, central=True)
+
+    def test_central_claim_writes_watcher_and_900(self):
+        ok, _ = self.central_claim(holder(), started_at=alive(holder()))
+        data = lease.read_lease("o", "r", 1)
+        self.assertTrue(ok)
+        self.assertEqual((data["watcher"], data["stale_after_seconds"]), ("central", 900))
+
+    def test_monitor_claim_has_no_watcher_field(self):
+        self.claim(holder(), started_at=alive(holder()))
+        data = lease.read_lease("o", "r", 1)
+        self.assertNotIn("watcher", data)
+        self.assertEqual(data["stale_after_seconds"], 300)
+
+    def test_explicit_claim_takes_fresh_central_lease_with_dead_holder(self):
+        self.put(heartbeat=NOW - 10, watcher="central", stale_after_seconds=900)
+        self.assertEqual(self.claim(holder("s-2", pid=300), explicit=True), (True, "taken-over"))
+        self.assertEqual(lease.read_lease("o", "r", 1)["holder"]["session_id"], "s-2")
+
+    def test_unattended_claim_refused_on_fresh_central_lease(self):
+        self.put(heartbeat=NOW - 10, watcher="central", stale_after_seconds=900)
+        ok, why = self.claim(holder("s-2", pid=300), explicit=False)
+        self.assertFalse(ok)
+        self.assertTrue(why.startswith("held by"))
+
+    def test_explicit_claim_refused_when_central_holder_alive(self):
+        other = holder()
+        self.put(h=other, heartbeat=NOW - 10, watcher="central", stale_after_seconds=900)
+        ok, why = self.claim(holder("s-2", pid=300), explicit=True, started_at=alive(other))
+        self.assertFalse(ok)
+        self.assertTrue(why.startswith("held by"))
+
+    def test_explicit_claim_refused_on_fresh_monitor_lease_with_dead_holder(self):
+        self.put(heartbeat=NOW - 10)
+        ok, _ = self.claim(holder("s-2", pid=300), explicit=True)
+        self.assertFalse(ok)
+
 
 class WriteTests(LeaseCase):
+    def test_tick_write_central_keeps_fields(self):
+        h = holder()
+        lease.claim("o", "r", 1, role="authored", holder=h, explicit=False, now=NOW,
+                    started_at=alive(h), agents=lambda: AGENTS, central=True)
+        result = lease.tick_write("o", "r", 1, session_id="s-1", now=NOW + 60, head="d",
+                                  pending_since=None, last_error=None, poller_pid=5, central=True)
+        data = lease.read_lease("o", "r", 1)
+        self.assertEqual(result, "written")
+        self.assertEqual((data["watcher"], data["stale_after_seconds"]), ("central", 900))
+
+    def test_tick_write_central_marks_a_monitor_lease(self):
+        self.put()
+        lease.tick_write("o", "r", 1, session_id="s-1", now=NOW, head="d", pending_since=None,
+                         last_error=None, poller_pid=5, central=True)
+        data = lease.read_lease("o", "r", 1)
+        self.assertEqual((data["watcher"], data["stale_after_seconds"]), ("central", 900))
+
+    def test_tick_write_without_central_keeps_an_existing_central_mark(self):
+        self.put(watcher="central", stale_after_seconds=900)
+        lease.tick_write("o", "r", 1, session_id="s-1", now=NOW, head="d", pending_since=None,
+                         last_error=None, poller_pid=5)
+        data = lease.read_lease("o", "r", 1)
+        self.assertEqual((data["watcher"], data["stale_after_seconds"]), ("central", 900))
+
     def test_tick_write_updates_heartbeat_side_fields(self):
         self.put(heartbeat=NOW - 100)
         ok = lease.tick_write("o", "r", 1, session_id="s-1", now=NOW, head="def",
@@ -361,6 +424,23 @@ class WriteTests(LeaseCase):
                                           pending_since=None, last_error=None, poller_pid=1)
                 self.assertEqual(result, "inactive")
                 self.assertEqual(path.read_bytes(), before)
+
+    def test_closing_an_already_closed_lease_of_this_session_counts_as_written(self):
+        self.put(status="closed")
+        path = pw_paths.lease_path("o", "r", 1)
+        before = path.read_bytes()
+        result = lease.tick_write("o", "r", 1, session_id="s-1", now=NOW, head="x",
+                                  pending_since=None, last_error=None, poller_pid=None,
+                                  status="closed")
+        self.assertEqual(result, "written")
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_closing_a_closed_lease_of_another_session_is_lost(self):
+        self.put(status="closed")
+        result = lease.tick_write("o", "r", 1, session_id="s-2", now=NOW, head="x",
+                                  pending_since=None, last_error=None, poller_pid=None,
+                                  status="closed")
+        self.assertEqual(result, "lost")
 
     def test_tick_write_cannot_close_a_non_armed_lease(self):
         self.put(status="released")

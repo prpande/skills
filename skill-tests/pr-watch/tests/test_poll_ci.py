@@ -68,6 +68,7 @@ class CiTickTests(unittest.TestCase):
         self.red()
         self.assertEqual(self.tick(), [{
             "pr": rk(1411), "role": "authored", "kind": "ci-red", "head": "h2",
+            "sig": "43f63eda1b07",
             "checks": [{"name": "Gated / Unit Tests", "workflow": "App Gated",
                         "completed_at": "2026-09-10T05:16:39Z"}]}])
 

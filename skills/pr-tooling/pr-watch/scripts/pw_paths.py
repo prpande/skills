@@ -41,10 +41,14 @@ def pr_key(owner: str, repo: str, n: int) -> str:
     return f"{repo_slug(owner, repo)}#{n}"
 
 
+def sessions_root() -> pathlib.Path:
+    return home() / "sessions"
+
+
 def session_dir(session_id: str) -> pathlib.Path:
     if not NAME.match(session_id) or session_id in (".", ".."):
         raise ValueError(f"invalid session id: {session_id!r}")
-    return home() / "sessions" / session_id
+    return sessions_root() / session_id
 
 
 def pr_dir(owner: str, repo: str) -> pathlib.Path:
