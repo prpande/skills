@@ -112,6 +112,8 @@ class ReviewBlockerTests(unittest.TestCase):
     def test_non_green_checks_block(self):
         self.gh.checks[pk(1411)] = [{"name": "build", "bucket": "pending"}]
         self.assertIn("checks-not-green", self.blockers(ready_pr()))
+        self.gh.checks[pk(1411)] = [{"name": "build", "bucket": "cancel"}]
+        self.assertIn("checks-not-green", self.blockers(ready_pr()))
         self.gh.checks[pk(1411)] = [{"name": "build", "bucket": "skipping"}]
         self.assertEqual(self.blockers(ready_pr()), [])
         self.assertIn("checks-not-green", self.blockers(ready_pr(rollup="FAILURE")))

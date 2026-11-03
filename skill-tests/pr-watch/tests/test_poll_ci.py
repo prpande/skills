@@ -9,8 +9,11 @@ from fakes import (ACTIONS, AZURE, NOW, SONAR, T0, FakeGh, HomeCase, comment, pk
                    thread, watch, write_session)
 
 
+STATE_OF = {"fail": "FAILURE", "cancel": "CANCELLED", "pending": "PENDING"}
+
+
 def check(name, bucket="fail", workflow="App Gated", done="2026-09-10T05:16:39Z", link=ACTIONS):
-    return {"name": name, "state": "FAILURE" if bucket == "fail" else "SUCCESS",
+    return {"name": name, "state": STATE_OF.get(bucket, "SUCCESS"),
             "bucket": bucket, "link": link, "workflow": workflow, "completedAt": done}
 
 
@@ -70,7 +73,41 @@ class CiTickTests(unittest.TestCase):
             "pr": rk(1411), "role": "authored", "kind": "ci-red", "head": "h2",
             "sig": "43f63eda1b07",
             "checks": [{"name": "Gated / Unit Tests", "workflow": "App Gated",
-                        "completed_at": "2026-09-10T05:16:39Z"}]}])
+                        "completed_at": "2026-09-10T05:16:39Z", "bucket": "fail"}]}])
+
+    def test_a_cancelled_required_check_emits_ci_red_with_its_bucket(self):
+        self.gh.rollup[pk(1411)] = "FAILURE"
+        self.gh.checks[pk(1411)] = [check("Gated / Unit Tests", bucket="cancel"),
+                                check("Gated / Audit Helm Chart", bucket="pass")]
+        self.assertEqual(self.tick(), [{
+            "pr": rk(1411), "role": "authored", "kind": "ci-red", "head": "h2",
+            "sig": "43f63eda1b07",
+            "checks": [{"name": "Gated / Unit Tests", "workflow": "App Gated",
+                        "completed_at": "2026-09-10T05:16:39Z", "bucket": "cancel"}]}])
+
+    def test_failed_and_cancelled_checks_share_one_event(self):
+        self.gh.rollup[pk(1411)] = "FAILURE"
+        self.gh.checks[pk(1411)] = [check("Gated / Unit Tests"),
+                                check("Gated / Integration Tests", bucket="cancel")]
+        self.assertEqual([(c["name"], c["bucket"]) for c in self.tick()[0]["checks"]],
+                         [("Gated / Integration Tests", "cancel"),
+                          ("Gated / Unit Tests", "fail")])
+
+    def test_a_rerun_cancelled_check_that_then_fails_emits_again(self):
+        self.gh.rollup[pk(1411)] = "FAILURE"
+        self.gh.checks[pk(1411)] = [check("Gated / Unit Tests", bucket="cancel")]
+        self.tick()
+        self.gh.rollup[pk(1411)] = "PENDING"
+        self.gh.checks[pk(1411)] = [check("Gated / Unit Tests", bucket="pending", done=None)]
+        self.assertEqual(self.tick(), [])
+        self.red(done="2026-09-10T06:02:11Z")
+        self.assertEqual(self.tick()[0]["checks"][0]["bucket"], "fail")
+
+    def test_skipped_and_pending_required_checks_are_not_red(self):
+        self.gh.rollup[pk(1411)] = "FAILURE"
+        self.gh.checks[pk(1411)] = [check("Gated / Unit Tests", bucket="skipping"),
+                                check("Gated / Audit Helm Chart", bucket="pending", done=None)]
+        self.assertEqual(self.tick(), [])
 
     def test_rollup_change_alone_checks_without_a_thread_fetch(self):
         self.gh.rollup[pk(1411)] = "PENDING"
@@ -204,6 +241,15 @@ class CiTickTests(unittest.TestCase):
         self.assertIn("fetch of 1411 failed", err.getvalue())
         self.gh.fail = set()
         self.assertEqual(self.tick(), [])
+
+
+class PendingCheckTests(unittest.TestCase):
+    def test_a_cancelled_check_is_not_pending(self):
+        gh = FakeGh()
+        gh.checks[pk(1411)] = [check("Gated / Unit Tests", bucket="cancel")]
+        self.assertFalse(poll.has_pending_check(gh, "o", "r", 1411))
+        gh.checks[pk(1411)].append(check("Gated / Audit Helm Chart", bucket="pending", done=None))
+        self.assertTrue(poll.has_pending_check(gh, "o", "r", 1411))
 
 
 class ChecksPayloadTests(unittest.TestCase):
