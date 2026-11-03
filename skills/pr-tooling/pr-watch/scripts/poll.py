@@ -194,8 +194,8 @@ def load_slack(path):
             raise ValueError(f"{path}: every reply needs string ts, author and body")
         if not SLACK_TS.fullmatch(reply["ts"]):
             raise ValueError(f"{path}: {reply['ts']!r} is not a Slack ts")
-        if not isinstance(reply.get("bot", False), bool):
-            raise ValueError(f"{path}: bot must be true or false")
+        if not isinstance(reply.get("bot"), bool):
+            raise ValueError(f"{path}: every reply needs bot, true or false")
     return replies
 
 
@@ -211,12 +211,12 @@ def slack_replies_to_handle(replies, human, bots, since):
             and not is_own_slack_post(r["body"])]
 
 
-def slack_record(reply, human):
+def slack_record(reply):
     return {
         "id": f"slack:{reply['ts']}",
         "surface": "slack",
         "author": reply["author"],
-        "author_type": "Bot" if reply.get("bot", reply["author"] != human) else "User",
+        "author_type": "Bot" if reply["bot"] else "User",
         "created_at": iso_utc(float(reply["ts"])),
         "updated_at": None,
         "path": None,
@@ -227,7 +227,7 @@ def slack_record(reply, human):
     }
 
 
-def tails_payload(pr, watch_pr, self_login, allowlist, slack=None, slack_human=None):
+def tails_payload(pr, watch_pr, self_login, allowlist, slack=None):
     posted = set(watch_pr.get("posted_reply_ids", []))
     threads, top = pending(pr, watch_pr, self_login, allowlist)
     out = []
@@ -248,7 +248,7 @@ def tails_payload(pr, watch_pr, self_login, allowlist, slack=None, slack_human=N
         "branch": pr["headRefName"],
         "threads": out,
         "top_level": [comment_record(i, s, self_login, allowlist) for s, i in top]
-                     + [slack_record(r, slack_human) for r in slack or []
+                     + [slack_record(r) for r in slack or []
                         if f"slack:{r['ts']}" not in watch_pr.get("handled_top_level_ids", {})],
     }
 
@@ -1930,8 +1930,7 @@ def run_mode(args, gh):
     if args.baseline:
         payload = baseline(pr, me, allow)
     elif args.tails:
-        payload = tails_payload(pr, entry, me, allow, slack=args.slack_replies,
-                                slack_human=args.slack_human)
+        payload = tails_payload(pr, entry, me, allow, slack=args.slack_replies)
     elif args.review_ready:
         payload = review_ready_payload(gh, view, entry, pr, time.time())
     else:

@@ -169,13 +169,12 @@ class PayloadTests(unittest.TestCase):
 
 
 SLACK_TS = "1793292267.630379"
-SLACK_REPLY = {"ts": SLACK_TS, "author": "U07ENJD06T0", "body": "please rename it"}
+SLACK_REPLY = {"ts": SLACK_TS, "author": "U07ENJD06T0", "body": "please rename it", "bot": False}
 
 
 class SlackTests(unittest.TestCase):
     def payload(self, replies, **fields):
-        return poll.tails_payload(pull(), entry(**fields), SELF, ALLOW, slack=replies,
-                                  slack_human="U07ENJD06T0")
+        return poll.tails_payload(pull(), entry(**fields), SELF, ALLOW, slack=replies)
 
     def test_slack_replies_become_top_level_records(self):
         rec = self.payload([SLACK_REPLY])["top_level"][0]
@@ -193,20 +192,14 @@ class SlackTests(unittest.TestCase):
 
     def test_slack_records_follow_github_ones(self):
         pr = pull(comments=[comment("i1", "reviewer-a", T0)])
-        payload = poll.tails_payload(pr, entry(), SELF, ALLOW, slack=[SLACK_REPLY],
-                                     slack_human="U07ENJD06T0")
+        payload = poll.tails_payload(pr, entry(), SELF, ALLOW, slack=[SLACK_REPLY])
         self.assertEqual([r["id"] for r in payload["top_level"]], ["i1", f"slack:{SLACK_TS}"])
 
-    def test_author_type_is_user_for_the_human_and_bot_for_others(self):
-        bot = {"ts": "1793292300.000100", "author": "UBOT0001", "body": "nit"}
-        types = [r["author_type"] for r in self.payload([SLACK_REPLY, bot])["top_level"]]
-        self.assertEqual(types, ["User", "Bot"])
-
-    def test_a_bot_flag_from_the_thread_read_sets_author_type(self):
+    def test_author_type_follows_the_bot_flag_not_whether_the_author_is_praty(self):
         person = {"ts": "1793292300.000100", "author": "UPERSON01", "body": "why?", "bot": False}
         kai = {"ts": "1793292300.000200", "author": "UBOT0001", "body": "points", "bot": True}
-        types = [r["author_type"] for r in self.payload([person, kai])["top_level"]]
-        self.assertEqual(types, ["User", "Bot"])
+        types = [r["author_type"] for r in self.payload([SLACK_REPLY, person, kai])["top_level"]]
+        self.assertEqual(types, ["User", "User", "Bot"])
 
     def test_no_slack_input_changes_nothing(self):
         self.assertEqual(self.payload(None)["top_level"], [])
@@ -242,13 +235,13 @@ class LoadSlackTests(unittest.TestCase):
             path.write_text(json.dumps(replies), encoding="utf-8")
             return poll.load_slack(path)
 
-    def test_a_bot_flag_is_optional_and_kept(self):
+    def test_a_reply_needs_a_true_or_false_bot_flag(self):
         replies = [dict(SLACK_REPLY), {**SLACK_REPLY, "ts": "1793292300.000100", "bot": True}]
         self.assertEqual(self.load(replies), replies)
-
-    def test_a_bot_flag_that_is_not_true_or_false_is_refused(self):
-        with self.assertRaises(ValueError):
-            self.load([{**SLACK_REPLY, "bot": "yes"}])
+        no_flag = {k: v for k, v in SLACK_REPLY.items() if k != "bot"}
+        for bad in (no_flag, {**SLACK_REPLY, "bot": "yes"}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.load([bad])
 
 
 class OwnPostTests(unittest.TestCase):
@@ -299,7 +292,8 @@ class SlackCliTests(unittest.TestCase):
     def test_invalid_files_are_usage_errors_not_tracebacks(self):
         bad = ["not json", '{"ts": "1.2"}', '[{"ts": "1.2", "author": "U1"}]',
                '[{"ts": 5, "author": "U1", "body": "x"}]', '["x"]',
-               '[{"ts": "soon", "author": "U1", "body": "x"}]']
+               '[{"ts": "soon", "author": "U1", "body": "x", "bot": false}]',
+               '[{"ts": "1.2", "author": "U1", "body": "x"}]']
         for content in bad:
             with self.subTest(content=content):
                 code, err = self.run_cli(content)
