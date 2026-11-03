@@ -103,6 +103,18 @@ class ArmModeTests(GateCase):
         self.transcript(slash("o/r#1 --monitor"))
         self.assertEqual(self.arm_mode(), (0, "central", ""))
 
+    def test_running_central_watch_refuses_the_monitor_flag(self):
+        self.save_watch(watcher="central")
+        self.transcript(slash("o/r#1 --monitor"))
+        code, out, err = self.arm_mode("--with-monitor")
+        self.assertEqual((code, out), (0, "central"))
+        self.assertIn("central watch is running", err)
+
+    def test_stopped_central_watch_takes_the_monitor_flag(self):
+        self.save_watch(watcher="central", stopped_at="2026-11-03T08:00:00Z")
+        self.transcript(slash("o/r#1 --monitor"))
+        self.assertEqual(self.arm_mode("--with-monitor"), (0, "monitor", ""))
+
     def test_stopped_monitor_watch_is_central_on_a_join(self):
         self.save_watch(stopped_at="2026-11-03T08:00:00Z")
         self.transcript(slash("o/r#1 --monitor"), slash("stop"))
@@ -204,6 +216,16 @@ class MonitorRefusalTests(GateCase):
         (code, _, err), started = self.run_monitor()
         self.assertEqual(code, poll.MONITOR_REFUSED_EXIT)
         self.assertIn("no transcript", err)
+        started.assert_not_called()
+
+    def test_poller_refuses_while_a_central_watch_runs(self):
+        path = self.session_dir / "watch.json"
+        path.write_text(json.dumps(dict(json.loads(path.read_text(encoding="utf-8")),
+                                        watcher="central")), encoding="utf-8")
+        self.transcript(slash("o/r#1 --monitor"))
+        (code, _, err), started = self.run_monitor()
+        self.assertEqual(code, poll.MONITOR_REFUSED_EXIT)
+        self.assertIn("central watch is running", err)
         started.assert_not_called()
 
     def test_poller_starts_on_the_users_ask(self):

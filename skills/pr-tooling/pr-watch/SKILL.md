@@ -37,7 +37,7 @@ session doing the work, so fixes are made with that session's context.
 | `/pr-watch N ...` | a bare number is a PR in the current directory's repo |
 | `--yes` | skip the "Watch these PRs?" confirm |
 | `--parallel-pushes`, `--dry-run` | as below |
-| `--monitor` | arm a Monitor in this session instead of a central watch, only when the user asked for it in this session; `POLL --arm-mode` checks the transcript and arms central otherwise (`pr-watch/steps/01-discover.md` section 1) |
+| `--monitor` | arm a Monitor in this session instead of a central watch, only when the user asked for it in this session; `POLL --arm-mode` checks the transcript and arms central otherwise (`pr-watch/steps/01-discover.md` section 1). A running central watch stays central; `stop` it first |
 | `--central` | accepted and changes nothing: every arm without `--monitor` is central |
 | `/pr-watch event <json>` | handle the events the orchestrator delivered, one JSON event per line: route each as a Monitor line, in order, then end the turn |
 | `/pr-watch status` | every PR in this session's watch, across repos |

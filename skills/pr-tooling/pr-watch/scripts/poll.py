@@ -1899,20 +1899,25 @@ def session_monitor_refusal(session_dir):
         return "CLAUDE_CODE_SESSION_ID is not set"
     if pathlib.Path(session_dir).name != session_id:
         return f"{session_dir} is not this session's directory"
+    if saved_watcher(session_dir) == "central":
+        # a --tick-all run that already loaded this watch would write over the Monitor's state
+        return "a central watch is running in this session; stop it, then arm with --monitor"
     return discover.monitor_refusal(session_id)
 
 
-def saved_monitor_watch(session_dir):
+def saved_watcher(session_dir):
+    """'central' or 'monitor' for this session's saved watch, or None when none is running."""
     try:
         watch = read_json(pathlib.Path(session_dir) / "watch.json")
     except (OSError, ValueError):
-        return False
-    return (isinstance(watch, dict) and watch.get("watcher") != "central"
-            and watch.get("stopped_at") is None)
+        return None
+    if not isinstance(watch, dict) or watch.get("stopped_at") is not None:
+        return None
+    return "central" if watch.get("watcher") == "central" else "monitor"
 
 
 def arm_mode(args):
-    if not (args.with_monitor or saved_monitor_watch(args.session_dir)):
+    if not (args.with_monitor or saved_watcher(args.session_dir) == "monitor"):
         print("central")
         return 0
     why = session_monitor_refusal(args.session_dir)
