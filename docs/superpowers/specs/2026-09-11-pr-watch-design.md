@@ -668,7 +668,7 @@ there only as commits.
    `gh run rerun <run_id> --failed`. Azure Pipelines:
    `PATCH _apis/build/builds/<id>/stages/<stage identifier>?api-version=7.1-preview.1`
    with `{"state": "retry", "forceRetryAllJobs": false}` for each failed
-   `Stage` record in the timeline; the stage update is a preview API and
+   or finished canceled `Stage` record in the timeline; the stage update is a preview API and
    rejects plain `7.1`. A rerun is a gated run, so with push
    serialisation on it waits the same way a push does: the check goes
    into the PR's `ci_rerun_queued`, the PR joins `push_queue`, and the

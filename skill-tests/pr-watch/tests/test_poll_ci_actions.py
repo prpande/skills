@@ -252,6 +252,14 @@ class CiRerunTests(unittest.TestCase):
             "PATCH", f"{BUILD}/stages/gated?api-version=7.1-preview.1",
             {"state": "retry", "forceRetryAllJobs": False}))
 
+    def test_azure_retries_a_finished_canceled_stage_beside_a_failed_one(self):
+        ado = FakeAdo([record("Stage", "failed", "Gated", identifier="gated"),
+                       record("Stage", "canceled", "Previews", identifier="previews"),
+                       record("Stage", "canceled", "Deploy", identifier="deploy",
+                              finished=False)])
+        self.assertEqual(poll.ci_rerun(FakeGh(), "o/r", AZURE, ORGS, ado=ado),
+                         ["stage gated", "stage previews"])
+
     def test_azure_build_with_no_failed_stage_raises_without_patching(self):
         ado = FakeAdo([record("Stage", "succeeded", "Build", identifier="build")])
         with self.assertRaises(poll.GhError):

@@ -1630,7 +1630,10 @@ def ci_rerun(gh, repo_slug, link, ado_orgs, ado=ado_request):
         return [f"run {target['run_id']}"]
     if target["platform"] == "azure-pipelines":
         build, timeline = ado_timeline(target, ado_orgs, ado)
-        stages = [r["identifier"] for r in failed_records(timeline, "Stage") if r.get("identifier")]
+        stages = [r["identifier"] for r in timeline.get("records") or []
+                  if r.get("type") == "Stage" and r.get("identifier")
+                  and (r.get("result") == "failed"
+                       or (r.get("result") == "canceled" and r.get("finishTime")))]
         if not stages:
             raise GhError(f"no failed stage to retry in build {target['build_id']}")
         for stage in stages:
