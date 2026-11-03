@@ -39,7 +39,9 @@ RECONCILE_SECONDS = 24 * 60 * 60
 TICK_EVENT_RETRY_SECONDS = 600
 QUEUE_WAIT_SECONDS = 3600
 CHECK_FIELDS = "name,state,bucket,link,workflow,completedAt"
+# GitHub rolls a CANCELLED check up as FAILURE, so a cancelled required check passes this gate.
 FAILED_ROLLUP = ("FAILURE", "ERROR")
+RED_BUCKETS = ("fail", "cancel")
 FAILED_BASE = ("failure", "error", "timed_out")
 ACTIONS_LINK = re.compile(r"^https://github\.com/[^/]+/[^/]+/actions/runs/(\d+)/job/(\d+)")
 AZURE_LINK = re.compile(
@@ -472,8 +474,8 @@ def evaluate_ci(gh, entry, node, seen, stored):
     if rollup_state(node) not in FAILED_ROLLUP:
         return Evaluation(None, stored, False)
     slug = repo_slug(entry["owner"], entry["repo"])
-    red = sorted((c for c in required_checks(gh, slug, entry["number"]) if c.get("bucket") == "fail"),
-                 key=check_key)
+    red = sorted((c for c in required_checks(gh, slug, entry["number"])
+                  if c.get("bucket") in RED_BUCKETS), key=check_key)
     if not red:
         return Evaluation(None, stored, False)
     head = node["headRefOid"]
@@ -487,7 +489,8 @@ def evaluate_ci(gh, entry, node, seen, stored):
     event = {"pr": entry_key(entry), "role": "authored", "kind": "ci-red", "head": head,
              "sig": sig_of(signature),
              "checks": [{"name": c["name"], "workflow": c.get("workflow") or "",
-                         "completed_at": c.get("completedAt")} for c in red]}
+                         "completed_at": c.get("completedAt"), "bucket": c["bucket"]}
+                        for c in red]}
     return Evaluation(event, signature, unhandled)
 
 
@@ -1627,7 +1630,10 @@ def ci_rerun(gh, repo_slug, link, ado_orgs, ado=ado_request):
         return [f"run {target['run_id']}"]
     if target["platform"] == "azure-pipelines":
         build, timeline = ado_timeline(target, ado_orgs, ado)
-        stages = [r["identifier"] for r in failed_records(timeline, "Stage") if r.get("identifier")]
+        stages = [r["identifier"] for r in timeline.get("records") or []
+                  if r.get("type") == "Stage" and r.get("identifier")
+                  and (r.get("result") == "failed"
+                       or (r.get("result") == "canceled" and r.get("finishTime")))]
         if not stages:
             raise GhError(f"no failed stage to retry in build {target['build_id']}")
         for stage in stages:
