@@ -151,7 +151,8 @@ allowlist. Deterministic: no LLM in it.
   3. For each `authored` PR whose rollup is `FAILURE` or `ERROR`, on
      every tick while it stays so: `gh pr checks <n> --required --json
      name,state,bucket,link,workflow,completedAt`, keeping the checks in
-     bucket `fail`. When any remain and the red set differs from the last
+     bucket `fail` or `cancel` (GitHub rolls a cancelled check up as
+     `FAILURE`). When any remain and the red set differs from the last
      one emitted, one `ci-red` event (3.4). Checking on every red tick
      catches a second required check failing on a head whose rollup was
      already `FAILURE`. The rollup alone is not trusted: it counts checks the branch rules do not
@@ -339,7 +340,8 @@ One JSON line per PR with actionable change:
 
 ```
 {"pr": 1411, "role": "authored", "kind": "ci-red", "head": "...",
- "checks": [{"name": "Gated / Unit Tests", "workflow": "App Gated", "completed_at": "..."}]}
+ "checks": [{"name": "Gated / Unit Tests", "workflow": "App Gated", "completed_at": "...",
+             "bucket": "fail"}]}
 ```
 
 Plus `reply` (a non-`me` comment landed on one of the user's threads on a
@@ -620,6 +622,10 @@ there only as commits.
 2. Classify each red check. The name regexes and the classes come from
    `pr-loop-lib/steps/10-ci-failure-classify.md`; the log decides when
    the name is ambiguous.
+   - Cancelled (bucket `cancel`): no log read and no class. Rerun once
+     per check per head; a second cancel escalates. A cancelled check
+     whose run or build also has a failed check is left to that one,
+     since `fail-fast` cancels a failing job's siblings.
    - Pre-existing: `on_base` is a failure. Slack note, no action.
    - Flake: the log shows an infrastructure failure (checkout, runner or
      agent lost, package feed or network fetch, provisioning timeout)
