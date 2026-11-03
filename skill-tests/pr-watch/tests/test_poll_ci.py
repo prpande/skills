@@ -9,11 +9,8 @@ from fakes import (ACTIONS, AZURE, NOW, SONAR, T0, FakeGh, HomeCase, comment, pk
                    thread, watch, write_session)
 
 
-STATE_OF = {"fail": "FAILURE", "cancel": "CANCELLED", "pending": "PENDING"}
-
-
 def check(name, bucket="fail", workflow="App Gated", done="2026-09-10T05:16:39Z", link=ACTIONS):
-    return {"name": name, "state": STATE_OF.get(bucket, "SUCCESS"),
+    return {"name": name, "state": "FAILURE" if bucket == "fail" else "SUCCESS",
             "bucket": bucket, "link": link, "workflow": workflow, "completedAt": done}
 
 
