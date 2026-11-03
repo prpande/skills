@@ -472,6 +472,14 @@ def sig_of(signature):
     return hashlib.sha1(signature.encode()).hexdigest()[:12]
 
 
+def is_new(prefix, items, stored):
+    """False when `stored`, a `prefix` signature, already holds every one of `items`."""
+    if not (stored or "").startswith(prefix):
+        return True
+    known = set(stored[len(prefix):].split(","))
+    return any(item not in known for item in items)
+
+
 def evaluate_ci(gh, entry, node, seen, stored):
     """`seen` dedupes (empty on a forced pass); `stored` is kept when nothing is red."""
     if rollup_state(node) not in FAILED_ROLLUP:
@@ -485,9 +493,10 @@ def evaluate_ci(gh, entry, node, seen, stored):
     handled = set(entry.get("ci_handled") or [])
     unhandled = any(f"{head}|{c.get('workflow') or ''}|{c['name']}|{c.get('completedAt') or ''}"
                     not in handled for c in red)
-    signature = f"ci:{head}:" + ",".join(
-        f"{check_key(c)}|{c.get('completedAt') or ''}" for c in red)
-    if signature == seen.get("last_ci_signature"):
+    prefix = f"ci:{head}:"
+    items = [f"{check_key(c)}|{c.get('completedAt') or ''}" for c in red]
+    signature = prefix + ",".join(items)
+    if not is_new(prefix, items, seen.get("last_ci_signature")):
         return Evaluation(None, signature, unhandled)
     event = {"pr": entry_key(entry), "role": "authored", "kind": "ci-red", "head": head,
              "sig": sig_of(signature),
@@ -503,7 +512,7 @@ def evaluate_authored(view, pr, entry, prev):
     if not ids:
         return Evaluation(None, "", False)
     signature = "pending:" + ",".join(ids)
-    if signature == prev.get("last_signature"):
+    if not is_new("pending:", ids, prev.get("last_signature")):
         return Evaluation(None, signature, True)
     event = {"pr": entry_key(entry), "role": "authored", "kind": "pending",
              "sig": sig_of(signature), "threads": [t["id"] for t, _ in threads],
@@ -543,11 +552,13 @@ def evaluate_reviewed(view, pr, entry, prev, compare):
     reply_ids = sorted(c["id"] for c in replies)
     author_replied = any((c["author"] or {}).get("login") == author for c in replies)
     if old and old != new:
-        signature = f"head:{new}:" + ",".join(reply_ids)
+        prefix = f"head:{new}:"
+        signature = prefix + ",".join(reply_ids)
         files = set(compare(old, new))
         touches = compare_capped(files) or any(t["path"] in files for t in threads)
         review_pending = touches or author_replied or not answered
-        if signature == prev.get("last_signature") or not (touches or author_replied):
+        if (not is_new(prefix, reply_ids, prev.get("last_signature"))
+                or not (touches or author_replied)):
             return Evaluation(None, signature, review_pending)
         event = {"pr": key, "role": "reviewed", "kind": "head-moved",
                  "sig": sig_of(signature), "old_head": old, "new_head": new, "touches_my_findings": touches,
@@ -557,7 +568,7 @@ def evaluate_reviewed(view, pr, entry, prev, compare):
     if not replies:
         return Evaluation(None, "", review_pending)
     signature = "reply:" + ",".join(reply_ids)
-    if signature == prev.get("last_signature"):
+    if not is_new("reply:", reply_ids, prev.get("last_signature")):
         return Evaluation(None, signature, review_pending)
     event = {"pr": key, "role": "reviewed", "kind": "reply",
              "sig": sig_of(signature), "threads": [tid for tid, thread_replies in replied.items() if thread_replies]}

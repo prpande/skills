@@ -159,6 +159,32 @@ class CiTickTests(unittest.TestCase):
         self.red()
         self.assertEqual(self.tick(), [])
 
+    def two_red(self, unit="fail", integration="fail"):
+        self.gh.rollup[pk(1411)] = "FAILURE"
+        self.gh.checks[pk(1411)] = [check("Gated / Unit Tests", bucket=unit),
+                                    check("Gated / Integration Tests", bucket=integration)]
+
+    def test_one_of_two_red_checks_going_green_emits_nothing(self):
+        self.two_red()
+        self.assertEqual(len(self.tick()[0]["checks"]), 2)
+        self.two_red(unit="pass")
+        self.assertEqual(self.tick(), [])
+
+    def test_one_red_check_going_green_as_another_fails_emits(self):
+        self.two_red(integration="pass")
+        self.tick()
+        self.two_red(unit="pass")
+        self.assertEqual([c["name"] for c in self.tick()[0]["checks"]],
+                         ["Gated / Integration Tests"])
+
+    def test_a_forced_pass_after_a_red_check_went_green_re_emits_the_rest(self):
+        self.two_red()
+        self.tick()
+        self.two_red(unit="pass")
+        self.tick()
+        self.assertEqual([[c["name"] for c in e["checks"]] for e in self.tick(force=True)],
+                         [["Gated / Integration Tests"]])
+
     def test_one_name_in_two_workflows_is_two_checks(self):
         self.gh.rollup[pk(1411)] = "FAILURE"
         self.gh.checks[pk(1411)] = [check("Gated / Unit Tests", workflow="Sonarqube"),
