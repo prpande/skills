@@ -476,8 +476,9 @@ def is_new(prefix, items, stored):
     """False when `stored`, a `prefix` signature, already holds every one of `items`."""
     if not (stored or "").startswith(prefix):
         return True
-    known = set(stored[len(prefix):].split(","))
-    return any(item not in known for item in items)
+    # Matched whole between commas, since a check name can itself hold a comma.
+    known = f",{stored[len(prefix):]},"
+    return any(f",{item}," not in known for item in items)
 
 
 def evaluate_ci(gh, entry, node, seen, stored):

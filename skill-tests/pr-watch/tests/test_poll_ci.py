@@ -185,6 +185,15 @@ class CiTickTests(unittest.TestCase):
         self.assertEqual([[c["name"] for c in e["checks"]] for e in self.tick(force=True)],
                          [["Gated / Integration Tests"]])
 
+    def test_check_names_with_commas_are_matched_whole(self):
+        self.gh.rollup[pk(1411)] = "FAILURE"
+        matrix = [check("test (ubuntu, 3.11)"), check("test (windows, 3.12)")]
+        self.gh.checks[pk(1411)] = list(matrix)
+        self.assertEqual(len(self.tick()), 1)
+        self.assertEqual(self.tick(), [])
+        self.gh.checks[pk(1411)] = matrix[:1]
+        self.assertEqual(self.tick(), [])
+
     def test_one_name_in_two_workflows_is_two_checks(self):
         self.gh.rollup[pk(1411)] = "FAILURE"
         self.gh.checks[pk(1411)] = [check("Gated / Unit Tests", workflow="Sonarqube"),
