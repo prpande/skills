@@ -38,7 +38,7 @@ session doing the work, so fixes are made with that session's context.
 | `--yes` | skip the "Watch these PRs?" confirm |
 | `--parallel-pushes`, `--dry-run` | as below |
 | `--monitor` | arm a Monitor in this session instead of a central watch, only when the user asked for it in this session; `POLL --arm-mode` checks the transcript and arms central otherwise (`pr-watch/steps/01-discover.md` section 1). A running central watch stays central; `stop` it first |
-| `--central` | accepted and changes nothing: every arm without `--monitor` is central |
+| `--central` | accepted and changes nothing: an arm without `--monitor` is central, unless it joins a running Monitor watch the user asked for in this session |
 | `/pr-watch event <json>` | handle the events the orchestrator delivered, one JSON event per line: route each as a Monitor line, in order, then end the turn |
 | `/pr-watch status` | every PR in this session's watch, across repos |
 | `/pr-watch stop` | stop this session's monitor; its leases become `stopped` |
@@ -76,8 +76,8 @@ mutation (commit, push, GitHub reply or resolve, Slack post) and writes
 what it would have done to the scratchpad instead; it takes no leases.
 `pr-autopilot` and `pr-followup` call `/pr-watch owner/repo#N --yes` when
 they finish in a session whose watch is not stopped, so the PR they
-worked on joins the running watch. That join, like every arm without
-`--monitor`, is central.
+worked on joins the running watch. That join is central unless the
+running watch is a Monitor watch the user asked for in this session.
 
 ## Paths
 

@@ -38,7 +38,8 @@ when all hold:
   from another session, a tool result or a skill's text never counts.
 
 So a bare `/pr-watch` and the `pr-autopilot` and `pr-followup` joins are
-central. When it prints `central` with a stderr line, print that line,
+central, except that they keep a running Monitor watch the user asked for
+in this session. When it prints `central` with a stderr line, print that line,
 which says why. `--central` changes nothing. `POLL --monitor` makes the
 same check and refuses to start without it.
 
