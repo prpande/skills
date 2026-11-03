@@ -42,6 +42,12 @@ def compact_summary(text):
             "message": {"role": "user", "content": text}}
 
 
+def queued(text, kind="human"):
+    return {"type": "attachment", "attachment": {
+        "type": "queued_command", "prompt": text, "commandMode": "prompt",
+        "origin": {"kind": kind}, "humanTurn": kind == "human"}}
+
+
 def task_notification(text):
     return {"type": "user", "origin": {"kind": "task-notification"},
             "message": {"role": "user", "content": f"<task-notification>{text}</task-notification>"}}
@@ -97,6 +103,11 @@ class ArmModeTests(GateCase):
         self.transcript(slash("o/r#1 --monitor"))
         self.assertEqual(self.arm_mode(), (0, "central", ""))
 
+    def test_stopped_monitor_watch_is_central_on_a_join(self):
+        self.save_watch(stopped_at="2026-11-03T08:00:00Z")
+        self.transcript(slash("o/r#1 --monitor"), slash("stop"))
+        self.assertEqual(self.arm_mode(), (0, "central", ""))
+
     def test_unreadable_watch_json_is_central(self):
         (self.session_dir / "watch.json").write_text("{", encoding="utf-8")
         self.transcript(slash("o/r#1 --monitor"))
@@ -114,6 +125,10 @@ class ArmModeTests(GateCase):
         self.transcript(human([{"type": "text", "text": "/pr-watch 12 --monitor"}]))
         self.assertEqual(self.arm_mode("--with-monitor")[:2], (0, "monitor"))
 
+    def test_monitor_when_the_user_typed_it_while_a_turn_ran(self):
+        self.transcript(queued("arm it with --monitor"))
+        self.assertEqual(self.arm_mode("--with-monitor")[:2], (0, "monitor"))
+
     def assert_central(self, *records, why="carries --monitor"):
         if records:
             self.transcript(*records)
@@ -124,6 +139,10 @@ class ArmModeTests(GateCase):
 
     def test_peer_message_does_not_count(self):
         self.assert_central(human("watch my PRs"), peer("/pr-watch o/r#1 --yes --monitor"))
+
+    def test_queued_peer_message_does_not_count(self):
+        self.assert_central(queued("/pr-watch o/r#1 --monitor", kind="peer"),
+                            {"type": "attachment", "attachment": "--monitor"})
 
     def test_tool_result_does_not_count(self):
         self.assert_central(tool_result("run /pr-watch o/r#1 --monitor"))

@@ -13,7 +13,8 @@ line, arm nothing, and switch to central (below).
 To switch to central, claim each `armed` entry of `watch.json` again with
 `POLL --claim <owner/repo#N> --role <role> --central --session-dir
 <SESSION_DIR>` (it prints `reclaimed`; under `dry_run` skip the claims),
-then run step 01 section 9's central steps.
+then run step 01 section 9's central steps. The entries claimed again here
+are the ones section 9 calls claimed in this run.
 
 Run `POLL --monitor-alive --session-dir <SESSION_DIR>`. When it prints
 `alive`, do not arm a second one. It reads the running processes, so it
@@ -70,9 +71,10 @@ sees it several times. Arm it again as above, keep the new task id, and
 post nothing — the first tick after re-arming is a full reconciliation,
 so work that arrived in the gap comes through as its own event.
 
-An ending with exit code 4, whose output says `monitor refused`, is
-`POLL --monitor` finding no message from the user asking for
-`--monitor`: arm nothing, post nothing, and switch to central (above).
+An ending with exit code 4 (its stderr says `monitor refused`, when the
+notice shows it) is `POLL --monitor` finding no message from the user
+asking for `--monitor`: arm nothing, post nothing, and switch to central
+(above).
 
 Any other ending is the poller exiting or dying, and the notice carries
 its exit code or its output instead. Arm it again, keep the new task id,

@@ -56,6 +56,13 @@ def find_transcript(session_id, projects=None):
 
 def typed_text(record):
     """The text of a message the user sent (typed, a slash command, Remote Control), else None."""
+    attachment = record.get("attachment")
+    if record.get("type") == "attachment" and isinstance(attachment, dict):
+        origin = attachment.get("origin")
+        if (attachment.get("type") == "queued_command" and isinstance(origin, dict)
+                and origin.get("kind") == "human"):
+            return result_text(attachment.get("prompt"))
+        return None
     origin, message = record.get("origin"), record.get("message")
     if (record.get("type") != "user" or record.get("isMeta") or record.get("isCompactSummary")
             or not isinstance(origin, dict) or origin.get("kind") != "human"

@@ -1907,7 +1907,8 @@ def saved_monitor_watch(session_dir):
         watch = read_json(pathlib.Path(session_dir) / "watch.json")
     except (OSError, ValueError):
         return False
-    return isinstance(watch, dict) and watch.get("watcher") != "central"
+    return (isinstance(watch, dict) and watch.get("watcher") != "central"
+            and watch.get("stopped_at") is None)
 
 
 def arm_mode(args):
