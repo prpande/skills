@@ -11,9 +11,9 @@ import discover
 SID = "0b9c2d4e-1111-2222-3333-444455556666"
 
 
-def human(text):
+def human(content):
     return {"type": "user", "origin": {"kind": "human"}, "promptSource": "typed",
-            "message": {"role": "user", "content": text}}
+            "message": {"role": "user", "content": content}}
 
 
 def slash(args):
@@ -70,20 +70,15 @@ class GateCase(HomeCase):
 
 
 class ArmModeTests(GateCase):
-    def test_plain_arm_is_central(self):
-        (self.session_dir / "watch.json").unlink()
-        self.transcript(human("/pr-watch o/r#1"))
-        self.assertEqual(self.arm_mode(), (0, "central", ""))
-
-    def test_plain_first_arm_is_central_even_after_an_earlier_ask(self):
-        (self.session_dir / "watch.json").unlink()
-        self.transcript(slash("o/r#1 --monitor"))
-        self.assertEqual(self.arm_mode(), (0, "central", ""))
-
     def save_watch(self, **fields):
         path = self.session_dir / "watch.json"
         saved = dict(json.loads(path.read_text(encoding="utf-8")), **fields)
         path.write_text(json.dumps(saved), encoding="utf-8")
+
+    def test_plain_arm_is_central_even_after_an_earlier_ask(self):
+        (self.session_dir / "watch.json").unlink()
+        self.transcript(slash("o/r#1 --monitor"))
+        self.assertEqual(self.arm_mode(), (0, "central", ""))
 
     def test_saved_monitor_watch_resumed_without_the_flag_is_central(self):
         saved = json.loads((self.session_dir / "watch.json").read_text(encoding="utf-8"))
@@ -116,9 +111,7 @@ class ArmModeTests(GateCase):
         self.assertEqual(self.arm_mode("--with-monitor")[:2], (0, "monitor"))
 
     def test_monitor_when_the_text_is_a_content_block(self):
-        record = human("")
-        record["message"]["content"] = [{"type": "text", "text": "/pr-watch 12 --monitor"}]
-        self.transcript(record)
+        self.transcript(human([{"type": "text", "text": "/pr-watch 12 --monitor"}]))
         self.assertEqual(self.arm_mode("--with-monitor")[:2], (0, "monitor"))
 
     def assert_central(self, *records, why="carries --monitor"):

@@ -1891,7 +1891,7 @@ def migrate_mode(args):
     return 0
 
 
-def monitor_refusal(session_dir):
+def session_monitor_refusal(session_dir):
     """None when this session's user asked for --monitor and session_dir is this session's."""
     import discover
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
@@ -1914,7 +1914,7 @@ def arm_mode(args):
     if not (args.with_monitor or saved_monitor_watch(args.session_dir)):
         print("central")
         return 0
-    why = monitor_refusal(args.session_dir)
+    why = session_monitor_refusal(args.session_dir)
     if why:
         print(f"pr-watch: arming central: {why}", file=sys.stderr)
     print("central" if why else "monitor")
@@ -1943,7 +1943,7 @@ def run_mode(args, gh):
         print(json.dumps(stats), flush=True)
         return 0
     if args.monitor:
-        why = monitor_refusal(args.session_dir)
+        why = session_monitor_refusal(args.session_dir)
         if why:
             print(f"pr-watch: monitor refused, arm central instead: {why}", file=sys.stderr)
             return MONITOR_REFUSED_EXIT
