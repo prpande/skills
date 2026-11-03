@@ -10,14 +10,16 @@ from fakes import (ACTIONS, NOW, SELF, T0, T1, FakeGh, HomeCase, claim_leases, c
                    pull, review, rk, thread, watch, write_session)
 
 
-def authored_pr(updated="2026-09-11T10:00:00Z", extra=(), state="OPEN"):
-    return pull(1411, threads=[thread("T1", [comment("c1", "reviewer-a", T0), *extra])],
+def authored_pr(updated="2026-09-11T10:00:00Z", extra=(), state="OPEN", more_threads=()):
+    return pull(1411, threads=[thread("T1", [comment("c1", "reviewer-a", T0), *extra]),
+                               *more_threads],
                 updated=updated, state=state)
 
 
-def reviewed_pr(head="h1", replies=(), updated="2026-09-11T10:00:00Z"):
+def reviewed_pr(head="h1", replies=(), updated="2026-09-11T10:00:00Z", more_threads=()):
     return pull(1420, author_login="author-b", head=head, updated=updated,
-                threads=[thread("T9", [comment("m1", SELF, T0), *replies], path="src/B.cs")],
+                threads=[thread("T9", [comment("m1", SELF, T0), *replies], path="src/B.cs"),
+                         *more_threads],
                 reviews=[review("r1", SELF, T0, oid="h1")])
 
 
@@ -119,9 +121,8 @@ class AuthoredTickTests(unittest.TestCase):
 
 
 def two_thread_pr(updated="2026-09-11T10:00:00Z", extra=()):
-    return pull(1411, updated=updated, threads=[
-        thread("T1", [comment("c1", "reviewer-a", T0)]),
-        thread("T2", [comment("c2", "reviewer-a", T0)]), *extra])
+    return authored_pr(updated=updated,
+                       more_threads=[thread("T2", [comment("c2", "reviewer-a", T0)]), *extra])
 
 
 class PendingSetChangeTests(unittest.TestCase):
@@ -143,13 +144,9 @@ class PendingSetChangeTests(unittest.TestCase):
         self.watch["prs"][rk(1411)]["settled_ids"] = ["c1"]
         self.gh.prs[pk(1411)] = two_thread_pr(updated="2026-09-11T11:00:00Z", extra=extra)
 
-    def test_a_shrinking_set_emits_nothing(self):
+    def test_a_shrinking_set_emits_nothing_and_stores_the_smaller_set(self):
         self.handle_c1()
         self.assertEqual(self.tick(), [])
-
-    def test_a_shrinking_set_stores_the_smaller_set(self):
-        self.handle_c1()
-        self.tick()
         self.assertEqual(self.poller["prs"][rk(1411)]["last_signature"], "pending:c2")
 
     def test_growth_after_a_shrink_emits_the_current_set(self):
@@ -182,15 +179,16 @@ class PendingSetChangeTests(unittest.TestCase):
         self.tick()
         self.assertEqual(self.threads(self.tick(force=True)), [["T2"]])
 
-    def test_a_poller_entry_without_a_signature_emits_as_before(self):
-        self.poller["prs"][rk(1411)].pop("last_signature")
-        self.handle_c1()
-        self.assertEqual(self.threads(self.tick()), [["T2"]])
-
-    def test_a_signature_of_another_form_emits_as_before(self):
-        self.poller["prs"][rk(1411)]["last_signature"] = "reply:c1,c2"
-        self.handle_c1()
-        self.assertEqual(self.threads(self.tick()), [["T2"]])
+    def test_a_stored_signature_that_is_missing_or_of_another_form_emits_as_before(self):
+        for stored in (None, "reply:c1,c2"):
+            with self.subTest(stored=stored):
+                self.setUp()
+                entry = self.poller["prs"][rk(1411)]
+                entry.pop("last_signature")
+                if stored:
+                    entry["last_signature"] = stored
+                self.handle_c1()
+                self.assertEqual(self.threads(self.tick()), [["T2"]])
 
 
 class PushQueueTickTests(unittest.TestCase):
@@ -312,12 +310,11 @@ class ReviewedTickTests(unittest.TestCase):
         self.assertEqual(self.tick(), [])
 
     def two_replied(self, head="h1", mine_after=(), updated="2026-09-11T10:00:00Z"):
-        return pull(1420, author_login="author-b", head=head, updated=updated, threads=[
-            thread("T9", [comment("m1", SELF, T0), comment("a1", "author-b", T1), *mine_after],
-                   path="src/B.cs"),
-            thread("T8", [comment("m2", SELF, T0), comment("a2", "author-b", T1)],
-                   path="src/C.cs")],
-            reviews=[review("r1", SELF, T0, oid="h1")])
+        return reviewed_pr(head=head, updated=updated,
+                           replies=[comment("a1", "author-b", T1), *mine_after],
+                           more_threads=[thread("T8", [comment("m2", SELF, T0),
+                                                       comment("a2", "author-b", T1)],
+                                                path="src/C.cs")])
 
     def answer_one(self, head, first_kind):
         self.gh.compare["h1...h2"] = ["src/B.cs"]
