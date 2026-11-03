@@ -97,8 +97,9 @@ Flags:
    Anything other than `join` (a missing or unreadable `watch.json`, `dry_run`
    true, `stopped_at` set, or a crash) means do nothing. On `join`, invoke the
    `pr-watch` skill with `owner/repo#N --yes` for this PR, taking owner and repo
-   from its URL. An idle watch with every PR closed still takes it. If the join
-   fails, report the failure in one line and finish; it never fails this run.
+   from its URL, and never `--monitor` (only the user adds it). An idle watch
+   with every PR closed still takes it. If the join fails, report the failure
+   in one line and finish; it never fails this run.
    Then end the skill.
 
 ## Hard rules

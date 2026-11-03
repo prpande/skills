@@ -39,6 +39,7 @@ CD_COMMANDS = {"cd", "chdir", "pushd", "set-location", "sl", "push-location"}
 MSYS_DRIVE = re.compile(r"^/([a-zA-Z])(?=/|$)")
 ABSOLUTE = re.compile(r"^(?:[a-zA-Z]:)?[/\\]")
 WINDOWS = os.name == "nt"
+MONITOR_FLAG = re.compile(r"(?<![\w-])--monitor(?![\w-])")
 
 
 def projects_root():
@@ -53,9 +54,47 @@ def find_transcript(session_id, projects=None):
     return max(found, key=lambda p: p.stat().st_mtime) if found else None
 
 
-def read_records(path):
+def typed_text(record):
+    """The text of a message the user sent (typed, a slash command, Remote Control), else None."""
+    attachment = record.get("attachment")
+    if record.get("type") == "attachment" and isinstance(attachment, dict):
+        origin = attachment.get("origin")
+        if (attachment.get("type") == "queued_command" and isinstance(origin, dict)
+                and origin.get("kind") == "human"):
+            return result_text(attachment.get("prompt"))
+        return None
+    origin, message = record.get("origin"), record.get("message")
+    if (record.get("type") != "user" or record.get("isMeta") or record.get("isCompactSummary")
+            or not isinstance(origin, dict) or origin.get("kind") != "human"
+            or not isinstance(message, dict)):
+        return None
+    content = message.get("content")
+    if isinstance(content, list) and any(
+            isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
+        return None
+    return result_text(content)
+
+
+def monitor_refusal(session_id, projects=None):
+    """None when a message the user sent in this session carries --monitor, else why not."""
+    try:
+        path = find_transcript(session_id, projects)
+        if path is None:
+            return f"no transcript for session {session_id}"
+        for record in read_records(path, containing="--monitor"):
+            if MONITOR_FLAG.search(typed_text(record) or ""):
+                return None
+    except OSError as exc:
+        return f"transcript unreadable: {exc}"
+    return "no message the user sent in this session carries --monitor"
+
+
+def read_records(path, containing=None):
+    """The JSON object on each line of path; with containing, only lines holding that text."""
     with open(path, encoding="utf-8", errors="replace") as handle:
         for line in handle:
+            if containing is not None and containing not in line:
+                continue
             try:
                 record = json.loads(line)
             except ValueError:

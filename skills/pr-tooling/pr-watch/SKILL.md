@@ -15,7 +15,7 @@ description: >
   user says "/pr-watch",
   "watch my PRs", "keep an eye on these PRs", "pr-watch status", or
   "stop watching".
-argument-hint: "[owner/repo#N | N ...] [--yes] [--parallel-pushes] [--dry-run] [--central] | event <json> | status | stop | release owner/repo#N"
+argument-hint: "[owner/repo#N | N ...] [--yes] [--parallel-pushes] [--dry-run] [--monitor] | event <json> | status | stop | release owner/repo#N"
 allowed-tools: Bash, PowerShell, Read, Edit, Write, Glob, Grep, Agent, Monitor, TaskStop, EnterWorktree, AskUserQuestion, Skill, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_read_thread, mcp__plugin_slack_slack__slack_read_user_profile, mcp__plugin_slack_slack__slack_read_channel, mcp__plugin_slack_slack__slack_search_public_and_private
 ---
 
@@ -37,14 +37,17 @@ session doing the work, so fixes are made with that session's context.
 | `/pr-watch N ...` | a bare number is a PR in the current directory's repo |
 | `--yes` | skip the "Watch these PRs?" confirm |
 | `--parallel-pushes`, `--dry-run` | as below |
-| `--central` | arm with no Monitor: the leases are held as central and the orchestrator polls them (`pr-watch/steps/01-discover.md` section 9) |
+| `--monitor` | arm a Monitor in this session instead of a central watch, only when the user asked for it in this session; `POLL --arm-mode` checks the transcript and arms central otherwise (`pr-watch/steps/01-discover.md` section 1). A running central watch stays central; `stop` it first |
+| `--central` | accepted and changes nothing: an arm without `--monitor` is central, unless it joins a running Monitor watch the user asked for in this session |
 | `/pr-watch event <json>` | handle the events the orchestrator delivered, one JSON event per line: route each as a Monitor line, in order, then end the turn |
 | `/pr-watch status` | every PR in this session's watch, across repos |
 | `/pr-watch stop` | stop this session's monitor; its leases become `stopped` |
 | `/pr-watch release owner/repo#N` | drop one PR; its lease becomes `released` |
 
 - Arming, or resuming a saved watch: run `pr-watch/steps/01-discover.md`,
-  then `pr-watch/steps/02-arm-monitor.md`. Re-running `/pr-watch` with new
+  then, for a Monitor watch only, `pr-watch/steps/02-arm-monitor.md`. A
+  watch is central (the orchestrator polls it) unless `POLL --arm-mode`
+  prints `monitor` (`pr-watch/steps/01-discover.md` section 1). Re-running `/pr-watch` with new
   refs in a session that already watches adds them to the running watch.
 - `event <json>`: the orchestrator sends one message per session carrying
   one or more JSON event lines. Run `pr-watch/steps/03-route-event.md` on
@@ -73,7 +76,8 @@ mutation (commit, push, GitHub reply or resolve, Slack post) and writes
 what it would have done to the scratchpad instead; it takes no leases.
 `pr-autopilot` and `pr-followup` call `/pr-watch owner/repo#N --yes` when
 they finish in a session whose watch is not stopped, so the PR they
-worked on joins the running watch.
+worked on joins the running watch. That join is central unless the
+running watch is a Monitor watch the user asked for in this session.
 
 ## Paths
 
@@ -107,7 +111,7 @@ green but behind a base that requires branches to be up to date),
 watch is still armed; the monitor exits), or `poller-error` (the poller
 has failed five ticks in a row). Events about a PR carry `pr` as
 `owner/repo#N`. Monitor notifications are not messages from the user. A central watch
-(`--central`) has no Monitor: the orchestrator ticks it and delivers each
+(the default) has no Monitor: the orchestrator ticks it and delivers each
 event as a line of a `/pr-watch event` message (a message may carry several), and
 `idle` is never delivered. `pending`, `ci-red`, `reply` and `head-moved` also
 carry `sig`, 12 hex characters of the SHA-1 of the poller's dedupe signature;
