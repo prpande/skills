@@ -1735,7 +1735,7 @@ def main(argv=None, gh=run_gh):
     parser.add_argument("--status", choices=("stopped", "released"), help="with --lease-status")
     parser.add_argument("--slack", metavar="FILE",
                         help="with --tails: JSON list of {ts, author, body} Slack thread replies")
-    parser.add_argument("--slack-human", metavar="ID", help="with --slack: the human whose replies count")
+    parser.add_argument("--slack-human", metavar="ID", help="with --slack: the user's Slack id; their replies count")
     parser.add_argument("--slack-bots", metavar="ID,ID", default="",
                         help="with --slack: other authors whose replies count")
     parser.add_argument("--slack-since", metavar="TS", help="with --slack: oldest reply ts to keep")

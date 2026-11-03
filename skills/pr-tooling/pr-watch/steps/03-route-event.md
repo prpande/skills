@@ -247,9 +247,11 @@ Steps 3 to 6 below say which of section A's steps apply.
    reason "Slack thread unreadable") and stop. Never fall back to GitHub.
 3. Write every reply of the thread, unfiltered, as `[{"ts": "<ts>",
    "author": "<Slack user id>", "body": "<text>", "bot": <true|false>}]`
-   to `<SESSION_DIR>/slack-<reply_ts>.json`. `bot` is required: true when
-   the read marks the author as a bot or an app, otherwise false. It
-   sets the record's `author_type`. Do not filter by hand.
+   to `<SESSION_DIR>/slack-<reply_ts>.json`. `bot` is required. It is
+   true when the read's `From:` line gives a `botuser-…@slack-bots.com`
+   address (ask-kai, the Claude app), false when it gives a person's
+   address, and true when the line shows neither. It sets the record's
+   `author_type`. Do not filter by hand.
 4. Run `POLL --tails <key> --slack <SESSION_DIR>/slack-<reply_ts>.json
    --slack-human <event human> --slack-bots <event bots, comma-separated;
    omit the flag when `bots` is empty>
