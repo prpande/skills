@@ -218,6 +218,13 @@ class SlackFilterTests(unittest.TestCase):
                          self.reply("1793292270.1", "UBOT0001")])
         self.assertEqual(got, ["1793292269.1", "1793292270.1"])
 
+    def test_praty_is_typed_a_person_even_when_the_read_flagged_a_bot(self):
+        praty = {**self.reply("1793292268.1"), "bot": True}
+        kai = {**self.reply("1793292269.1", "UBOT0001"), "bot": True}
+        got = poll.slack_replies_to_handle([praty, kai], "U07ENJD06T0", ["UBOT0001"],
+                                           "1793292267.000000")
+        self.assertEqual([r["bot"] for r in got], [False, True])
+
     def test_replies_older_than_since_are_dropped(self):
         got = self.keep([self.reply("1793292266.9"), self.reply("1793292267.0")])
         self.assertEqual(got, ["1793292267.0"])

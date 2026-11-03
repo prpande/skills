@@ -191,7 +191,7 @@ def load_slack(path):
     for reply in replies:
         if (not isinstance(reply, dict)
                 or not all(isinstance(reply.get(k), str) for k in ("ts", "author", "body"))):
-            raise ValueError(f"{path}: every reply needs string ts, author and body")
+            raise ValueError(f"{path}: every reply needs string ts, author and body, and bool bot")
         if not SLACK_TS.fullmatch(reply["ts"]):
             raise ValueError(f"{path}: {reply['ts']!r} is not a Slack ts")
         if not isinstance(reply.get("bot"), bool):
@@ -206,7 +206,7 @@ def is_own_slack_post(body):
 def slack_replies_to_handle(replies, human, bots, since):
     since = float(since)
     allowed = {human, *bots}
-    return [r for r in replies
+    return [dict(r, bot=False) if r["author"] == human else r for r in replies
             if r["author"] in allowed and float(r["ts"]) >= since
             and not is_own_slack_post(r["body"])]
 
@@ -1734,8 +1734,9 @@ def main(argv=None, gh=run_gh):
                         help="with --claim: the user named this PR")
     parser.add_argument("--status", choices=("stopped", "released"), help="with --lease-status")
     parser.add_argument("--slack", metavar="FILE",
-                        help="with --tails: JSON list of {ts, author, body} Slack thread replies")
-    parser.add_argument("--slack-human", metavar="ID", help="with --slack: the user's Slack id; their replies count")
+                        help="with --tails: JSON list of {ts, author, body, bot} Slack thread replies")
+    parser.add_argument("--slack-human", metavar="ID",
+                        help="with --slack: the user's Slack id; their replies count and are typed User")
     parser.add_argument("--slack-bots", metavar="ID,ID", default="",
                         help="with --slack: other authors whose replies count")
     parser.add_argument("--slack-since", metavar="TS", help="with --slack: oldest reply ts to keep")

@@ -233,9 +233,9 @@ behind it, so it cannot merge. The session brings the branch up to date.
 ## I. Slack thread reply
 
 Raised for an `authored` PR when anyone other than this session or the
-Claude-in-Slack app replied in the PR's Slack thread: praty, a review
+Claude-in-Slack app replied in the PR's Slack thread: the user, a review
 bot such as ask-kai, or a colleague. The event carries `thread_ts`,
-`reply_ts`, `human` (praty's Slack id) and `bots` (the Slack ids of the
+`reply_ts`, `human` (the user's Slack id) and `bots` (the Slack ids of the
 thread's other new authors, people included), no text.
 Steps 3 to 6 below say which of section A's steps apply.
 
@@ -249,9 +249,13 @@ Steps 3 to 6 below say which of section A's steps apply.
    "author": "<Slack user id>", "body": "<text>", "bot": <true|false>}]`
    to `<SESSION_DIR>/slack-<reply_ts>.json`. `bot` is required. It is
    true when the read's `From:` line gives a `botuser-…@slack-bots.com`
-   address (ask-kai, the Claude app), false when it gives a person's
-   address, and true when the line shows neither. It sets the record's
-   `author_type`. Do not filter by hand.
+   address (ask-kai, the Claude app), and false when it gives a person's
+   address. When the line shows neither, read the author with
+   `slack_read_user_profile`: a bot profile is true, a person's false.
+   If that does not settle it either, write true. The poller types
+   the user's replies `User` whatever the flag says, and anyone else typed a
+   bot is escalated at the fix-push cap, not dropped. The flag sets the
+   record's `author_type`. Do not filter by hand.
 4. Run `POLL --tails <key> --slack <SESSION_DIR>/slack-<reply_ts>.json
    --slack-human <event human> --slack-bots <event bots, comma-separated;
    omit the flag when `bots` is empty>
