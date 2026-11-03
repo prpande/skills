@@ -251,11 +251,15 @@ Steps 3 to 6 below say which of section A's steps apply.
    true when the read's `From:` line gives a `botuser-…@slack-bots.com`
    address (ask-kai, the Claude app), and false when it gives a person's
    address. When the line shows neither, read the author with
-   `slack_read_user_profile`: a bot profile is true, a person's false.
-   If that does not settle it either, write true. The poller types
-   the user's replies `User` whatever the flag says, and anyone else typed a
-   bot is escalated at the fix-push cap, not dropped. The flag sets the
-   record's `author_type`. Do not filter by hand.
+   `mcp__plugin_slack_slack__slack_read_user_profile`: a bot profile is
+   true, a person's false. The flag sets the record's `author_type`; the
+   poller types the user's replies `User` whatever it says. A reply at or
+   after the event's `reply_ts`, not by the user, whose author neither
+   check settles is left out of the file: escalate it ("needs you, no
+   comment", reason "cannot tell whether a person or a bot wrote this
+   Slack reply") and set `handled_top_level_ids["slack:<ts>"]` to
+   `escalated`. Any other reply whose author is unsettled is written
+   true. Leave nothing else out; the poller does the filtering.
 4. Run `POLL --tails <key> --slack <SESSION_DIR>/slack-<reply_ts>.json
    --slack-human <event human> --slack-bots <event bots, comma-separated;
    omit the flag when `bots` is empty>
@@ -271,7 +275,11 @@ Steps 3 to 6 below say which of section A's steps apply.
 6. Section A steps 3 to 6 apply to the records (untrusted wrapping, Filter
    B, the escalated check, Filter C), then dispatch them through
    `pr-watch/steps/04-fix-path.md`; section A step 7 (thread-only) does not
-   apply. A question or a no-change reply gets the verdict `replied`.
+   apply, but its one-round rule does: a `User` record whose author is not
+   the event's `human`, posted after a reply of this session's in the
+   thread with no reply by the user in between, is not dispatched.
+   Escalate it with reason "reply to our reply" and set
+   `handled_top_level_ids["slack:<ts>"]` to `escalated`. A question or a no-change reply gets the verdict `replied`.
    Fixes go to the PR as commits; the answer goes as a reply in the same
    Slack thread (`pr-watch/steps/04-fix-path.md` section 7, "Slack reply
    answer" in step 06). Record `handled_top_level_ids["slack:<ts>"]` for
