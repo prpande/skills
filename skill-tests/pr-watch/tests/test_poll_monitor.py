@@ -148,6 +148,7 @@ class PendingSetChangeTests(unittest.TestCase):
         self.handle_c1()
         self.assertEqual(self.tick(), [])
         self.assertEqual(self.poller["prs"][rk(1411)]["last_signature"], "pending:c2")
+        self.assertEqual(self.poller["prs"][rk(1411)]["last_items"], ["c2"])
 
     def test_growth_after_a_shrink_emits_the_current_set(self):
         self.handle_c1()
@@ -179,16 +180,28 @@ class PendingSetChangeTests(unittest.TestCase):
         self.tick()
         self.assertEqual(self.threads(self.tick(force=True)), [["T2"]])
 
-    def test_a_stored_signature_that_is_missing_or_of_another_form_emits_as_before(self):
-        for stored in (None, "reply:c1,c2"):
+    def test_state_from_an_older_poller_emits_on_any_signature_change(self):
+        for stored in (None, "pending:c1,c2", "reply:c1,c2"):
             with self.subTest(stored=stored):
                 self.setUp()
                 entry = self.poller["prs"][rk(1411)]
+                entry.pop("last_items")
                 entry.pop("last_signature")
                 if stored:
                     entry["last_signature"] = stored
                 self.handle_c1()
                 self.assertEqual(self.threads(self.tick()), [["T2"]])
+
+    def test_state_from_an_older_poller_with_an_unchanged_set_emits_nothing(self):
+        self.poller["prs"][rk(1411)].pop("last_items")
+        self.gh.prs[pk(1411)] = two_thread_pr(updated="2026-09-11T11:00:00Z")
+        self.assertEqual(self.tick(), [])
+        self.assertEqual(self.poller["prs"][rk(1411)]["last_items"], ["c1", "c2"])
+
+    def test_a_signature_of_another_kind_emits_even_with_the_same_items(self):
+        self.poller["prs"][rk(1411)]["last_signature"] = "reply:c1,c2"
+        self.handle_c1()
+        self.assertEqual(self.threads(self.tick()), [["T2"]])
 
 
 class PushQueueTickTests(unittest.TestCase):

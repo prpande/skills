@@ -140,10 +140,12 @@ check; `pr-watch/references/lease-contract.md`), `heads` (PR key to
 head sha at the last tick), `poller_pid`, `claude_pid`,
 `claude_started_at`, and `prs` keyed by PR key with `updated_at`,
 `last_head`, `last_signature`, `last_rollup` (the head commit's check
-rollup state), `last_ci_signature` (both signatures hold the current
-pending ids or red checks; an event is raised only when the set holds one
-the stored signature lacks, or the signature's kind or head changed, so a
-set that only shrank is stored without an event), `pending_since`, `retried_at` (the
+rollup state), `last_ci_signature`, `last_items` and `last_ci_items`
+(the ids or `<workflow>|<check name>|<completed_at>` keys each signature
+was built from; an event is raised only when the set holds one the stored
+list lacks, or the signature's kind or head changed, so a set that only
+shrank is stored without an event; with no stored list, as in state from
+an older poller, any signature change raises one), `pending_since`, `retried_at` (the
 `retry_after` value the poller last acted on for the pending/reviewed
 branch, so each `retry_after` forces one re-emit of it; kept across later
 writes of the entry), and, `authored` PRs only, `ci_retried_at` (the same,

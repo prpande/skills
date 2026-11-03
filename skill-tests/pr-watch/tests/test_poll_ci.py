@@ -194,6 +194,14 @@ class CiTickTests(unittest.TestCase):
         self.gh.checks[pk(1411)] = matrix[:1]
         self.assertEqual(self.tick(), [])
 
+    def test_a_new_check_whose_key_ends_a_stored_key_emits(self):
+        self.gh.rollup[pk(1411)] = "FAILURE"
+        self.gh.checks[pk(1411)] = [check("Unit", workflow="CI,Build")]
+        self.assertEqual(len(self.tick()), 1)
+        self.gh.checks[pk(1411)] = [check("Unit", workflow="CI,Build"), check("Unit", workflow="Build")]
+        self.assertEqual([[c["workflow"] for c in e["checks"]] for e in self.tick()],
+                         [["Build", "CI,Build"]])
+
     def test_one_name_in_two_workflows_is_two_checks(self):
         self.gh.rollup[pk(1411)] = "FAILURE"
         self.gh.checks[pk(1411)] = [check("Gated / Unit Tests", workflow="Sonarqube"),

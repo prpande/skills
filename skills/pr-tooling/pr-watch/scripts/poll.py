@@ -466,30 +466,32 @@ class Evaluation(NamedTuple):
     event: dict | None
     signature: str
     pending: bool
+    items: list | tuple | None = ()
 
 
 def sig_of(signature):
     return hashlib.sha1(signature.encode()).hexdigest()[:12]
 
 
-def is_new(prefix, items, stored):
-    """False when `stored`, a `prefix` signature, already holds every one of `items`."""
-    if not (stored or "").startswith(prefix):
-        return True
-    # Matched whole between commas, since a check name can itself hold a comma.
-    known = f",{stored[len(prefix):]},"
-    return any(f",{item}," not in known for item in items)
+def is_new(prefix, items, stored, known):
+    """Whether `prefix` + `items` holds anything the stored signature and items lack.
+
+    With no stored items list (state from an older poller), any signature change counts."""
+    signature = prefix + ",".join(items)
+    if not isinstance(known, list):
+        return signature != stored
+    return not (stored or "").startswith(prefix) or not set(items) <= set(known)
 
 
-def evaluate_ci(gh, entry, node, seen, stored):
-    """`seen` dedupes (empty on a forced pass); `stored` is kept when nothing is red."""
+def evaluate_ci(gh, entry, node, seen, stored, stored_items):
+    """`seen` dedupes (empty on a forced pass); `stored` and `stored_items` are kept when nothing is red."""
     if rollup_state(node) not in FAILED_ROLLUP:
-        return Evaluation(None, stored, False)
+        return Evaluation(None, stored, False, stored_items)
     slug = repo_slug(entry["owner"], entry["repo"])
     red = sorted((c for c in required_checks(gh, slug, entry["number"])
                   if c.get("bucket") in RED_BUCKETS), key=check_key)
     if not red:
-        return Evaluation(None, stored, False)
+        return Evaluation(None, stored, False, stored_items)
     head = node["headRefOid"]
     handled = set(entry.get("ci_handled") or [])
     unhandled = any(f"{head}|{c.get('workflow') or ''}|{c['name']}|{c.get('completedAt') or ''}"
@@ -497,14 +499,14 @@ def evaluate_ci(gh, entry, node, seen, stored):
     prefix = f"ci:{head}:"
     items = [f"{check_key(c)}|{c.get('completedAt') or ''}" for c in red]
     signature = prefix + ",".join(items)
-    if not is_new(prefix, items, seen.get("last_ci_signature")):
-        return Evaluation(None, signature, unhandled)
+    if not is_new(prefix, items, seen.get("last_ci_signature"), seen.get("last_ci_items")):
+        return Evaluation(None, signature, unhandled, items)
     event = {"pr": entry_key(entry), "role": "authored", "kind": "ci-red", "head": head,
              "sig": sig_of(signature),
              "checks": [{"name": c["name"], "workflow": c.get("workflow") or "",
                          "completed_at": c.get("completedAt"), "bucket": c["bucket"]}
                         for c in red]}
-    return Evaluation(event, signature, unhandled)
+    return Evaluation(event, signature, unhandled, items)
 
 
 def evaluate_authored(view, pr, entry, prev):
@@ -513,13 +515,13 @@ def evaluate_authored(view, pr, entry, prev):
     if not ids:
         return Evaluation(None, "", False)
     signature = "pending:" + ",".join(ids)
-    if not is_new("pending:", ids, prev.get("last_signature")):
-        return Evaluation(None, signature, True)
+    if not is_new("pending:", ids, prev.get("last_signature"), prev.get("last_items")):
+        return Evaluation(None, signature, True, ids)
     event = {"pr": entry_key(entry), "role": "authored", "kind": "pending",
              "sig": sig_of(signature), "threads": [t["id"] for t, _ in threads],
              "comments": [i["id"] for s, i in top if s == "issue"],
              "reviews": [i["id"] for s, i in top if s == "review"]}
-    return Evaluation(event, signature, True)
+    return Evaluation(event, signature, True, ids)
 
 
 def review_start(view, pr, entry):
@@ -558,22 +560,22 @@ def evaluate_reviewed(view, pr, entry, prev, compare):
         files = set(compare(old, new))
         touches = compare_capped(files) or any(t["path"] in files for t in threads)
         review_pending = touches or author_replied or not answered
-        if (not is_new(prefix, reply_ids, prev.get("last_signature"))
+        if (not is_new(prefix, reply_ids, prev.get("last_signature"), prev.get("last_items"))
                 or not (touches or author_replied)):
-            return Evaluation(None, signature, review_pending)
+            return Evaluation(None, signature, review_pending, reply_ids)
         event = {"pr": key, "role": "reviewed", "kind": "head-moved",
                  "sig": sig_of(signature), "old_head": old, "new_head": new, "touches_my_findings": touches,
                  "author_replied": author_replied}
-        return Evaluation(event, signature, review_pending)
+        return Evaluation(event, signature, review_pending, reply_ids)
     review_pending = not answered
     if not replies:
         return Evaluation(None, "", review_pending)
     signature = "reply:" + ",".join(reply_ids)
-    if not is_new("reply:", reply_ids, prev.get("last_signature")):
-        return Evaluation(None, signature, review_pending)
+    if not is_new("reply:", reply_ids, prev.get("last_signature"), prev.get("last_items")):
+        return Evaluation(None, signature, review_pending, reply_ids)
     event = {"pr": key, "role": "reviewed", "kind": "reply",
              "sig": sig_of(signature), "threads": [tid for tid, thread_replies in replied.items() if thread_replies]}
-    return Evaluation(event, signature, review_pending)
+    return Evaluation(event, signature, review_pending, reply_ids)
 
 
 def warn(message):
@@ -596,6 +598,11 @@ def retry_spend(retry_after, retry, failed, prev, key):
 def pr_fault(poller, key, exc):
     warn(f"PR {key}: {type(exc).__name__}: {exc}")
     poller["errors"][key] = "check failed"
+
+
+def stored_items(**fields):
+    """The items lists among `fields` as stored; one never set is left out."""
+    return {k: list(v) for k, v in fields.items() if v is not None}
 
 
 def tick_pr(gh, view, poller, key, node, now, force, events):
@@ -621,8 +628,8 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
     if not (moved or ci_moved or forced or ci_forced):
         return
     authored = entry["role"] == "authored"
-    signature = prev.get("last_signature", "")
-    ci_signature = prev.get("last_ci_signature", "")
+    signature, items = prev.get("last_signature", ""), prev.get("last_items")
+    ci_signature, ci_items = prev.get("last_ci_signature", ""), prev.get("last_ci_items")
     review_pending = prev.get("review_pending", False)
     ci_pending = prev.get("ci_pending", False) if authored else False
     review_event = ci_event = None
@@ -639,31 +646,34 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
         try:
             pr = fetch_pr(gh, entry["owner"], entry["repo"], entry["number"])
             if authored:
-                review_event, signature, review_pending = evaluate_authored(view, pr, entry, seen)
+                review_event, signature, review_pending, items = evaluate_authored(
+                    view, pr, entry, seen)
             else:
-                review_event, signature, review_pending = evaluate_reviewed(
+                review_event, signature, review_pending, items = evaluate_reviewed(
                     view, pr, entry, seen, compare)
         except PR_FAULTS as exc:
             pr_fault(poller, key, exc)
             review_failed = True
     if authored and (ci_moved or ci_forced):
         try:
-            ci_event, ci_signature, ci_pending = evaluate_ci(
-                gh, entry, node, ci_seen, ci_signature)
+            ci_event, ci_signature, ci_pending, ci_items = evaluate_ci(
+                gh, entry, node, ci_seen, ci_signature, ci_items)
         except PR_FAULTS as exc:
             pr_fault(poller, key, exc)
             ci_failed = True
     events += [e for e in (review_event, ci_event) if e]
     if review_failed:
-        if ci_signature != prev.get("last_ci_signature", ""):
-            prs[key] = dict(prev, last_ci_signature=ci_signature)
+        if (ci_signature, ci_items) != (prev.get("last_ci_signature", ""), prev.get("last_ci_items")):
+            prs[key] = dict(prev, last_ci_signature=ci_signature,
+                            **stored_items(last_ci_items=ci_items))
         return
     pending_since = (prev.get("pending_since") or now) if review_pending or ci_pending else None
     new_entry = {"updated_at": node["updatedAt"], "last_head": node["headRefOid"],
                  "last_signature": signature, "last_rollup": rollup,
                  "last_ci_signature": ci_signature, "review_pending": review_pending,
                  "ci_pending": ci_pending, "pending_since": pending_since,
-                 "progress_sig": progress_sig}
+                 "progress_sig": progress_sig,
+                 **stored_items(last_items=items, last_ci_items=ci_items)}
     if compared:
         new_entry["compared"] = compared
     # Spent independently per branch, so a standing CI-only failure does not
