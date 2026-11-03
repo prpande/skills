@@ -655,7 +655,7 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
             ci_failed = True
     events += [e for e in (review_event, ci_event) if e]
     if review_failed:
-        if ci_event:
+        if ci_signature != prev.get("last_ci_signature", ""):
             prs[key] = dict(prev, last_ci_signature=ci_signature)
         return
     pending_since = (prev.get("pending_since") or now) if review_pending or ci_pending else None

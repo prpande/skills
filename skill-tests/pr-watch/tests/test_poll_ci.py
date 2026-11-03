@@ -274,6 +274,17 @@ class CiTickTests(unittest.TestCase):
         self.gh.fail = set()
         self.assertEqual(self.tick(), [])
 
+    def test_a_thread_fetch_error_still_stores_a_red_set_that_only_shrank(self):
+        self.two_red()
+        self.tick()
+        self.two_red(unit="pass")
+        self.gh.prs[pk(1411)] = pull(1411, updated="2026-09-11T11:00:00Z")
+        self.gh.fail = {pk(1411)}
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(self.tick(), [])
+        self.assertEqual(self.ci_signature(),
+                         "ci:h2:App Gated|Gated / Integration Tests|2026-09-10T05:16:39Z")
+
 
 class PendingCheckTests(unittest.TestCase):
     def test_a_cancelled_check_is_not_pending(self):
