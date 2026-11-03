@@ -55,6 +55,7 @@ NON_REVIEW_BOTS = ("github-actions", "dependabot")
 GREEN_BUCKETS = ("pass", "skipping")
 PR_FAULTS = (GhError, KeyError, TypeError, ValueError, AttributeError)
 CLAUDE_GONE_EXIT = 3
+MONITOR_REFUSED_EXIT = 4
 IS_WINDOWS = os.name == "nt"
 PROGRESS_SIGNATURE_FIELDS = ("settled_ids", "handled_top_level_ids", "posted_reply_ids",
                              "escalated_ids", "rereviewed_head", "ci_handled")
@@ -1679,7 +1680,10 @@ def main(argv=None, gh=run_gh):
     parser = argparse.ArgumentParser(prog="poll.py", description="pr-watch poller")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--monitor", action="store_true",
-                      help="print one JSON line per actionable change, forever")
+                      help="print one JSON line per actionable change, forever; refuses to start "
+                           "unless the user asked for --monitor in this session")
+    mode.add_argument("--arm-mode", action="store_true",
+                      help="print central or monitor: how this arm of the watch runs")
     mode.add_argument("--tick-all", action="store_true",
                       help="tick every central watch once, spool its events, print run stats")
     mode.add_argument("--report", action="store_true", help="print ATTENTION, NEW, STANDING")
@@ -1729,6 +1733,8 @@ def main(argv=None, gh=run_gh):
                              "no leases")
     parser.add_argument("--central", action="store_true",
                         help="with --claim: hold the lease as a central watch")
+    parser.add_argument("--with-monitor", action="store_true",
+                        help="with --arm-mode: the invocation passed --monitor")
     parser.add_argument("--role", choices=("authored", "reviewed"), help="with --claim")
     parser.add_argument("--explicit", action="store_true",
                         help="with --claim: the user named this PR")
@@ -1759,6 +1765,8 @@ def main(argv=None, gh=run_gh):
         parser.error("--dry-run needs --tick-all")
     if args.central and not args.claim:
         parser.error("--central needs --claim")
+    if args.with_monitor and not args.arm_mode:
+        parser.error("--with-monitor needs --arm-mode")
     if args.claim and not args.role:
         parser.error("--claim needs --role")
     if args.lease_status and not args.status:
@@ -1883,7 +1891,39 @@ def migrate_mode(args):
     return 0
 
 
+def monitor_refusal(session_dir):
+    """None when this session's user asked for --monitor and session_dir is this session's."""
+    import discover
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if not session_id:
+        return "CLAUDE_CODE_SESSION_ID is not set"
+    if pathlib.Path(session_dir).name != session_id:
+        return f"{session_dir} is not this session's directory"
+    return discover.monitor_refusal(session_id)
+
+
+def saved_monitor_watch(session_dir):
+    try:
+        watch = read_json(pathlib.Path(session_dir) / "watch.json")
+    except (OSError, ValueError):
+        return False
+    return isinstance(watch, dict) and watch.get("watcher") != "central"
+
+
+def arm_mode(args):
+    if not (args.with_monitor or saved_monitor_watch(args.session_dir)):
+        print("central")
+        return 0
+    why = monitor_refusal(args.session_dir)
+    if why:
+        print(f"pr-watch: arming central: {why}", file=sys.stderr)
+    print("central" if why else "monitor")
+    return 0
+
+
 def run_mode(args, gh):
+    if args.arm_mode:
+        return arm_mode(args)
     if (args.migrate_scan or args.migrate_import or args.migrate_done or args.check_identity
             or args.end_leftover_monitors or args.end_session_monitors
             or args.monitor_alive):
@@ -1903,6 +1943,10 @@ def run_mode(args, gh):
         print(json.dumps(stats), flush=True)
         return 0
     if args.monitor:
+        why = monitor_refusal(args.session_dir)
+        if why:
+            print(f"pr-watch: monitor refused, arm central instead: {why}", file=sys.stderr)
+            return MONITOR_REFUSED_EXIT
         return monitor(gh, args.session_dir)
     if args.report or args.reseed:
         return report(gh, args.session_dir, reseed=args.reseed)

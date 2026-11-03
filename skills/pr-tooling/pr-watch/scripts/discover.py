@@ -39,6 +39,7 @@ CD_COMMANDS = {"cd", "chdir", "pushd", "set-location", "sl", "push-location"}
 MSYS_DRIVE = re.compile(r"^/([a-zA-Z])(?=/|$)")
 ABSOLUTE = re.compile(r"^(?:[a-zA-Z]:)?[/\\]")
 WINDOWS = os.name == "nt"
+MONITOR_FLAG = re.compile(r"(?<![\w-])--monitor(?![\w-])")
 
 
 def projects_root():
@@ -51,6 +52,47 @@ def find_transcript(session_id, projects=None):
     root = pathlib.Path(projects) if projects is not None else projects_root()
     found = list(root.glob(f"*/{session_id}.jsonl"))
     return max(found, key=lambda p: p.stat().st_mtime) if found else None
+
+
+def typed_text(record):
+    """The text of a message the user sent (typed, a slash command, Remote Control), else None.
+
+    Peer messages, task notifications, skill loads, compact summaries and tool results are never
+    the user's: they lack origin.kind "human", are isMeta, or carry a tool_result block.
+    """
+    if (record.get("type") != "user" or record.get("isMeta") or record.get("isCompactSummary")
+            or (record.get("origin") or {}).get("kind") != "human"):
+        return None
+    content = (record.get("message") or {}).get("content")
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list) or any(
+            isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
+        return None
+    return "\n".join(b.get("text") or "" for b in content
+                     if isinstance(b, dict) and b.get("type") == "text")
+
+
+def monitor_refusal(session_id, projects=None):
+    """None when a message the user sent in this session carries --monitor, else why not."""
+    try:
+        path = find_transcript(session_id, projects)
+        if path is None:
+            return f"no transcript for session {session_id}"
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                if "--monitor" not in line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except ValueError:
+                    continue
+                text = typed_text(record) if isinstance(record, dict) else None
+                if text and MONITOR_FLAG.search(text):
+                    return None
+    except OSError as exc:
+        return f"transcript unreadable: {exc}"
+    return "no message the user sent in this session carries --monitor"
 
 
 def read_records(path):
