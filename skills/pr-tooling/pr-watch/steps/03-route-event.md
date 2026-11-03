@@ -232,9 +232,11 @@ behind it, so it cannot merge. The session brings the branch up to date.
 
 ## I. Slack thread reply
 
-Raised for an `authored` PR when praty or an allowed review bot replied in
-the PR's Slack thread. The event carries `thread_ts`, `reply_ts`, `human`
-(praty's Slack id) and `bots` (the allowed review bot ids), no text.
+Raised for an `authored` PR when anyone other than this session or the
+Claude-in-Slack app replied in the PR's Slack thread: the user, a review
+bot such as ask-kai, or a colleague. The event carries `thread_ts`,
+`reply_ts`, `human` (the user's Slack id) and `bots` (the Slack ids of the
+thread's other new authors, people included), no text.
 Steps 3 to 6 below say which of section A's steps apply.
 
 1. Read the PR's progress file. Without a `slack_ts`, or when the event's
@@ -244,8 +246,17 @@ Steps 3 to 6 below say which of section A's steps apply.
    until it is done. A failed read: escalate ("needs you, no comment",
    reason "Slack thread unreadable") and stop. Never fall back to GitHub.
 3. Write every reply of the thread, unfiltered, as `[{"ts": "<ts>",
-   "author": "<Slack user id>", "body": "<text>"}]` to
-   `<SESSION_DIR>/slack-<reply_ts>.json`. Do not filter by hand.
+   "author": "<Slack user id>", "body": "<text>", "bot": <true|false>}]`
+   to `<SESSION_DIR>/slack-<reply_ts>.json`. `bot` is required. It is
+   true when the read's `From:` line gives a `botuser-…@slack-bots.com`
+   address (ask-kai, the Claude app), and false when it gives a person's
+   address. When the line shows neither, read the author with
+   `mcp__plugin_slack_slack__slack_read_user_profile`: a bot profile is
+   true, a person's false. When neither settles it, write true and, unless
+   the author is the event's `human`, note the reply's ts as unsettled for
+   step 6. The flag sets the record's
+   `author_type`; the poller types the user's replies `User` whatever it
+   says. Do not filter by hand.
 4. Run `POLL --tails <key> --slack <SESSION_DIR>/slack-<reply_ts>.json
    --slack-human <event human> --slack-bots <event bots, comma-separated;
    omit the flag when `bots` is empty>
@@ -258,10 +269,26 @@ Steps 3 to 6 below say which of section A's steps apply.
 5. A failed post or read in this section goes to the user
    (`pr-watch/steps/06-notify.md`, "needs you, no comment"), never to
    GitHub.
-6. Section A steps 3 to 6 apply to the records (untrusted wrapping, Filter
-   B, the escalated check, Filter C), then dispatch them through
-   `pr-watch/steps/04-fix-path.md`; section A step 7 (thread-only) does not
-   apply. A question or a no-change reply gets the verdict `replied`.
+6. When a record with `surface` `slack` is typed `User` (the poller returns
+   only this event's new replies; GitHub threads in the payload don't
+   count), a person has spoken: set
+   `review_fix_pushes` to 0 and `cap_notified_head` to null and write the
+   progress file before anything below can drop the record. Section A
+   steps 3 to 6 apply to the records (untrusted wrapping, Filter B, the
+   escalated check, Filter C). Section A step 7 (thread-only) does not
+   apply. Two kinds of record that remain are escalated instead of
+   dispatched, each with `handled_top_level_ids["slack:<ts>"]` set to
+   `escalated`:
+   - one whose ts step 3 noted as unsettled: reason "cannot tell whether
+     a person or a bot wrote this Slack reply";
+   - a `User` record whose author is not the event's `human`, when an
+     earlier reply by the same author in this thread was answered by
+     this watch (its `slack:<ts>` holds a fixer verdict in
+     `handled_top_level_ids`) and the user has not replied since that
+     one: reason "reply to our reply". This is section A step 7's
+     one-round rule.
+
+   Dispatch the rest through `pr-watch/steps/04-fix-path.md`. A question or a no-change reply gets the verdict `replied`.
    Fixes go to the PR as commits; the answer goes as a reply in the same
    Slack thread (`pr-watch/steps/04-fix-path.md` section 7, "Slack reply
    answer" in step 06). Record `handled_top_level_ids["slack:<ts>"]` for

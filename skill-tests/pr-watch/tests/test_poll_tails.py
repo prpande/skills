@@ -169,13 +169,12 @@ class PayloadTests(unittest.TestCase):
 
 
 SLACK_TS = "1793292267.630379"
-SLACK_REPLY = {"ts": SLACK_TS, "author": "U07ENJD06T0", "body": "please rename it"}
+SLACK_REPLY = {"ts": SLACK_TS, "author": "U07ENJD06T0", "body": "please rename it", "bot": False}
 
 
 class SlackTests(unittest.TestCase):
     def payload(self, replies, **fields):
-        return poll.tails_payload(pull(), entry(**fields), SELF, ALLOW, slack=replies,
-                                  slack_human="U07ENJD06T0")
+        return poll.tails_payload(pull(), entry(**fields), SELF, ALLOW, slack=replies)
 
     def test_slack_replies_become_top_level_records(self):
         rec = self.payload([SLACK_REPLY])["top_level"][0]
@@ -193,14 +192,14 @@ class SlackTests(unittest.TestCase):
 
     def test_slack_records_follow_github_ones(self):
         pr = pull(comments=[comment("i1", "reviewer-a", T0)])
-        payload = poll.tails_payload(pr, entry(), SELF, ALLOW, slack=[SLACK_REPLY],
-                                     slack_human="U07ENJD06T0")
+        payload = poll.tails_payload(pr, entry(), SELF, ALLOW, slack=[SLACK_REPLY])
         self.assertEqual([r["id"] for r in payload["top_level"]], ["i1", f"slack:{SLACK_TS}"])
 
-    def test_author_type_is_user_for_the_human_and_bot_for_others(self):
-        bot = {"ts": "1793292300.000100", "author": "UBOT0001", "body": "nit"}
-        types = [r["author_type"] for r in self.payload([SLACK_REPLY, bot])["top_level"]]
-        self.assertEqual(types, ["User", "Bot"])
+    def test_author_type_follows_the_bot_flag_not_whether_the_author_is_praty(self):
+        person = {"ts": "1793292300.000100", "author": "UPERSON01", "body": "why?", "bot": False}
+        kai = {"ts": "1793292300.000200", "author": "UBOT0001", "body": "points", "bot": True}
+        types = [r["author_type"] for r in self.payload([SLACK_REPLY, person, kai])["top_level"]]
+        self.assertEqual(types, ["User", "User", "Bot"])
 
     def test_no_slack_input_changes_nothing(self):
         self.assertEqual(self.payload(None)["top_level"], [])
@@ -219,6 +218,13 @@ class SlackFilterTests(unittest.TestCase):
                          self.reply("1793292270.1", "UBOT0001")])
         self.assertEqual(got, ["1793292269.1", "1793292270.1"])
 
+    def test_praty_is_typed_a_person_even_when_the_read_flagged_a_bot(self):
+        praty = {**self.reply("1793292268.1"), "bot": True}
+        kai = {**self.reply("1793292269.1", "UBOT0001"), "bot": True}
+        got = poll.slack_replies_to_handle([praty, kai], "U07ENJD06T0", ["UBOT0001"],
+                                           "1793292267.000000")
+        self.assertEqual([r["bot"] for r in got], [False, True])
+
     def test_replies_older_than_since_are_dropped(self):
         got = self.keep([self.reply("1793292266.9"), self.reply("1793292267.0")])
         self.assertEqual(got, ["1793292267.0"])
@@ -227,6 +233,22 @@ class SlackFilterTests(unittest.TestCase):
         got = self.keep([self.reply("1793292268.1", body="Pushed abc1234.\n\nSent using Claude"),
                          self.reply("1793292269.1", body="Pushed.\nSent using <@U0APMMVNAU8|Claude>")])
         self.assertEqual(got, [])
+
+
+class LoadSlackTests(unittest.TestCase):
+    def load(self, replies):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "slack.json"
+            path.write_text(json.dumps(replies), encoding="utf-8")
+            return poll.load_slack(path)
+
+    def test_a_reply_needs_a_true_or_false_bot_flag(self):
+        replies = [dict(SLACK_REPLY), {**SLACK_REPLY, "ts": "1793292300.000100", "bot": True}]
+        self.assertEqual(self.load(replies), replies)
+        no_flag = {k: v for k, v in SLACK_REPLY.items() if k != "bot"}
+        for bad in (no_flag, {**SLACK_REPLY, "bot": "yes"}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.load([bad])
 
 
 class OwnPostTests(unittest.TestCase):
@@ -277,7 +299,8 @@ class SlackCliTests(unittest.TestCase):
     def test_invalid_files_are_usage_errors_not_tracebacks(self):
         bad = ["not json", '{"ts": "1.2"}', '[{"ts": "1.2", "author": "U1"}]',
                '[{"ts": 5, "author": "U1", "body": "x"}]', '["x"]',
-               '[{"ts": "soon", "author": "U1", "body": "x"}]']
+               '[{"ts": "soon", "author": "U1", "body": "x", "bot": false}]',
+               '[{"ts": "1.2", "author": "U1", "body": "x"}]']
         for content in bad:
             with self.subTest(content=content):
                 code, err = self.run_cli(content)
