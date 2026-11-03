@@ -194,6 +194,8 @@ def load_slack(path):
             raise ValueError(f"{path}: every reply needs string ts, author and body")
         if not SLACK_TS.fullmatch(reply["ts"]):
             raise ValueError(f"{path}: {reply['ts']!r} is not a Slack ts")
+        if not isinstance(reply.get("bot", False), bool):
+            raise ValueError(f"{path}: bot must be true or false")
     return replies
 
 
@@ -214,7 +216,7 @@ def slack_record(reply, human):
         "id": f"slack:{reply['ts']}",
         "surface": "slack",
         "author": reply["author"],
-        "author_type": "User" if reply["author"] == human else "Bot",
+        "author_type": "Bot" if reply.get("bot", reply["author"] != human) else "User",
         "created_at": iso_utc(float(reply["ts"])),
         "updated_at": None,
         "path": None,
@@ -1735,7 +1737,7 @@ def main(argv=None, gh=run_gh):
                         help="with --tails: JSON list of {ts, author, body} Slack thread replies")
     parser.add_argument("--slack-human", metavar="ID", help="with --slack: the human whose replies count")
     parser.add_argument("--slack-bots", metavar="ID,ID", default="",
-                        help="with --slack: review bots whose replies count")
+                        help="with --slack: other authors whose replies count")
     parser.add_argument("--slack-since", metavar="TS", help="with --slack: oldest reply ts to keep")
     parser.add_argument("--session-dir", type=pathlib.Path,
                         help="<pr-watch home>/sessions/<session id>")

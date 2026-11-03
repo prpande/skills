@@ -232,9 +232,13 @@ behind it, so it cannot merge. The session brings the branch up to date.
 
 ## I. Slack thread reply
 
-Raised for an `authored` PR when praty or an allowed review bot replied in
-the PR's Slack thread. The event carries `thread_ts`, `reply_ts`, `human`
-(praty's Slack id) and `bots` (the allowed review bot ids), no text.
+Raised for an `authored` PR when someone replied in the PR's Slack thread:
+praty, a review bot such as ask-kai, or a colleague. The orchestrator
+skips only the Claude-in-Slack app, which relays GitHub activity this
+watch already gets from GitHub, and this session's own posts. The event
+carries `thread_ts`, `reply_ts`, `human` (praty's Slack id) and `bots`
+(the Slack ids of the thread's other new authors, people included), no
+text.
 Steps 3 to 6 below say which of section A's steps apply.
 
 1. Read the PR's progress file. Without a `slack_ts`, or when the event's
@@ -244,8 +248,10 @@ Steps 3 to 6 below say which of section A's steps apply.
    until it is done. A failed read: escalate ("needs you, no comment",
    reason "Slack thread unreadable") and stop. Never fall back to GitHub.
 3. Write every reply of the thread, unfiltered, as `[{"ts": "<ts>",
-   "author": "<Slack user id>", "body": "<text>"}]` to
-   `<SESSION_DIR>/slack-<reply_ts>.json`. Do not filter by hand.
+   "author": "<Slack user id>", "body": "<text>", "bot": <true|false>}]`
+   to `<SESSION_DIR>/slack-<reply_ts>.json`. `bot` is true when the read
+   marks the author as a bot or an app; it sets the record's
+   `author_type`. Do not filter by hand.
 4. Run `POLL --tails <key> --slack <SESSION_DIR>/slack-<reply_ts>.json
    --slack-human <event human> --slack-bots <event bots, comma-separated;
    omit the flag when `bots` is empty>

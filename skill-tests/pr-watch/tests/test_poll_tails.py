@@ -202,6 +202,12 @@ class SlackTests(unittest.TestCase):
         types = [r["author_type"] for r in self.payload([SLACK_REPLY, bot])["top_level"]]
         self.assertEqual(types, ["User", "Bot"])
 
+    def test_a_bot_flag_from_the_thread_read_sets_author_type(self):
+        person = {"ts": "1793292300.000100", "author": "UPERSON01", "body": "why?", "bot": False}
+        kai = {"ts": "1793292300.000200", "author": "UBOT0001", "body": "points", "bot": True}
+        types = [r["author_type"] for r in self.payload([person, kai])["top_level"]]
+        self.assertEqual(types, ["User", "Bot"])
+
     def test_no_slack_input_changes_nothing(self):
         self.assertEqual(self.payload(None)["top_level"], [])
 
@@ -227,6 +233,22 @@ class SlackFilterTests(unittest.TestCase):
         got = self.keep([self.reply("1793292268.1", body="Pushed abc1234.\n\nSent using Claude"),
                          self.reply("1793292269.1", body="Pushed.\nSent using <@U0APMMVNAU8|Claude>")])
         self.assertEqual(got, [])
+
+
+class LoadSlackTests(unittest.TestCase):
+    def load(self, replies):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "slack.json"
+            path.write_text(json.dumps(replies), encoding="utf-8")
+            return poll.load_slack(path)
+
+    def test_a_bot_flag_is_optional_and_kept(self):
+        replies = [dict(SLACK_REPLY), {**SLACK_REPLY, "ts": "1793292300.000100", "bot": True}]
+        self.assertEqual(self.load(replies), replies)
+
+    def test_a_bot_flag_that_is_not_true_or_false_is_refused(self):
+        with self.assertRaises(ValueError):
+            self.load([{**SLACK_REPLY, "bot": "yes"}])
 
 
 class OwnPostTests(unittest.TestCase):
