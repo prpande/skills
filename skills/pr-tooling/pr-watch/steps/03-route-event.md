@@ -269,7 +269,9 @@ Steps 3 to 6 below say which of section A's steps apply.
 5. A failed post or read in this section goes to the user
    (`pr-watch/steps/06-notify.md`, "needs you, no comment"), never to
    GitHub.
-6. When any record is typed `User`, a person has spoken: set
+6. When a record with `surface` `slack` is typed `User` (the poller returns
+   only this event's new replies; GitHub threads in the payload don't
+   count), a person has spoken: set
    `review_fix_pushes` to 0 and `cap_notified_head` to null and write the
    progress file before anything below can drop the record. Section A
    steps 3 to 6 apply to the records (untrusted wrapping, Filter B, the
