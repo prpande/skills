@@ -141,6 +141,11 @@ class ArmModeTests(GateCase):
         self.assert_central(human("run poll.py --monitor-alive for me"),
                             human("try --monitoring"))
 
+    def test_malformed_records_do_not_crash(self):
+        self.assert_central({"type": "user", "origin": "human", "message": "--monitor"},
+                            {"type": "user", "origin": {"kind": "human"}, "message": ["--monitor"]},
+                            ["--monitor"])
+
     def test_missing_transcript_is_central(self):
         self.assert_central(why="no transcript")
 

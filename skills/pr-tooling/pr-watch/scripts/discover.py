@@ -56,10 +56,12 @@ def find_transcript(session_id, projects=None):
 
 def typed_text(record):
     """The text of a message the user sent (typed, a slash command, Remote Control), else None."""
+    origin, message = record.get("origin"), record.get("message")
     if (record.get("type") != "user" or record.get("isMeta") or record.get("isCompactSummary")
-            or (record.get("origin") or {}).get("kind") != "human"):
+            or not isinstance(origin, dict) or origin.get("kind") != "human"
+            or not isinstance(message, dict)):
         return None
-    content = (record.get("message") or {}).get("content")
+    content = message.get("content")
     if isinstance(content, list) and any(
             isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
         return None
