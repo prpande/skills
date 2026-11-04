@@ -10,14 +10,16 @@ from fakes import (ACTIONS, NOW, SELF, T0, T1, FakeGh, HomeCase, claim_leases, c
                    pull, review, rk, thread, watch, write_session)
 
 
-def authored_pr(updated="2026-09-11T10:00:00Z", extra=(), state="OPEN"):
-    return pull(1411, threads=[thread("T1", [comment("c1", "reviewer-a", T0), *extra])],
+def authored_pr(updated="2026-09-11T10:00:00Z", extra=(), state="OPEN", more_threads=()):
+    return pull(1411, threads=[thread("T1", [comment("c1", "reviewer-a", T0), *extra]),
+                               *more_threads],
                 updated=updated, state=state)
 
 
-def reviewed_pr(head="h1", replies=(), updated="2026-09-11T10:00:00Z"):
+def reviewed_pr(head="h1", replies=(), updated="2026-09-11T10:00:00Z", more_threads=()):
     return pull(1420, author_login="author-b", head=head, updated=updated,
-                threads=[thread("T9", [comment("m1", SELF, T0), *replies], path="src/B.cs")],
+                threads=[thread("T9", [comment("m1", SELF, T0), *replies], path="src/B.cs"),
+                         *more_threads],
                 reviews=[review("r1", SELF, T0, oid="h1")])
 
 
@@ -116,6 +118,90 @@ class AuthoredTickTests(unittest.TestCase):
             self.assertEqual(self.tick(), [])
         self.assertIn("1411", err.getvalue())
         self.assertEqual(self.poller.get("closed", []), [])
+
+
+def two_thread_pr(updated="2026-09-11T10:00:00Z", extra=()):
+    return authored_pr(updated=updated,
+                       more_threads=[thread("T2", [comment("c2", "reviewer-a", T0)]), *extra])
+
+
+class PendingSetChangeTests(unittest.TestCase):
+    def setUp(self):
+        self.gh = FakeGh()
+        self.gh.prs[pk(1411)] = two_thread_pr()
+        self.watch = watch({1411: "authored"})
+        self.poller = {}
+        self.assertEqual(self.threads(self.tick()), [["T1", "T2"]])
+
+    def tick(self, now=NOW, force=False):
+        return poll.tick_once(self.gh, self.watch, self.poller, now, force=force)
+
+    @staticmethod
+    def threads(events):
+        return [e["threads"] for e in events if e["kind"] == "pending"]
+
+    def handle_c1(self, extra=()):
+        self.watch["prs"][rk(1411)]["settled_ids"] = ["c1"]
+        self.gh.prs[pk(1411)] = two_thread_pr(updated="2026-09-11T11:00:00Z", extra=extra)
+
+    def test_a_shrinking_set_emits_nothing_and_stores_the_smaller_set(self):
+        self.handle_c1()
+        self.assertEqual(self.tick(), [])
+        self.assertEqual(self.poller["prs"][rk(1411)]["last_signature"], "pending:c2")
+        self.assertEqual(self.poller["prs"][rk(1411)]["last_items"], ["c2"])
+
+    def test_growth_after_a_shrink_emits_the_current_set(self):
+        self.handle_c1()
+        self.tick()
+        self.gh.prs[pk(1411)] = two_thread_pr(
+            updated="2026-09-11T12:00:00Z", extra=[thread("T3", [comment("c3", "reviewer-a", T1)])])
+        self.assertEqual(self.threads(self.tick()), [["T2", "T3"]])
+
+    def test_one_id_handled_and_a_new_one_arriving_emits(self):
+        self.handle_c1(extra=[thread("T3", [comment("c3", "reviewer-a", T1)])])
+        self.assertEqual(self.threads(self.tick()), [["T2", "T3"]])
+
+    def test_an_unchanged_set_after_a_shrink_emits_nothing(self):
+        self.handle_c1()
+        self.tick()
+        self.gh.prs[pk(1411)] = two_thread_pr(updated="2026-09-11T12:00:00Z")
+        self.assertEqual(self.tick(), [])
+
+    def test_a_retry_after_a_shrink_re_emits_the_remaining_set_once(self):
+        self.handle_c1()
+        self.tick()
+        self.watch["prs"][rk(1411)]["retry_after"] = NOW + 600
+        self.assertEqual(self.tick(NOW + 60), [])
+        self.assertEqual(self.threads(self.tick(NOW + 600)), [["T2"]])
+        self.assertEqual(self.tick(NOW + 660), [])
+
+    def test_a_forced_pass_after_a_shrink_re_emits_the_remaining_set(self):
+        self.handle_c1()
+        self.tick()
+        self.assertEqual(self.threads(self.tick(force=True)), [["T2"]])
+
+    def test_state_from_an_older_poller_emits_on_any_signature_change(self):
+        for stored in (None, "pending:c1,c2", "reply:c1,c2"):
+            with self.subTest(stored=stored):
+                self.setUp()
+                entry = self.poller["prs"][rk(1411)]
+                entry.pop("last_items")
+                entry.pop("last_signature")
+                if stored:
+                    entry["last_signature"] = stored
+                self.handle_c1()
+                self.assertEqual(self.threads(self.tick()), [["T2"]])
+
+    def test_state_from_an_older_poller_with_an_unchanged_set_emits_nothing(self):
+        self.poller["prs"][rk(1411)].pop("last_items")
+        self.gh.prs[pk(1411)] = two_thread_pr(updated="2026-09-11T11:00:00Z")
+        self.assertEqual(self.tick(), [])
+        self.assertEqual(self.poller["prs"][rk(1411)]["last_items"], ["c1", "c2"])
+
+    def test_a_signature_of_another_kind_emits_even_with_the_same_items(self):
+        self.poller["prs"][rk(1411)]["last_signature"] = "reply:c1,c2"
+        self.handle_c1()
+        self.assertEqual(self.threads(self.tick()), [["T2"]])
 
 
 class PushQueueTickTests(unittest.TestCase):
@@ -235,6 +321,41 @@ class ReviewedTickTests(unittest.TestCase):
             thread("T10", [comment("m2", SELF, T0)], resolved=True, path="src/C.cs"))
         self.gh.prs[pk(1420)] = pr
         self.assertEqual(self.tick(), [])
+
+    def two_replied(self, head="h1", mine_after=(), updated="2026-09-11T10:00:00Z"):
+        return reviewed_pr(head=head, updated=updated,
+                           replies=[comment("a1", "author-b", T1), *mine_after],
+                           more_threads=[thread("T8", [comment("m2", SELF, T0),
+                                                       comment("a2", "author-b", T1)],
+                                                path="src/C.cs")])
+
+    def answer_one(self, head, first_kind):
+        self.gh.compare["h1...h2"] = ["src/B.cs"]
+        self.gh.prs[pk(1420)] = self.two_replied(head=head)
+        self.assertEqual([e["kind"] for e in self.tick()], [first_kind])
+        self.gh.prs[pk(1420)] = self.two_replied(
+            head=head, mine_after=[comment("m3", SELF, T1)], updated="2026-09-11T11:00:00Z")
+        return self.tick()
+
+    def test_answering_one_of_two_replies_emits_nothing(self):
+        self.assertEqual(self.answer_one("h1", "reply"), [])
+
+    def test_a_new_reply_after_answering_one_emits_reply(self):
+        self.answer_one("h1", "reply")
+        self.gh.prs[pk(1420)] = self.two_replied(
+            mine_after=[comment("m3", SELF, T1), comment("a3", "author-b", T1)],
+            updated="2026-09-11T12:00:00Z")
+        self.assertEqual([e["threads"] for e in self.tick()], [["T9", "T8"]])
+
+    def test_answering_one_reply_on_a_moved_head_emits_nothing(self):
+        self.assertEqual(self.answer_one("h2", "head-moved"), [])
+
+    def test_a_further_push_after_answering_one_reply_emits_head_moved(self):
+        self.answer_one("h2", "head-moved")
+        self.gh.compare["h1...h3"] = ["src/B.cs"]
+        self.gh.prs[pk(1420)] = self.two_replied(
+            head="h3", mine_after=[comment("m3", SELF, T1)], updated="2026-09-11T12:00:00Z")
+        self.assertEqual([e["new_head"] for e in self.tick()], ["h3"])
 
     def test_pr_without_my_threads_is_ignored(self):
         self.gh.prs[pk(1420)] = pull(1420, author_login="author-b", head="h2",

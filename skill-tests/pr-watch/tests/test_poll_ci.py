@@ -159,6 +159,49 @@ class CiTickTests(unittest.TestCase):
         self.red()
         self.assertEqual(self.tick(), [])
 
+    def two_red(self, unit="fail", integration="fail"):
+        self.gh.rollup[pk(1411)] = "FAILURE"
+        self.gh.checks[pk(1411)] = [check("Gated / Unit Tests", bucket=unit),
+                                    check("Gated / Integration Tests", bucket=integration)]
+
+    def test_one_of_two_red_checks_going_green_emits_nothing(self):
+        self.two_red()
+        self.assertEqual(len(self.tick()[0]["checks"]), 2)
+        self.two_red(unit="pass")
+        self.assertEqual(self.tick(), [])
+
+    def test_one_red_check_going_green_as_another_fails_emits(self):
+        self.two_red(integration="pass")
+        self.tick()
+        self.two_red(unit="pass")
+        self.assertEqual([c["name"] for c in self.tick()[0]["checks"]],
+                         ["Gated / Integration Tests"])
+
+    def test_a_forced_pass_after_a_red_check_went_green_re_emits_the_rest(self):
+        self.two_red()
+        self.tick()
+        self.two_red(unit="pass")
+        self.tick()
+        self.assertEqual([[c["name"] for c in e["checks"]] for e in self.tick(force=True)],
+                         [["Gated / Integration Tests"]])
+
+    def test_check_names_with_commas_are_matched_whole(self):
+        self.gh.rollup[pk(1411)] = "FAILURE"
+        matrix = [check("test (ubuntu, 3.11)"), check("test (windows, 3.12)")]
+        self.gh.checks[pk(1411)] = list(matrix)
+        self.assertEqual(len(self.tick()), 1)
+        self.assertEqual(self.tick(), [])
+        self.gh.checks[pk(1411)] = matrix[:1]
+        self.assertEqual(self.tick(), [])
+
+    def test_a_new_check_whose_key_ends_a_stored_key_emits(self):
+        self.gh.rollup[pk(1411)] = "FAILURE"
+        self.gh.checks[pk(1411)] = [check("Unit", workflow="CI,Build")]
+        self.assertEqual(len(self.tick()), 1)
+        self.gh.checks[pk(1411)] = [check("Unit", workflow="CI,Build"), check("Unit", workflow="Build")]
+        self.assertEqual([[c["workflow"] for c in e["checks"]] for e in self.tick()],
+                         [["Build", "CI,Build"]])
+
     def test_one_name_in_two_workflows_is_two_checks(self):
         self.gh.rollup[pk(1411)] = "FAILURE"
         self.gh.checks[pk(1411)] = [check("Gated / Unit Tests", workflow="Sonarqube"),
@@ -238,6 +281,17 @@ class CiTickTests(unittest.TestCase):
         self.assertIn("fetch of 1411 failed", err.getvalue())
         self.gh.fail = set()
         self.assertEqual(self.tick(), [])
+
+    def test_a_thread_fetch_error_still_stores_a_red_set_that_only_shrank(self):
+        self.two_red()
+        self.tick()
+        self.two_red(unit="pass")
+        self.gh.prs[pk(1411)] = pull(1411, updated="2026-09-11T11:00:00Z")
+        self.gh.fail = {pk(1411)}
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(self.tick(), [])
+        self.assertEqual(self.ci_signature(),
+                         "ci:h2:App Gated|Gated / Integration Tests|2026-09-10T05:16:39Z")
 
 
 class PendingCheckTests(unittest.TestCase):
