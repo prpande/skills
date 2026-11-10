@@ -736,8 +736,11 @@ summary. A dismissed review counts as an approval unless the issue
 timeline's `review_dismissed` event says it requested changes. The round
 sets `rereviewed_head` to null, so the next one compares from the user's
 latest review commit. The poller still raises the head move, so that
-round runs, but counts nothing on a held PR as pending work, an
-unanswered author reply included.
+round runs, and raises it even when it touches no finding while a
+`rereviewed_head` is saved, but counts nothing on a held PR as pending
+work, an unanswered author reply included. The hold covers re-review
+rounds only: an author reply with no push since the user's latest review
+is a `reply` event, handled as before.
 
 The diff starts at the old head in 3.4: the last completed re-review
 round's new head, or the user's review commit before any round has run.

@@ -256,6 +256,18 @@ class ReviewedTickTests(unittest.TestCase):
                 self.assertEqual([e["kind"] for e in self.tick()], ["head-moved"])
                 self.assertIs(self.poller["prs"][rk(1420)]["review_pending"], pending)
 
+    def test_a_held_head_move_elsewhere_is_raised_only_to_clear_a_saved_re_review_head(self):
+        for saved, kinds in ((None, []), ("h2", ["head-moved"])):
+            with self.subTest(saved=saved):
+                self.poller = {}
+                self.watch["prs"][rk(1420)]["rereviewed_head"] = saved
+                pr = reviewed_pr(head="h3")
+                pr["reviews"]["nodes"][0]["state"] = "APPROVED"
+                self.gh.prs[pk(1420)] = pr
+                moved(self.gh, saved or "h1", "h3", ["src/Other.cs"])
+                self.assertEqual([e["kind"] for e in self.tick()], kinds)
+                self.assertIs(self.poller["prs"][rk(1420)]["review_pending"], False)
+
     def test_author_reply_after_a_quiet_head_move_emits_head_moved(self):
         self.gh.prs[pk(1420)] = reviewed_pr(head="h2")
         moved(self.gh, "h1", "h2", ["src/Other.cs"])

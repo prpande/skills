@@ -604,7 +604,8 @@ def review_start(view, pr, entry):
 
 def evaluate_reviewed(view, pr, entry, prev, compare, held=lambda pr: None):
     """`compare(base, old, new)` returns `changed_files` for the two heads; `held(pr)` returns `approval_hold`.
-    A held head move still raises its event, so step 05 clears `rereviewed_head`, but is not pending work."""
+    A held head move still raises its event, so step 05 clears `rereviewed_head`, but is not pending work; with a
+    saved `rereviewed_head` it is raised even when it touches no finding."""
     me, allow = view["self_login"], view["bot_allowlist"]
     key = entry_key(entry)
     threads = my_threads(pr, me, allow)
@@ -629,7 +630,7 @@ def evaluate_reviewed(view, pr, entry, prev, compare, held=lambda pr: None):
         touches = capped or any(t["path"] in files for t in threads)
         review_pending = (touches or author_replied or not answered) and not held(pr)
         if (not is_new(prefix, reply_ids, prev.get("last_signature"), prev.get("last_items"))
-                or not (touches or author_replied)):
+                or not (touches or author_replied or (entry.get("rereviewed_head") and held(pr)))):
             return Evaluation(None, signature, review_pending, reply_ids)
         event = {"pr": key, "role": "reviewed", "kind": "head-moved",
                  "sig": sig_of(signature), "old_head": old, "new_head": new, "touches_my_findings": touches,
