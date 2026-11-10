@@ -103,7 +103,8 @@ class CliTests(HomeCase):
                                  reviews=[review("r1", SELF, T0, oid="h1")])
         for count, capped in ((poll.COMPARE_FILE_CAP - 1, False), (poll.COMPARE_FILE_CAP, True)):
             with self.subTest(count=count):
-                moved(self.gh, "h1", "h2", [f"src/F{i}.cs" for i in range(count)])
+                moved(self.gh, "h1", "h2", [f"src/F{i}.cs" for i in range(poll.COMPARE_FILE_CAP)])
+                self.gh.compare["h1...h2"] = [f"src/F{i}.cs" for i in range(count)]
                 _, text = self.run_main("--findings", "o/r#1420")
                 self.assertIs(json.loads(text)["compare_capped"], capped)
 
@@ -142,9 +143,11 @@ class CliTests(HomeCase):
         self.gh.compare["main...h2"] = {"img/logo.png": None, "src/B.cs": "@@ -2 +2 @@\n-a\n+b"}
         self.assertEqual(self.findings([review("r1", SELF, T0, oid="h1")])["changed_files"], ["img/logo.png"])
 
-    def test_a_capped_file_list_on_the_old_side_flags_the_compare(self):
+    def test_a_capped_own_diff_falls_back_to_the_files_changed_between_the_heads(self):
         self.gh.compare["main...h1"] = [f"src/F{i}.cs" for i in range(poll.COMPARE_FILE_CAP)]
-        self.assertIs(self.findings([review("r1", SELF, T0, oid="h1")])["compare_capped"], True)
+        self.gh.compare["h1...h2"] = ["src/B.cs", "src/Main.cs"]
+        payload = self.findings([review("r1", SELF, T0, oid="h1")])
+        self.assertEqual((payload["changed_files"], payload["compare_capped"]), (["src/B.cs", "src/Main.cs"], False))
 
     def test_an_approval_at_an_older_commit_holds_the_re_review(self):
         approved = review("r1", SELF, T0, state="APPROVED", oid="h1")

@@ -36,7 +36,8 @@ progress file (`pr-watch/steps/03-route-event.md`, "State has two homes").
    of the PR's own diff, taken from the base branch's merge-base, differs
    between the payload's `old_head`, the last re-reviewed head or else the
    user's review commit, and `new_head`; a merge from the base branch or a
-   rebase adds no file), when `compare_capped` is `true`
+   rebase adds no file; on a PR too large for that, the files changed
+   between the two heads), when `compare_capped` is `true`
    (the file list may be incomplete, so every finding qualifies), or when
    its `kinds` holds a `human` entry after index 0 (the author replied on
    it); leave every other finding for the next `head-moved` event. For

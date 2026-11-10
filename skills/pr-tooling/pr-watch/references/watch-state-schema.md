@@ -151,7 +151,7 @@ branch, so each `retry_after` forces one re-emit of it; kept across later
 writes of the entry), and, `authored` PRs only, `ci_retried_at` (the same,
 for the CI branch; spent independently, so a standing CI-only failure does
 not keep forcing the pending set too), and, `reviewed` PRs only,
-`compared` (`[old head, new head, changed paths]` of the last compare, so
+`compared` (`[base branch, old head, new head, changed paths, capped]` of the last compare, so
 the same head range is not fetched again). `review` maps an `authored` PR key to `checked` (`[head, updatedAt]` of the last review-ready evaluation) and `emitted` (the head a `review-ready` event was last raised for), so the event comes once per head. `merge` maps an `authored` PR key to `<kind>:<head>` of the last `conflicting` or `behind-ready` event, so each comes once per head between forced ticks; a forced tick raises it again until the progress file's `merge_notified` records it. `lease_dropped` and `lease_warned` record the leases whose
 loss and whose write fault have already been reported, so each is raised
 once. `--claim` removes the claimed PR from both; every other writer merges

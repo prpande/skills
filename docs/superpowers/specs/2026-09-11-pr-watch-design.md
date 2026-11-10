@@ -203,8 +203,10 @@ allowlist. Deterministic: no LLM in it.
   title, body, head, and base. Writes nothing.
 - `--findings <pr>`: for a `reviewed` PR, print the user's threads with
   every comment, the old and new head (the old head as in 3.4), the files
-  changed between them, and `compare_capped`, true when that list holds
-  300 or more files and so may be incomplete. Writes nothing.
+  whose part of the PR's own diff changed between them (5.2),
+  `compare_capped` (true when either side's file list holds 300 or more
+  files and so may be incomplete), and `approval_hold` (5.2). Writes
+  nothing.
 - `--checks <pr>`: print the head sha and every required check on it as
   JSON: name, state, bucket, link, workflow, `completedAt`, the platform
   read from the link (`github-actions` with `run_id` and `job_id` from
@@ -713,6 +715,27 @@ threads. Otherwise record the head move and stay quiet. GitHub's compare
 lists at most 300 files, so a diff listing 300 or more counts as touching
 the user's findings, and re-review then judges every finding rather than
 only those whose file is in the list.
+
+"That diff" is the PR's own: GitHub's compare `<base>...<sha>` for each
+head, with each file's patch reduced to its `+`, `-` and `\` lines. A
+file whose reduced patch differs between the two heads, or that has no
+patch on either side, is changed. A merge from the base branch or a
+rebase onto it adds no file, though the plain old-to-new diff would list
+every file the base branch changed. Line positions are left out, so a PR
+line moved within its file with no `+` or `-` line changed is not seen.
+When either head's list hits the 300-file cap, the plain old-to-new
+diff is used instead, and `compare_capped` is true only when that one is
+capped too.
+
+Approval hold: when the user's latest verdict (APPROVED,
+CHANGES_REQUESTED or DISMISSED; COMMENTED is not one) is an approval at a
+commit other than the head, `--findings` reports it as `approval_hold`
+and the round posts nothing: no judgement, reply, resolve or Slack
+summary. A dismissed review counts as an approval unless the issue
+timeline's `review_dismissed` event says it requested changes. The round
+sets `rereviewed_head` to null, so the next one compares from the user's
+latest review commit. The poller still raises the head move, so that
+round runs, but does not count it as pending work.
 
 The diff starts at the old head in 3.4: the last completed re-review
 round's new head, or the user's review commit before any round has run.

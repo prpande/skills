@@ -245,6 +245,17 @@ class ReviewedTickTests(unittest.TestCase):
         self.gh.compare["main...h2"] = {"src/B.cs": "@@ -30 +30 @@\n-a\n+b"}
         self.assertEqual(self.tick(), [])
 
+    def test_a_head_move_after_my_approval_is_raised_but_not_pending(self):
+        for state, pending in (("APPROVED", False), ("CHANGES_REQUESTED", True)):
+            with self.subTest(state=state):
+                self.poller = {}
+                pr = reviewed_pr(head="h2")
+                pr["reviews"]["nodes"][0]["state"] = state
+                self.gh.prs[pk(1420)] = pr
+                moved(self.gh, "h1", "h2", ["src/B.cs"])
+                self.assertEqual([e["kind"] for e in self.tick()], ["head-moved"])
+                self.assertIs(self.poller["prs"][rk(1420)]["review_pending"], pending)
+
     def test_author_reply_after_a_quiet_head_move_emits_head_moved(self):
         self.gh.prs[pk(1420)] = reviewed_pr(head="h2")
         moved(self.gh, "h1", "h2", ["src/Other.cs"])
@@ -270,6 +281,7 @@ class ReviewedTickTests(unittest.TestCase):
     def test_a_compare_at_the_file_cap_counts_as_touching_my_findings(self):
         self.gh.prs[pk(1420)] = reviewed_pr(head="h2")
         moved(self.gh, "h1", "h2", [f"src/F{i}.cs" for i in range(300)])
+        self.gh.compare["h1...h2"] = [f"src/F{i}.cs" for i in range(300)]
         events = self.tick()
         self.assertEqual([e["kind"] for e in events], ["head-moved"])
         self.assertTrue(events[0]["touches_my_findings"])

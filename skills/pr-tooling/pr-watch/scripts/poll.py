@@ -444,12 +444,16 @@ def changed_lines(patch):
 
 def changed_files(gh, owner, repo, base, old, new):
     """The paths whose part of the PR's own diff against `base` differs between `old` and `new`, sorted, and
-    whether either file list was capped. A merge from `base` or a rebase onto it adds none."""
+    whether the list may be incomplete. A merge from `base` or a rebase onto it adds none. When either own
+    diff is capped, falls back to the files changed from `old` to `new`, which include the base branch's."""
     before, old_capped = own_patches(gh, owner, repo, base, old)
     after, new_capped = own_patches(gh, owner, repo, base, new)
+    if old_capped or new_capped:
+        plain = json.loads(gh(["api", f"repos/{repo_slug(owner, repo)}/compare/{old}...{new}"]) or "{}").get("files") or []
+        return sorted({f["filename"] for f in plain}), len(plain) >= COMPARE_FILE_CAP
     changed = sorted(path for path in before.keys() | after.keys()
                      if None in (before.get(path, []), after.get(path, [])) or before.get(path) != after.get(path))
-    return changed, old_capped or new_capped
+    return changed, False
 
 
 def dismissed_was(gh, owner, repo, number, self_login):
@@ -476,7 +480,8 @@ def approval_hold(gh, entry, pr, self_login, allowlist):
     if state == "DISMISSED":
         try:
             state = dismissed_was(gh, entry["owner"], entry["repo"], entry["number"], self_login) or "APPROVED"
-        except (GhError, ValueError):
+        except (GhError, ValueError) as exc:
+            warn(f"PR {entry_key(entry)}: timeline unreadable ({exc}); a dismissed review counts as an approval")
             state = "APPROVED"
     commit = last["commit"]["oid"]
     return commit if state == "APPROVED" and commit != pr["headRefOid"] else None
@@ -584,8 +589,9 @@ def review_start(view, pr, entry):
         pr, view["self_login"], view["bot_allowlist"])
 
 
-def evaluate_reviewed(view, pr, entry, prev, compare):
-    """`compare(base, old, new)` returns `changed_files` for the two heads."""
+def evaluate_reviewed(view, pr, entry, prev, compare, held=lambda pr: None):
+    """`compare(base, old, new)` returns `changed_files` for the two heads; `held(pr)` returns `approval_hold`.
+    A held head move still raises its event, so step 05 clears `rereviewed_head`, but is not pending work."""
     me, allow = view["self_login"], view["bot_allowlist"]
     key = entry_key(entry)
     threads = my_threads(pr, me, allow)
@@ -608,7 +614,10 @@ def evaluate_reviewed(view, pr, entry, prev, compare):
         signature = prefix + ",".join(reply_ids)
         files, capped = compare(pr["baseRefName"], old, new)
         touches = capped or any(t["path"] in files for t in threads)
-        review_pending = touches or author_replied or not answered
+        if (touches or author_replied) and held(pr):
+            review_pending = not answered
+        else:
+            review_pending = touches or author_replied or not answered
         if (not is_new(prefix, reply_ids, prev.get("last_signature"), prev.get("last_items"))
                 or not (touches or author_replied)):
             return Evaluation(None, signature, review_pending, reply_ids)
@@ -699,7 +708,8 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
                     view, pr, entry, seen)
             else:
                 review_event, signature, review_pending, items = evaluate_reviewed(
-                    view, pr, entry, seen, compare)
+                    view, pr, entry, seen, compare,
+                    lambda pr: approval_hold(gh, entry, pr, view["self_login"], view["bot_allowlist"]))
         except PR_FAULTS as exc:
             pr_fault(poller, key, exc)
             review_failed = True
