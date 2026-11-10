@@ -6,7 +6,7 @@ import tempfile
 import unittest
 import unittest.mock
 
-from fakes import (ACTIONS, NOW, SELF, T0, T1, FakeGh, HomeCase, claim_leases, comment, pk, poll,
+from fakes import (ACTIONS, NOW, SELF, T0, T1, FakeGh, HomeCase, claim_leases, comment, moved, pk, poll,
                    pull, review, rk, thread, watch, write_session)
 
 
@@ -229,19 +229,48 @@ class ReviewedTickTests(unittest.TestCase):
 
     def test_head_move_over_a_file_i_flagged_emits_head_moved(self):
         self.gh.prs[pk(1420)] = reviewed_pr(head="h2")
-        self.gh.compare["h1...h2"] = ["src/B.cs"]
+        moved(self.gh, "h1", "h2", ["src/B.cs"])
         self.assertEqual(self.tick(), [{"pr": rk(1420), "role": "reviewed", "kind": "head-moved",
                                         "sig": "52d434725af8", "old_head": "h1", "new_head": "h2",
                                         "touches_my_findings": True, "author_replied": False}])
 
     def test_head_move_elsewhere_without_a_reply_is_silent(self):
         self.gh.prs[pk(1420)] = reviewed_pr(head="h2")
-        self.gh.compare["h1...h2"] = ["src/Other.cs"]
+        moved(self.gh, "h1", "h2", ["src/Other.cs"])
         self.assertEqual(self.tick(), [])
+
+    def test_a_merge_from_main_over_a_flagged_file_is_silent(self):
+        self.gh.prs[pk(1420)] = reviewed_pr(head="h2")
+        self.gh.compare["main...h1"] = {"src/B.cs": "@@ -2 +2 @@\n-a\n+b"}
+        self.gh.compare["main...h2"] = {"src/B.cs": "@@ -30 +30 @@\n-a\n+b"}
+        self.assertEqual(self.tick(), [])
+
+    def test_a_head_move_after_my_approval_is_raised_but_not_pending(self):
+        for state, pending in (("APPROVED", False), ("CHANGES_REQUESTED", True)):
+            with self.subTest(state=state):
+                self.poller = {}
+                pr = reviewed_pr(head="h2", replies=[comment("a1", "author-b", T1)])
+                pr["reviews"]["nodes"][0]["state"] = state
+                self.gh.prs[pk(1420)] = pr
+                moved(self.gh, "h1", "h2", ["src/B.cs"])
+                self.assertEqual([e["kind"] for e in self.tick()], ["head-moved"])
+                self.assertIs(self.poller["prs"][rk(1420)]["review_pending"], pending)
+
+    def test_a_held_head_move_elsewhere_is_raised_only_to_clear_a_saved_re_review_head(self):
+        for saved, kinds in ((None, []), ("h2", ["head-moved"])):
+            with self.subTest(saved=saved):
+                self.poller = {}
+                self.watch["prs"][rk(1420)]["rereviewed_head"] = saved
+                pr = reviewed_pr(head="h3")
+                pr["reviews"]["nodes"][0]["state"] = "APPROVED"
+                self.gh.prs[pk(1420)] = pr
+                moved(self.gh, saved or "h1", "h3", ["src/Other.cs"])
+                self.assertEqual([e["kind"] for e in self.tick()], kinds)
+                self.assertIs(self.poller["prs"][rk(1420)]["review_pending"], False)
 
     def test_author_reply_after_a_quiet_head_move_emits_head_moved(self):
         self.gh.prs[pk(1420)] = reviewed_pr(head="h2")
-        self.gh.compare["h1...h2"] = ["src/Other.cs"]
+        moved(self.gh, "h1", "h2", ["src/Other.cs"])
         self.tick()
         self.gh.prs[pk(1420)] = reviewed_pr(head="h2", updated="2026-09-11T11:00:00Z",
                                         replies=[comment("a1", "author-b", T1)])
@@ -256,13 +285,14 @@ class ReviewedTickTests(unittest.TestCase):
 
     def test_a_compare_with_no_files_list_does_not_raise(self):
         self.gh.prs[pk(1420)] = reviewed_pr(head="h2")
-        self.gh.compare["h1...h2"] = None
+        moved(self.gh, "h1", "h2", None)
         with contextlib.redirect_stderr(io.StringIO()) as err:
             self.assertEqual(self.tick(), [])
         self.assertEqual(err.getvalue(), "")
 
     def test_a_compare_at_the_file_cap_counts_as_touching_my_findings(self):
         self.gh.prs[pk(1420)] = reviewed_pr(head="h2")
+        moved(self.gh, "h1", "h2", [f"src/F{i}.cs" for i in range(300)])
         self.gh.compare["h1...h2"] = [f"src/F{i}.cs" for i in range(300)]
         events = self.tick()
         self.assertEqual([e["kind"] for e in events], ["head-moved"])
@@ -271,17 +301,17 @@ class ReviewedTickTests(unittest.TestCase):
     def test_a_re_reviewed_head_is_the_start_of_the_compare(self):
         self.watch["prs"][rk(1420)]["rereviewed_head"] = "h2"
         self.gh.prs[pk(1420)] = reviewed_pr(head="h3")
-        self.gh.compare["h2...h3"] = ["src/B.cs"]
+        moved(self.gh, "h2", "h3", ["src/B.cs"])
         events = self.tick()
         self.assertEqual((events[0]["old_head"], events[0]["new_head"]), ("h2", "h3"))
-        self.assertTrue(any(c[1] == "repos/o/r/compare/h2...h3" for c in self.gh.calls))
-        self.assertFalse(any("h1...h3" in c[1] for c in self.gh.calls))
+        compared = {c[1] for c in self.gh.calls if "/compare/" in c[1]}
+        self.assertEqual(compared, {"repos/o/r/compare/main...h2", "repos/o/r/compare/main...h3"})
 
     def test_all_my_threads_resolved_with_no_later_reply_settles_once(self):
         pr = reviewed_pr(head="h2")
         pr["reviewThreads"]["nodes"][0]["isResolved"] = True
         self.gh.prs[pk(1420)] = pr
-        self.gh.compare["h1...h2"] = ["src/B.cs"]
+        moved(self.gh, "h1", "h2", ["src/B.cs"])
         self.assertEqual(self.tick(), [{"pr": rk(1420), "role": "reviewed", "kind": "settled"}])
         pr["updatedAt"] = "2026-09-11T11:00:00Z"
         self.assertEqual(self.tick(), [])
@@ -330,7 +360,7 @@ class ReviewedTickTests(unittest.TestCase):
                                                 path="src/C.cs")])
 
     def answer_one(self, head, first_kind):
-        self.gh.compare["h1...h2"] = ["src/B.cs"]
+        moved(self.gh, "h1", "h2", ["src/B.cs"])
         self.gh.prs[pk(1420)] = self.two_replied(head=head)
         self.assertEqual([e["kind"] for e in self.tick()], [first_kind])
         self.gh.prs[pk(1420)] = self.two_replied(
@@ -352,7 +382,7 @@ class ReviewedTickTests(unittest.TestCase):
 
     def test_a_further_push_after_answering_one_reply_emits_head_moved(self):
         self.answer_one("h2", "head-moved")
-        self.gh.compare["h1...h3"] = ["src/B.cs"]
+        moved(self.gh, "h1", "h3", ["src/B.cs"])
         self.gh.prs[pk(1420)] = self.two_replied(
             head="h3", mine_after=[comment("m3", SELF, T1)], updated="2026-09-11T12:00:00Z")
         self.assertEqual([e["new_head"] for e in self.tick()], ["h3"])

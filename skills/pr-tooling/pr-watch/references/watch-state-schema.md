@@ -118,7 +118,7 @@ push caps and the Slack thread carry across the handover.
 | `cap_notified_head` | string or null | `authored` only. The head the user was told about when `review_fix_pushes` reached its cap (`pr-watch/steps/04-fix-path.md` section 1). Bot-only sets on that same head are escalated into `escalated_ids` without a second message |
 | `ci_log_occurrence` | string or null | `authored` only. The occurrence key whose redacted log is in `<worktree>/.pr-autopilot/ci-log-<N>.txt`; written by `pr-watch/steps/07-ci.md` rule 3 after it places the file. One file serves the whole PR and is never deleted, so this is what says whose log it holds: `pr-watch/steps/06-notify.md` quotes the file only for the occurrence named here |
 | `finding_verdicts` | object thread id to verdict | `reviewed` only; the last re-review verdict posted on that thread (`pr-watch/steps/05-rereview.md`); a judge return that matches it is not replied or resolved again |
-| `rereviewed_head` | string or null | `reviewed` only. The `new_head` of the last completed re-review round; written by `pr-watch/steps/05-rereview.md` step 8. The poller compares from it instead of the user's review commit when it is set |
+| `rereviewed_head` | string or null | `reviewed` only. The `new_head` of the last completed re-review round; written by `pr-watch/steps/05-rereview.md` step 8, and set to null by its step 1 when the approval hold applies. The poller compares from it instead of the user's review commit when it is set |
 | `queued_head` | string or null | `authored` only. Sha of the fix commit queued behind another PR's checks; set by `pr-watch/steps/04-fix-path.md` section 6 step 1, cleared by the drain (section 8 step 5) on every path. The drain pushes only when the worktree `HEAD` still equals it |
 | `queued_at` | integer or null | `authored` only. Epoch seconds the PR joined `push_queue`; set by step 04 section 6 step 1, or by `pr-watch/steps/07-ci.md` section 3 step 2 when not already set; cleared by the drain. The drain stops waiting for other PRs' checks an hour after it |
 | `wait_notice_at` | integer or null | `authored` only. The `queued_at` value the "Stopped waiting" line was posted for, so it posts once per wait; set by step 04 section 8 step 1, cleared by section 8 step 5 |
@@ -151,7 +151,7 @@ branch, so each `retry_after` forces one re-emit of it; kept across later
 writes of the entry), and, `authored` PRs only, `ci_retried_at` (the same,
 for the CI branch; spent independently, so a standing CI-only failure does
 not keep forcing the pending set too), and, `reviewed` PRs only,
-`compared` (`[old head, new head, changed paths]` of the last compare, so
+`compared` (`[base branch, old head, new head, changed paths, capped]` of the last compare, so
 the same head range is not fetched again). `review` maps an `authored` PR key to `checked` (`[head, updatedAt]` of the last review-ready evaluation) and `emitted` (the head a `review-ready` event was last raised for), so the event comes once per head. `merge` maps an `authored` PR key to `<kind>:<head>` of the last `conflicting` or `behind-ready` event, so each comes once per head between forced ticks; a forced tick raises it again until the progress file's `merge_notified` records it. `lease_dropped` and `lease_warned` record the leases whose
 loss and whose write fault have already been reported, so each is raised
 once. `--claim` removes the claimed PR from both; every other writer merges

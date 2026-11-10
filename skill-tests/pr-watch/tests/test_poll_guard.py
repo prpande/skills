@@ -5,7 +5,7 @@ import pathlib
 import tempfile
 import unittest
 
-from fakes import (SELF, T0, T1, FakeGh, HomeCase, comment, pk, poll, pull, review, rk, thread,
+from fakes import (SELF, T0, T1, FakeGh, HomeCase, comment, moved, pk, poll, pull, review, rk, thread,
                    watch, write_session)
 
 
@@ -79,7 +79,7 @@ class CliTests(HomeCase):
                                  threads=[thread("T9", [comment("m1", SELF, T0)], path="src/B.cs"),
                                           thread("T8", [comment("x1", "reviewer-c", T0)])],
                                  reviews=[review("r1", SELF, T0, oid="h1")])
-        self.gh.compare["h1...h2"] = ["src/B.cs"]
+        moved(self.gh, "h1", "h2", ["src/B.cs"])
         _, text = self.run_main("--findings", "o/r#1420")
         payload = json.loads(text)
         self.assertEqual([t["thread_id"] for t in payload["threads"]], ["T9"])
@@ -92,7 +92,7 @@ class CliTests(HomeCase):
                                           thread("T7", [comment("x1", "reviewer-c", T0),
                                                         comment("m2", SELF, T1)])],
                                  reviews=[review("r1", SELF, T0, oid="h1")])
-        self.gh.compare["h1...h2"] = ["src/B.cs"]
+        moved(self.gh, "h1", "h2", ["src/B.cs"])
         _, text = self.run_main("--findings", "o/r#1420")
         payload = json.loads(text)
         self.assertEqual([t["thread_id"] for t in payload["threads"]], ["T9"])
@@ -103,6 +103,7 @@ class CliTests(HomeCase):
                                  reviews=[review("r1", SELF, T0, oid="h1")])
         for count, capped in ((poll.COMPARE_FILE_CAP - 1, False), (poll.COMPARE_FILE_CAP, True)):
             with self.subTest(count=count):
+                moved(self.gh, "h1", "h2", [f"src/F{i}.cs" for i in range(poll.COMPARE_FILE_CAP)])
                 self.gh.compare["h1...h2"] = [f"src/F{i}.cs" for i in range(count)]
                 _, text = self.run_main("--findings", "o/r#1420")
                 self.assertIs(json.loads(text)["compare_capped"], capped)
@@ -114,10 +115,69 @@ class CliTests(HomeCase):
         self.gh.prs[pk(1420)] = pull(1420, author_login="author-b", head="h3",
                                  threads=[thread("T9", [comment("m1", SELF, T0)], path="src/B.cs")],
                                  reviews=[review("r1", SELF, T0, oid="h1")])
-        self.gh.compare["h2...h3"] = ["src/B.cs"]
+        moved(self.gh, "h2", "h3", ["src/B.cs"])
         _, text = self.run_main("--findings", "o/r#1420")
         payload = json.loads(text)
         self.assertEqual((payload["old_head"], payload["changed_files"]), ("h2", ["src/B.cs"]))
+
+    def findings(self, reviews, head="h2"):
+        self.gh.prs[pk(1420)] = pull(1420, author_login="author-b", head=head,
+                                 threads=[thread("T9", [comment("m1", SELF, T0)], path="src/B.cs")],
+                                 reviews=reviews)
+        _, text = self.run_main("--findings", "o/r#1420")
+        return json.loads(text)
+
+    def test_a_merge_from_main_leaves_the_prs_own_patch_unchanged(self):
+        self.gh.compare["main...h1"] = {"src/B.cs": "@@ -2,2 +2,2 @@ class B\n ctx\n-a\n+b"}
+        self.gh.compare["main...h2"] = {"src/B.cs": "@@ -40,2 +40,2 @@ class B2\n moved ctx\n-a\n+b"}
+        payload = self.findings([review("r1", SELF, T0, oid="h1")])
+        self.assertEqual((payload["changed_files"], payload["compare_capped"]), ([], False))
+
+    def test_a_conflict_resolved_in_a_pr_line_changes_that_file(self):
+        self.gh.compare["main...h1"] = {"src/B.cs": "@@ -2 +2 @@\n-a\n+b", "src/C.cs": "@@ -1 +1 @@\n-c\n+d"}
+        self.gh.compare["main...h2"] = {"src/B.cs": "@@ -2 +2 @@\n-main\n+merged", "src/C.cs": "@@ -1 +1 @@\n-c\n+d"}
+        self.assertEqual(self.findings([review("r1", SELF, T0, oid="h1")])["changed_files"], ["src/B.cs"])
+
+    def test_a_file_without_a_patch_counts_as_changed_unless_its_content_is_the_same(self):
+        self.gh.compare["main...h1"] = {"img/logo.png": None, "src/B.cs": "@@ -2 +2 @@\n-a\n+b",
+                                        "big.lock": {"patch": None, "sha": "blob1"}}
+        self.gh.compare["main...h2"] = {"img/logo.png": None, "src/B.cs": "@@ -2 +2 @@\n-a\n+b",
+                                        "big.lock": {"patch": None, "sha": "blob1"}}
+        self.assertEqual(self.findings([review("r1", SELF, T0, oid="h1")])["changed_files"], ["img/logo.png"])
+
+    def test_a_capped_own_diff_falls_back_to_the_files_changed_between_the_heads(self):
+        self.gh.compare["main...h1"] = [f"src/F{i}.cs" for i in range(poll.COMPARE_FILE_CAP)]
+        self.gh.compare["h1...h2"] = ["src/B.cs", "src/Main.cs"]
+        payload = self.findings([review("r1", SELF, T0, oid="h1")])
+        self.assertEqual((payload["changed_files"], payload["compare_capped"]), (["src/B.cs", "src/Main.cs"], False))
+
+    def test_an_approval_at_an_older_commit_holds_the_re_review(self):
+        approved = review("r1", SELF, T0, state="APPROVED", oid="h1")
+        cases = (
+            ([approved], "h1"),
+            ([approved, review("r2", SELF, T1, oid="h2")], "h1"),
+            ([approved, review("r2", SELF, T1, state="CHANGES_REQUESTED", oid="h2")], None),
+            ([review("r1", SELF, T0, state="CHANGES_REQUESTED", oid="h1")], None),
+            ([review("r1", "reviewer-c", T0, state="APPROVED", oid="h1")], None),
+            ([review("r1", SELF, T0, state="APPROVED", oid="h2")], None),
+        )
+        for reviews, hold in cases:
+            with self.subTest(reviews=[(r["state"], r["commit"]["oid"]) for r in reviews]):
+                payload = self.findings(reviews)
+                self.assertEqual(payload["approval_hold"], hold)
+                if hold:
+                    self.assertEqual((payload["changed_files"], payload["compare_capped"]), ([], False))
+
+    def test_a_dismissed_review_holds_unless_the_timeline_says_it_requested_changes(self):
+        dismissed = [review("r1", SELF, T0, state="DISMISSED", oid="h1")]
+        for was, hold in (("approved", "h1"), ("changes_requested", None)):
+            with self.subTest(was=was):
+                self.gh.timeline[1420] = [
+                    {"event": "reviewed", "id": 77, "login": SELF, "state": "dismissed"},
+                    {"event": "review_dismissed", "dismissed": {"review_id": 77, "state": was}}]
+                self.assertEqual(self.findings(dismissed)["approval_hold"], hold)
+        self.gh.fail_timeline.add(1420)
+        self.assertEqual(self.findings(dismissed)["approval_hold"], "h1")
 
     def run_failing(self, *args):
         err = io.StringIO()

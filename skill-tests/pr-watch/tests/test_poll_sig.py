@@ -2,7 +2,7 @@ import hashlib
 import re
 import unittest
 
-from fakes import NOW, T0, T1, FakeGh, comment, pk, poll, pull, rk, thread, watch
+from fakes import NOW, T0, T1, FakeGh, comment, moved, pk, poll, pull, rk, thread, watch
 from test_poll_ci import check
 from test_poll_monitor import authored_pr, reviewed_pr
 
@@ -40,7 +40,7 @@ class SigTests(unittest.TestCase):
     def test_head_moved_carries_a_sig(self):
         gh = FakeGh()
         gh.prs[pk(1420)] = reviewed_pr(head="h2")
-        gh.compare["h1...h2"] = ["src/B.cs"]
+        moved(gh, "h1", "h2", ["src/B.cs"])
         (event,) = self.tick(gh, watch({1420: "reviewed"}))
         self.assertEqual(event["sig"], digest("head:h2:"))
 
