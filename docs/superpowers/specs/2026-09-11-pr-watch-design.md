@@ -719,7 +719,8 @@ only those whose file is in the list.
 "That diff" is the PR's own: GitHub's compare `<base>...<sha>` for each
 head, with each file's patch reduced to its `+`, `-` and `\` lines. A
 file whose reduced patch differs between the two heads, or that has no
-patch on either side, is changed. A merge from the base branch or a
+patch on either side, is changed, unless its content is the same at both
+heads. A merge from the base branch or a
 rebase onto it adds no file, though the plain old-to-new diff would list
 every file the base branch changed. Line positions are left out, so a PR
 line moved within its file with no `+` or `-` line changed is not seen.
@@ -735,7 +736,8 @@ summary. A dismissed review counts as an approval unless the issue
 timeline's `review_dismissed` event says it requested changes. The round
 sets `rereviewed_head` to null, so the next one compares from the user's
 latest review commit. The poller still raises the head move, so that
-round runs, but does not count it as pending work.
+round runs, but counts nothing on a held PR as pending work, an
+unanswered author reply included.
 
 The diff starts at the old head in 3.4: the last completed re-review
 round's new head, or the user's review commit before any round has run.

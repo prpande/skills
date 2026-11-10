@@ -138,9 +138,11 @@ class CliTests(HomeCase):
         self.gh.compare["main...h2"] = {"src/B.cs": "@@ -2 +2 @@\n-main\n+merged", "src/C.cs": "@@ -1 +1 @@\n-c\n+d"}
         self.assertEqual(self.findings([review("r1", SELF, T0, oid="h1")])["changed_files"], ["src/B.cs"])
 
-    def test_a_file_without_a_patch_counts_as_changed(self):
-        self.gh.compare["main...h1"] = {"img/logo.png": None, "src/B.cs": "@@ -2 +2 @@\n-a\n+b"}
-        self.gh.compare["main...h2"] = {"img/logo.png": None, "src/B.cs": "@@ -2 +2 @@\n-a\n+b"}
+    def test_a_file_without_a_patch_counts_as_changed_unless_its_content_is_the_same(self):
+        self.gh.compare["main...h1"] = {"img/logo.png": None, "src/B.cs": "@@ -2 +2 @@\n-a\n+b",
+                                        "big.lock": {"patch": None, "sha": "blob1"}}
+        self.gh.compare["main...h2"] = {"img/logo.png": None, "src/B.cs": "@@ -2 +2 @@\n-a\n+b",
+                                        "big.lock": {"patch": None, "sha": "blob1"}}
         self.assertEqual(self.findings([review("r1", SELF, T0, oid="h1")])["changed_files"], ["img/logo.png"])
 
     def test_a_capped_own_diff_falls_back_to_the_files_changed_between_the_heads(self):

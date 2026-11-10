@@ -280,8 +280,11 @@ class FakeGh:
             files = self.compare.get(basehead, {})
             if isinstance(files, list):
                 files = {f: f"@@ -1 +1 @@\n-x\n+{basehead}" for f in files}
-            return json.dumps({"files": None if files is None else [
-                {"filename": f, **({} if patch is None else {"patch": patch})} for f, patch in files.items()]})
+            rows = []
+            for f, value in (files or {}).items():
+                patch, sha = (value.get("patch"), value["sha"]) if isinstance(value, dict) else (value, None)
+                rows.append({"filename": f, "patch": patch, "sha": sha or f"{basehead}:{f}"})
+            return json.dumps(rows)
         if "/issues/" in path and path.endswith("/timeline"):
             number = int(path.split("/issues/")[1].split("/")[0])
             if number in self.fail_timeline:

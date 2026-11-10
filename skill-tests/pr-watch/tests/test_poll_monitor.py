@@ -249,7 +249,7 @@ class ReviewedTickTests(unittest.TestCase):
         for state, pending in (("APPROVED", False), ("CHANGES_REQUESTED", True)):
             with self.subTest(state=state):
                 self.poller = {}
-                pr = reviewed_pr(head="h2")
+                pr = reviewed_pr(head="h2", replies=[comment("a1", "author-b", T1)])
                 pr["reviews"]["nodes"][0]["state"] = state
                 self.gh.prs[pk(1420)] = pr
                 moved(self.gh, "h1", "h2", ["src/B.cs"])

@@ -429,17 +429,32 @@ def replies_after_me(thread, self_login, allowlist):
             if classify(c["author"], self_login, allowlist)[1] != "me"]
 
 
+def compare_files(gh, owner, repo, basehead):
+    """The files of GitHub's compare `basehead` as {filename, patch, sha}, and whether the list hit the cap of 300."""
+    out = gh(["api", f"repos/{repo_slug(owner, repo)}/compare/{basehead}", "--jq",
+              "[.files[]? | {filename, patch, sha}]"])
+    files = json.loads(out or "[]") or []
+    return files, len(files) >= COMPARE_FILE_CAP
+
+
 def own_patches(gh, owner, repo, base, sha):
-    """Path -> the +/- lines of its part of the PR's own diff at `sha` (None when GitHub sends no patch),
-    and whether the file list hit GitHub's cap of 300 and may be incomplete."""
-    basehead = f"{urllib.parse.quote(base, safe='/')}...{sha}"
-    reply = json.loads(gh(["api", f"repos/{repo_slug(owner, repo)}/compare/{basehead}"]) or "{}")
-    files = reply.get("files") or []
-    return {f["filename"]: changed_lines(f.get("patch")) for f in files}, len(files) >= COMPARE_FILE_CAP
+    """Path -> (the +/- lines of its part of the PR's own diff at `sha`, None when GitHub sends no patch; its blob
+    sha), and whether the file list may be incomplete."""
+    files, capped = compare_files(gh, owner, repo, f"{urllib.parse.quote(base, safe='/')}...{sha}")
+    return {f["filename"]: (changed_lines(f.get("patch")), f.get("sha")) for f in files}, capped
 
 
 def changed_lines(patch):
     return None if patch is None else [line for line in patch.splitlines() if line.startswith(("+", "-", "\\"))]
+
+
+def own_diff_changed(before, after):
+    if before is None or after is None:
+        return True
+    (lines_a, sha_a), (lines_b, sha_b) = before, after
+    if sha_a and sha_a == sha_b:
+        return False
+    return lines_a is None or lines_b is None or lines_a != lines_b
 
 
 def changed_files(gh, owner, repo, base, old, new):
@@ -449,11 +464,9 @@ def changed_files(gh, owner, repo, base, old, new):
     before, old_capped = own_patches(gh, owner, repo, base, old)
     after, new_capped = own_patches(gh, owner, repo, base, new)
     if old_capped or new_capped:
-        plain = json.loads(gh(["api", f"repos/{repo_slug(owner, repo)}/compare/{old}...{new}"]) or "{}").get("files") or []
-        return sorted({f["filename"] for f in plain}), len(plain) >= COMPARE_FILE_CAP
-    changed = sorted(path for path in before.keys() | after.keys()
-                     if None in (before.get(path, []), after.get(path, [])) or before.get(path) != after.get(path))
-    return changed, False
+        plain, capped = compare_files(gh, owner, repo, f"{old}...{new}")
+        return sorted({f["filename"] for f in plain}), capped
+    return sorted(p for p in before.keys() | after.keys() if own_diff_changed(before.get(p), after.get(p))), False
 
 
 def dismissed_was(gh, owner, repo, number, self_login):
@@ -614,10 +627,7 @@ def evaluate_reviewed(view, pr, entry, prev, compare, held=lambda pr: None):
         signature = prefix + ",".join(reply_ids)
         files, capped = compare(pr["baseRefName"], old, new)
         touches = capped or any(t["path"] in files for t in threads)
-        if (touches or author_replied) and held(pr):
-            review_pending = not answered
-        else:
-            review_pending = touches or author_replied or not answered
+        review_pending = (touches or author_replied or not answered) and not held(pr)
         if (not is_new(prefix, reply_ids, prev.get("last_signature"), prev.get("last_items"))
                 or not (touches or author_replied)):
             return Evaluation(None, signature, review_pending, reply_ids)
