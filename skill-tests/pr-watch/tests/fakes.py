@@ -55,6 +55,12 @@ def thread(tid, comments, resolved=False, path="src/A.cs", line=10, outdated=Fal
             "comments": {"pageInfo": {"hasNextPage": False}, "nodes": list(comments)}}
 
 
+def moved(gh, old, new, files, base="main"):
+    """Makes `files` the paths whose own diff against `base` differs between `old` and `new`."""
+    gh.compare.setdefault(f"{base}...{old}", {})
+    gh.compare[f"{base}...{new}"] = files
+
+
 def review(rid, login, at, state="COMMENTED", body="", oid="h1", typename="User"):
     return {"id": rid, "author": author(login, typename), "state": state,
             "submittedAt": at, "body": body, "commit": {"oid": oid}}
@@ -180,6 +186,8 @@ class FakeGh:
         self.earlier = {}
         self.fail_checks = set()
         self.fail_user = False
+        self.timeline = {}
+        self.fail_timeline = set()
 
     def thread_fetches(self):
         return sum(1 for a in self.calls
@@ -268,10 +276,17 @@ class FakeGh:
             return "".join(f"{suite}\t{name}\n"
                            for suite, name in self.base_workflow_runs.get(sha, []))
         if "/compare/" in path:
-            files = self.compare.get(path.split("/compare/")[1], [])
-            if files is None and not args[args.index("--jq") + 1].startswith("(.files // [])"):
-                raise poll.GhError("jq: error: Cannot iterate over null")
-            return "".join(f"{f}\n" for f in files or [])
+            basehead = urllib.parse.unquote(path.split("/compare/")[1])
+            files = self.compare.get(basehead, {})
+            if isinstance(files, list):
+                files = {f: f"@@ -1 +1 @@\n-x\n+{basehead}" for f in files}
+            return json.dumps({"files": None if files is None else [
+                {"filename": f, **({} if patch is None else {"patch": patch})} for f, patch in files.items()]})
+        if "/issues/" in path and path.endswith("/timeline"):
+            number = int(path.split("/issues/")[1].split("/")[0])
+            if number in self.fail_timeline:
+                raise poll.GhError("HTTP 502")
+            return "".join(json.dumps(row) + "\n" for row in self.timeline.get(number, []))
         if path == "user":
             if self.fail_user:
                 raise poll.GhError("HTTP 401: Bad credentials")

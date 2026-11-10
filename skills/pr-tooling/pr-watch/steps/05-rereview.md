@@ -12,6 +12,17 @@ progress file (`pr-watch/steps/03-route-event.md`, "State has two homes").
    `is_resolved` is `false`; a thread already resolved stays resolved
    and drops out here. Threads the user only replied on are context,
    never findings, and are never replied to or resolved.
+
+   When the payload's `approval_hold` is not null, the user's latest
+   verdict (APPROVED, CHANGES_REQUESTED or DISMISSED; COMMENTED does not
+   count) is an approval at `approval_hold.approved`, a commit other than
+   the head. A dismissed review counts as an approval unless the issue
+   timeline says it requested changes. Whether such a PR gets a
+   re-review is the user's call, made outside this watch. Judge nothing,
+   reply on and resolve no thread, post nothing on GitHub or Slack for
+   this head, and leave `finding_verdicts` as it is. Set the PR's
+   `rereviewed_head` to null and write the progress file, so the next
+   round compares from the user's latest review commit; then stop.
 2. Resolve `CLONE` as `pr-watch/steps/01-discover.md` section 3 does: the
    current directory's repo when `git remote get-url origin` names
    `<owner>/<repo>` (compare without case), in which case `CLONE` is
@@ -24,9 +35,11 @@ progress file (`pr-watch/steps/03-route-event.md`, "State has two homes").
    `git -C <CLONE> fetch origin <old_head>`. Read code only with
    `git -C <CLONE> show <sha>:<path>` and
    `git -C <CLONE> diff <old_head> <new_head> -- <path>`.
-3. Judge a finding only when its `path` is in `changed_files` (the diff
-   from the payload's `old_head`, the last re-reviewed head or else the
-   user's review commit, touches it), when `compare_capped` is `true`
+3. Judge a finding only when its `path` is in `changed_files` (its part
+   of the PR's own diff, taken from the base branch's merge-base, differs
+   between the payload's `old_head`, the last re-reviewed head or else the
+   user's review commit, and `new_head`; a merge from the base branch or a
+   rebase adds no file), when `compare_capped` is `true`
    (the file list may be incomplete, so every finding qualifies), or when
    its `kinds` holds a `human` entry after index 0 (the author replied on
    it); leave every other finding for the next `head-moved` event. For

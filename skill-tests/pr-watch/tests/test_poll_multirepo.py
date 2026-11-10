@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from fakes import (NOW, SELF, T0, T1, FakeGh, HomeCase, claim_leases, comment, lease, pk, poll,
+from fakes import (NOW, SELF, T0, T1, FakeGh, HomeCase, claim_leases, comment, lease, moved, pk, poll,
                    pull, pw_paths, review, thread, watch, write_session)
 
 A1 = "o/a#1"
@@ -133,7 +133,7 @@ class MultiRepoTickTests(unittest.TestCase):
             2, author_login="author-b", head="h2",
             threads=[thread("T9", [comment("m1", SELF, T0)], path="src/B.cs")],
             reviews=[review("r1", SELF, T0, oid="h1")])
-        self.gh.compare["h1...h2"] = changed
+        moved(self.gh, "h1", "h2", changed)
         self.tick(view)
         return self.poller["prs"]["o/a#2"]["review_pending"]
 
@@ -149,12 +149,12 @@ class MultiRepoTickTests(unittest.TestCase):
         self.gh.prs[pk(2, "o", "a")]["updatedAt"] = "2026-09-11T11:00:00Z"
         self.tick(view, now=NOW + 60)
         compares = [c for c in self.gh.calls if c[:1] == ["api"] and "/compare/" in c[1]]
-        self.assertEqual(len(compares), 1)
-        self.assertEqual(self.poller["prs"]["o/a#2"]["compared"], ["h1", "h2", ["src/B.cs"]])
+        self.assertEqual(len(compares), 2)
+        self.assertEqual(self.poller["prs"]["o/a#2"]["compared"], ["main", "h1", "h2", ["src/B.cs"], False])
         self.gh.prs[pk(2, "o", "a")]["headRefOid"] = "h3"
-        self.gh.compare["h1...h3"] = ["src/Z.cs"]
+        moved(self.gh, "h1", "h3", ["src/Z.cs"])
         self.tick(view, now=NOW + 120)
-        self.assertEqual(self.poller["prs"]["o/a#2"]["compared"], ["h1", "h3", ["src/Z.cs"]])
+        self.assertEqual(self.poller["prs"]["o/a#2"]["compared"], ["main", "h1", "h3", ["src/Z.cs"], False])
 
     def test_pending_flags_from_live_data(self):
         view = watch({1: "authored", 2: "reviewed"}, owner="o", repo="a")

@@ -67,6 +67,7 @@ CONTEXT_BEFORE = 500
 CONTEXT_AFTER = 20
 GH_TIMEOUT_SECONDS = 120
 COMPARE_FILE_CAP = 300
+VERDICTS = ("APPROVED", "CHANGES_REQUESTED", "DISMISSED")
 COMMENT_FIELDS = "id author { login __typename } createdAt updatedAt body"
 REVIEW_FIELDS = "id author { login __typename } state submittedAt body commit { oid }"
 THREAD_COMMENTS_QUERY = (
@@ -422,10 +423,62 @@ def replies_after_me(thread, self_login, allowlist):
             if classify(c["author"], self_login, allowlist)[1] != "me"]
 
 
-def changed_files(gh, owner, repo, old, new):
-    out = gh(["api", f"repos/{repo_slug(owner, repo)}/compare/{old}...{new}", "--paginate",
-              "--jq", "(.files // [])[].filename"])
-    return sorted({line.strip() for line in out.splitlines() if line.strip()})
+def own_patches(gh, owner, repo, base, sha):
+    """Path -> the +/- lines of its part of the PR's own diff at `sha` (None when GitHub sends no patch),
+    and whether the file list hit GitHub's cap of 300 and may be incomplete."""
+    basehead = f"{urllib.parse.quote(base, safe='/')}...{sha}"
+    reply = json.loads(gh(["api", f"repos/{repo_slug(owner, repo)}/compare/{basehead}"]) or "{}")
+    files = reply.get("files") or []
+    out = {}
+    for f in files:
+        patch = f.get("patch")
+        out[f["filename"]] = (None if patch is None else
+                              [line for line in patch.splitlines() if line.startswith(("+", "-", "\\"))])
+    return out, len(files) >= COMPARE_FILE_CAP
+
+
+def changed_files(gh, owner, repo, base, old, new):
+    """The paths whose part of the PR's own diff against `base` differs between `old` and `new`, sorted, and
+    whether either file list was capped. A merge from `base` or a rebase onto it adds none."""
+    before, old_capped = own_patches(gh, owner, repo, base, old)
+    after, new_capped = own_patches(gh, owner, repo, base, new)
+    changed = sorted(path for path in before.keys() | after.keys()
+                     if before.get(path, []) is None or after.get(path, []) is None
+                     or before.get(path) != after.get(path))
+    return changed, old_capped or new_capped
+
+
+def dismissed_was(gh, owner, repo, number, self_login):
+    """The state, before dismissal, of the user's latest dismissed review, from the issue timeline; None when not found."""
+    out = gh(["api", f"repos/{repo_slug(owner, repo)}/issues/{int(number)}/timeline", "--paginate", "--jq",
+              '.[] | select(.event == "reviewed" or .event == "review_dismissed") '
+              '| {event, id, login: .user.login, state, dismissed: .dismissed_review}'])
+    rows = [row for row in (json.loads(line) for line in out.splitlines() if line.strip()) if isinstance(row, dict)]
+    was = {str((r.get("dismissed") or {}).get("review_id")): str((r.get("dismissed") or {}).get("state") or "").upper()
+           for r in rows if r.get("event") == "review_dismissed"}
+    mine = [r for r in rows if r.get("event") == "reviewed" and str(r.get("login") or "").lower() == self_login.lower()
+            and str(r.get("state") or "").lower() == "dismissed"]
+    return was.get(str(mine[-1].get("id"))) if mine else None
+
+
+def approval_hold(gh, entry, pr, self_login, allowlist):
+    """The commit of the user's latest verdict when it is an approval, kept or dismissed, at a commit other than the
+    head; else None. COMMENTED reviews are not verdicts. A dismissed review counts as an approval unless the
+    timeline says it was a change request."""
+    mine = [r for r in pr["reviews"]["nodes"]
+            if classify(r["author"], self_login, allowlist)[1] == "me" and r.get("state") in VERDICTS
+            and r.get("submittedAt") and r.get("commit")]
+    if not mine:
+        return None
+    last = max(mine, key=lambda r: r["submittedAt"])
+    state = last["state"]
+    if state == "DISMISSED":
+        try:
+            state = dismissed_was(gh, entry["owner"], entry["repo"], entry["number"], self_login) or "APPROVED"
+        except (GhError, ValueError):
+            state = "APPROVED"
+    commit = last["commit"]["oid"]
+    return commit if state == "APPROVED" and commit != pr["headRefOid"] else None
 
 
 def rollup_state(node):
@@ -530,13 +583,8 @@ def review_start(view, pr, entry):
         pr, view["self_login"], view["bot_allowlist"])
 
 
-def compare_capped(files):
-    # GitHub's compare lists at most 300 files, so a full list may omit a flagged file.
-    return len(files) >= COMPARE_FILE_CAP
-
-
 def evaluate_reviewed(view, pr, entry, prev, compare):
-    """`compare(old, new)` returns the paths changed between the two heads."""
+    """`compare(base, old, new)` returns `changed_files` for the two heads."""
     me, allow = view["self_login"], view["bot_allowlist"]
     key = entry_key(entry)
     threads = my_threads(pr, me, allow)
@@ -557,8 +605,8 @@ def evaluate_reviewed(view, pr, entry, prev, compare):
     if old and old != new:
         prefix = f"head:{new}:"
         signature = prefix + ",".join(reply_ids)
-        files = set(compare(old, new))
-        touches = compare_capped(files) or any(t["path"] in files for t in threads)
+        files, capped = compare(pr["baseRefName"], old, new)
+        touches = capped or any(t["path"] in files for t in threads)
         review_pending = touches or author_replied or not answered
         if (not is_new(prefix, reply_ids, prev.get("last_signature"), prev.get("last_items"))
                 or not (touches or author_replied)):
@@ -636,11 +684,11 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
     review_failed = ci_failed = False
     compared = prev.get("compared")
 
-    def compare(old, new):
+    def compare(base, old, new):
         nonlocal compared
-        if not compared or compared[:2] != [old, new]:
-            compared = [old, new, changed_files(gh, entry["owner"], entry["repo"], old, new)]
-        return compared[2]
+        if not compared or compared[:3] != [base, old, new]:
+            compared = [base, old, new, *changed_files(gh, entry["owner"], entry["repo"], base, old, new)]
+        return compared[3], compared[4]
 
     if moved or forced:
         try:
@@ -1487,12 +1535,15 @@ def print_sections(attention, new, standing, first_run):
 def findings_payload(gh, view, entry, pr):
     me, allow = view["self_login"], view["bot_allowlist"]
     old, new = review_start(view, pr, entry), pr["headRefOid"]
-    files = changed_files(gh, entry["owner"], entry["repo"], old, new) if old and old != new else []
+    files, capped = (changed_files(gh, entry["owner"], entry["repo"], pr["baseRefName"], old, new)
+                     if old and old != new else ([], False))
+    held = approval_hold(gh, entry, pr, me, allow)
     return {
         "pr": entry_key(entry), "title": pr["title"], "url": pr["url"],
         "author": (pr.get("author") or {}).get("login"),
         "old_head": old, "new_head": new, "changed_files": files,
-        "compare_capped": compare_capped(files),
+        "compare_capped": capped,
+        "approval_hold": {"approved": held} if held else None,
         "threads": [{
             "thread_id": t["id"], "path": t["path"], "line": t["line"],
             "is_resolved": t["isResolved"], "is_outdated": t["isOutdated"],
