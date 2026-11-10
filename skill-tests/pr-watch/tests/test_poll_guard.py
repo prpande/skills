@@ -149,29 +149,30 @@ class CliTests(HomeCase):
     def test_an_approval_at_an_older_commit_holds_the_re_review(self):
         approved = review("r1", SELF, T0, state="APPROVED", oid="h1")
         cases = (
-            ([approved], {"approved": "h1"}),
-            ([approved, review("r2", SELF, T1, oid="h2")], {"approved": "h1"}),
+            ([approved], "h1"),
+            ([approved, review("r2", SELF, T1, oid="h2")], "h1"),
             ([approved, review("r2", SELF, T1, state="CHANGES_REQUESTED", oid="h2")], None),
             ([review("r1", SELF, T0, state="CHANGES_REQUESTED", oid="h1")], None),
             ([review("r1", "reviewer-c", T0, state="APPROVED", oid="h1")], None),
+            ([review("r1", SELF, T0, state="APPROVED", oid="h2")], None),
         )
         for reviews, hold in cases:
-            with self.subTest(states=[r["state"] for r in reviews]):
-                self.assertEqual(self.findings(reviews)["approval_hold"], hold)
-
-    def test_an_approval_at_the_head_is_no_hold(self):
-        self.assertIsNone(self.findings([review("r1", SELF, T0, state="APPROVED", oid="h2")])["approval_hold"])
+            with self.subTest(reviews=[(r["state"], r["commit"]["oid"]) for r in reviews]):
+                payload = self.findings(reviews)
+                self.assertEqual(payload["approval_hold"], hold)
+                if hold:
+                    self.assertEqual((payload["changed_files"], payload["compare_capped"]), ([], False))
 
     def test_a_dismissed_review_holds_unless_the_timeline_says_it_requested_changes(self):
         dismissed = [review("r1", SELF, T0, state="DISMISSED", oid="h1")]
-        for was, hold in (("approved", {"approved": "h1"}), ("changes_requested", None)):
+        for was, hold in (("approved", "h1"), ("changes_requested", None)):
             with self.subTest(was=was):
                 self.gh.timeline[1420] = [
                     {"event": "reviewed", "id": 77, "login": SELF, "state": "dismissed"},
                     {"event": "review_dismissed", "dismissed": {"review_id": 77, "state": was}}]
                 self.assertEqual(self.findings(dismissed)["approval_hold"], hold)
         self.gh.fail_timeline.add(1420)
-        self.assertEqual(self.findings(dismissed)["approval_hold"], {"approved": "h1"})
+        self.assertEqual(self.findings(dismissed)["approval_hold"], "h1")
 
     def run_failing(self, *args):
         err = io.StringIO()

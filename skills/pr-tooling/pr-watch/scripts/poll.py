@@ -406,11 +406,17 @@ def my_threads(pr, self_login, allowlist):
             and classify(t["comments"]["nodes"][0]["author"], self_login, allowlist)[1] == "me"]
 
 
-def my_review_head(pr, self_login, allowlist):
+def my_latest_review(pr, self_login, allowlist, states=None):
+    """The user's last submitted review with a commit, of one of `states` when given; None when there is none."""
     mine = [r for r in pr["reviews"]["nodes"]
             if classify(r["author"], self_login, allowlist)[1] == "me"
-            and r.get("submittedAt") and r.get("commit")]
-    return max(mine, key=lambda r: r["submittedAt"])["commit"]["oid"] if mine else None
+            and r.get("submittedAt") and r.get("commit") and (states is None or r.get("state") in states)]
+    return max(mine, key=lambda r: r["submittedAt"]) if mine else None
+
+
+def my_review_head(pr, self_login, allowlist):
+    latest = my_latest_review(pr, self_login, allowlist)
+    return latest["commit"]["oid"] if latest else None
 
 
 def replies_after_me(thread, self_login, allowlist):
@@ -429,12 +435,11 @@ def own_patches(gh, owner, repo, base, sha):
     basehead = f"{urllib.parse.quote(base, safe='/')}...{sha}"
     reply = json.loads(gh(["api", f"repos/{repo_slug(owner, repo)}/compare/{basehead}"]) or "{}")
     files = reply.get("files") or []
-    out = {}
-    for f in files:
-        patch = f.get("patch")
-        out[f["filename"]] = (None if patch is None else
-                              [line for line in patch.splitlines() if line.startswith(("+", "-", "\\"))])
-    return out, len(files) >= COMPARE_FILE_CAP
+    return {f["filename"]: changed_lines(f.get("patch")) for f in files}, len(files) >= COMPARE_FILE_CAP
+
+
+def changed_lines(patch):
+    return None if patch is None else [line for line in patch.splitlines() if line.startswith(("+", "-", "\\"))]
 
 
 def changed_files(gh, owner, repo, base, old, new):
@@ -443,8 +448,7 @@ def changed_files(gh, owner, repo, base, old, new):
     before, old_capped = own_patches(gh, owner, repo, base, old)
     after, new_capped = own_patches(gh, owner, repo, base, new)
     changed = sorted(path for path in before.keys() | after.keys()
-                     if before.get(path, []) is None or after.get(path, []) is None
-                     or before.get(path) != after.get(path))
+                     if None in (before.get(path, []), after.get(path, [])) or before.get(path) != after.get(path))
     return changed, old_capped or new_capped
 
 
@@ -465,12 +469,9 @@ def approval_hold(gh, entry, pr, self_login, allowlist):
     """The commit of the user's latest verdict when it is an approval, kept or dismissed, at a commit other than the
     head; else None. COMMENTED reviews are not verdicts. A dismissed review counts as an approval unless the
     timeline says it was a change request."""
-    mine = [r for r in pr["reviews"]["nodes"]
-            if classify(r["author"], self_login, allowlist)[1] == "me" and r.get("state") in VERDICTS
-            and r.get("submittedAt") and r.get("commit")]
-    if not mine:
+    last = my_latest_review(pr, self_login, allowlist, VERDICTS)
+    if last is None:
         return None
-    last = max(mine, key=lambda r: r["submittedAt"])
     state = last["state"]
     if state == "DISMISSED":
         try:
@@ -1430,7 +1431,7 @@ def attention_lines(view, pr, entry):
     latest = {}
     for r in pr["reviews"]["nodes"]:
         login, kind = classify(r["author"], me, allow)
-        if kind == "human" and r["state"] in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED"):
+        if kind == "human" and r["state"] in VERDICTS:
             latest[login] = r
     for login, r in sorted(latest.items()):
         if r["state"] == "CHANGES_REQUESTED":
@@ -1535,15 +1536,15 @@ def print_sections(attention, new, standing, first_run):
 def findings_payload(gh, view, entry, pr):
     me, allow = view["self_login"], view["bot_allowlist"]
     old, new = review_start(view, pr, entry), pr["headRefOid"]
-    files, capped = (changed_files(gh, entry["owner"], entry["repo"], pr["baseRefName"], old, new)
-                     if old and old != new else ([], False))
     held = approval_hold(gh, entry, pr, me, allow)
+    files, capped = (changed_files(gh, entry["owner"], entry["repo"], pr["baseRefName"], old, new)
+                     if old and old != new and not held else ([], False))
     return {
         "pr": entry_key(entry), "title": pr["title"], "url": pr["url"],
         "author": (pr.get("author") or {}).get("login"),
         "old_head": old, "new_head": new, "changed_files": files,
         "compare_capped": capped,
-        "approval_hold": {"approved": held} if held else None,
+        "approval_hold": held,
         "threads": [{
             "thread_id": t["id"], "path": t["path"], "line": t["line"],
             "is_resolved": t["isResolved"], "is_outdated": t["isOutdated"],

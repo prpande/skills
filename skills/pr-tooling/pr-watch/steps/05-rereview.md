@@ -13,16 +13,13 @@ progress file (`pr-watch/steps/03-route-event.md`, "State has two homes").
    and drops out here. Threads the user only replied on are context,
    never findings, and are never replied to or resolved.
 
-   When the payload's `approval_hold` is not null, the user's latest
-   verdict (APPROVED, CHANGES_REQUESTED or DISMISSED; COMMENTED does not
-   count) is an approval at `approval_hold.approved`, a commit other than
-   the head. A dismissed review counts as an approval unless the issue
-   timeline says it requested changes. Whether such a PR gets a
-   re-review is the user's call, made outside this watch. Judge nothing,
-   reply on and resolve no thread, post nothing on GitHub or Slack for
-   this head, and leave `finding_verdicts` as it is. Set the PR's
-   `rereviewed_head` to null and write the progress file, so the next
-   round compares from the user's latest review commit; then stop.
+   When the payload's `approval_hold` is a sha, the user's latest verdict
+   (COMMENTED reviews are not verdicts) is an approval at that older
+   commit, and a re-review is their call, made outside this watch. Judge,
+   reply on, resolve and post nothing on GitHub or Slack for this head,
+   and leave `finding_verdicts` as it is. Set the PR's `rereviewed_head`
+   to null and write the progress file, so the next round compares from
+   the user's latest review commit; then stop.
 2. Resolve `CLONE` as `pr-watch/steps/01-discover.md` section 3 does: the
    current directory's repo when `git remote get-url origin` names
    `<owner>/<repo>` (compare without case), in which case `CLONE` is
