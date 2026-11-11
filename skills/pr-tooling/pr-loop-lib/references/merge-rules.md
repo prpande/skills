@@ -107,9 +107,9 @@ before escalation.
 - **Pre-open (pr-autopilot step 03.5)**: the lens agent and
   `/code-review` run together, and step 03.5 D merges their lists
   before one fix round. `/code-review` findings carry no `category`, so
-  two findings are the same when their `description_hash` values are
-  equal, or when they name the same file, their lines are within 3 of
-  each other, and both describe the same failure.
+  two findings are the same only when they name the same file and either
+  their `description_hash` values are equal or their lines are within 3
+  of each other and both describe the same failure.
 - **Iter 1 of the comment loop**: when triage extracts `/code-review`'s
   comment findings (via the known-bot exemption rule), compare each
   against `context.preflight_passes.merged` (from preflight). For
