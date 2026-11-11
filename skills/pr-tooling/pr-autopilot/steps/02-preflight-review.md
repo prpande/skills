@@ -12,7 +12,9 @@ agent, its prompt, and how its findings are recorded.
 ## Dispatch
 
 1. Write `git diff <base_sha>...<head_sha>` to
-   `<repo-root>/.pr-autopilot/branch-<slug>.diff`.
+   `<repo-root>/.pr-autopilot/branch-<slug>.diff`. Under `--dry-run`,
+   where step 03.5 A committed nothing, write the working-tree diff
+   `git diff <base_sha>` instead.
 2. Render the prompt below:
    - `<playbook paths>`: whichever of `.github/claude-review-instructions.md`
      and `.github/copilot-instructions.md` exist, else "none"

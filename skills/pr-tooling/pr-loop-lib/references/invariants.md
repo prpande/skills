@@ -148,7 +148,7 @@ equivalent predicates live in `P02.*`.
 
 | # | Predicate |
 |---|---|
-| S04g.1 | After step 04 creates the PR, no top-level PR comment authored by `context.self_login` has a **first non-blank line** matching `^\s*#{1,6}\s*code[\s-]*review\b` (case-insensitive). Regression guard against α's posting behavior. Check using `gh api repos/<owner>/<repo>/issues/<PR>/comments --paginate` (paginated — `gh pr view --json comments` does NOT paginate and can miss comments past page 1 on busy PRs). Body-match is on the first non-blank line only so a quoted heading elsewhere in a comment doesn't false-positive. A hit = hard halt. Full check command is in `pr-autopilot/steps/04-open-pr.md#invariants`. |
+| S04g.1 | After step 04 creates the PR, no top-level PR comment authored by `context.self_login` has a **first non-blank line** matching `^\s*#{1,6}\s*code[\s-]*review\b` (case-insensitive). Regression guard against α's posting behavior. Check using `gh api repos/<owner>/<repo>/issues/<PR>/comments --paginate` (paginated — `gh pr view --json comments` does NOT paginate and can miss comments past page 1 on busy PRs). Body-match is on the first non-blank line only so a quoted heading elsewhere in a comment doesn't false-positive. A hit = hard halt. Full check command is in `pr-autopilot/steps/04-open-pr.md` "4g — Self-post guard, then hand off". |
 
 ## P02 — pre-open dispatch invariants (pr-autopilot step 03.5)
 

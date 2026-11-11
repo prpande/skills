@@ -1,8 +1,11 @@
 # Step 04 — Open PR
 
 Fill the PR body, check every shipped text against the code, push, and
-open the PR. All review and its fixes already happened in steps 02 and
-03.5; the branch is committed locally and not yet pushed.
+open the PR. All review and its fixes already happened in step 03.5;
+the branch is committed locally and not yet pushed. Under `--dry-run`,
+4b writes its commit message to the dry-run directory without
+committing, and 4c-4g are skipped; the body stays in the dry-run
+directory as `pr-body.md`.
 
 ## 4a — Fill PR template
 
