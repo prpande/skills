@@ -79,10 +79,12 @@ Apply the results:
   run the build and test commands detected per the Command detection
   table in `pr-loop-lib/steps/04.5-local-verify.md`, under its Execution
   rules. Do not invoke 04.5 as a step: it skips when
-  `context.files_changed_this_iteration` is empty, which it is here. On
-  failure, revert only the edited files with `git checkout -- <edited
-  files>` (the tree was clean before these edits) and list the claim in
-  the final report as uncorrected. On pass, secret scan the changed
+  `context.files_changed_this_iteration` is empty, which it is here.
+  Before editing, copy each target file to
+  `<repo-root>/.pr-autopilot/text-fix-snapshot/`; under `--dry-run` the
+  tree also holds uncommitted implementation and review fixes. On
+  failure, copy the snapshots back over the edited files, never `git
+  checkout`, and list the claim in the final report as uncorrected. On pass, secret scan the changed
   files (BLOCKING) and commit locally:
   `Correct shipped text to match the code`.
 - `commit`: commits are local and unpushed, but never rewrite history

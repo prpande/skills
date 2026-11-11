@@ -47,7 +47,8 @@ For each missing-required drift:
    - Dispatch a fixer subagent (loop lib `04-dispatch-fixers.md` mechanics)
      with the spec excerpt as the directive and the target file path.
    - After the fixer returns, re-run `04.5-local-verify.md`.
-   - If the build/tests pass, the drift is resolved; continue.
+   - If the build/tests pass, the drift is resolved; add the fixer's
+     `files_changed` to `context.uncommitted` and continue.
    - If they fail twice, fall back to the diagnostic path (next bullet).
 
 3. Otherwise → write a diagnostic block to `stderr`-equivalent

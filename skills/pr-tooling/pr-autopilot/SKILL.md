@@ -106,12 +106,12 @@ Phase 4 — CI gate (if step 08 exited quiescent, not on cap/runaway)
 
 8. Perform `~/.claude/skills/pr-loop-lib/steps/09-ci-gate.md`.
 9. If red, perform `~/.claude/skills/pr-loop-lib/steps/10-ci-failure-classify.md`.
-   Up to 3 re-entries of Phase 3. On cap, proceed to step 11.
+   Up to 3 re-entries of Phase 3. On cap, proceed to step 10.
 
 Phase 5 — Report (and optional UI-deferred approval)
 
 10. Perform `~/.claude/skills/pr-loop-lib/steps/11-final-report.md`.
-   If `context.ui_deferred_items` is non-empty, step 11 also runs an
+   If `context.ui_deferred_items` is non-empty, step 10 also runs an
    interactive approval phase (per-item apply / reject / skip via
    `AskUserQuestion`). Approved items re-enter step 04 with
    `UI_DEFERRAL_OVERRIDE=true` and go through step 06 for commit +
