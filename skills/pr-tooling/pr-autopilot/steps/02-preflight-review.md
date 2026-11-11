@@ -120,19 +120,20 @@ alongside this one.
    `~/.claude/skills/deep-review/references/backend-lenses.md`. The two
    resolve independently — either may be absent, and neither absence
    suppresses the other.
-2. Decide whether the diff is **backend**: the diff touches SQL or ORM
-   bindings or repository-layer code, an HTTP endpoint or route, a GraphQL
-   schema/resolver/loader, a message or event handler, a schema migration
-   file, or cache access.
+2. Decide which tier groups the diff triggers, per the Trigger table in
+   `backend-lenses.md` (TX and IDM on write paths and message handlers, TEN
+   and EXP on data access, endpoints and GraphQL, CA on cache access, MIG
+   on migration files). The diff is **backend** when any group fires.
 3. Collect lens sections from whichever sources resolved. Each contributes
    independently:
    a. **Register present** — take the Universal section plus every pack
       whose stated trigger matches the diff's content. **Register absent**
       — log a `lens_register_missing` event and contribute nothing here.
-   b. **Backend diff, tier present** — append the whole of
-      `backend-lenses.md`. **Backend diff, tier absent** — log a
-      `backend_lenses_missing` event and contribute nothing here. On a
-      non-backend diff the tier does not apply: contribute nothing, log
+   b. **Backend diff, tier present** — append the tier's sections up to
+      its first group (applicability, trigger, severity defaults, posture
+      lenses), then each triggered group. **Backend diff, tier absent** —
+      log a `backend_lenses_missing` event and contribute nothing here. On
+      a non-backend diff the tier does not apply: contribute nothing, log
       nothing.
 4. **If neither (a) nor (b) contributed**: substitute the empty string —
    the lens audit self-skips on an empty block. This keeps pr-autopilot
@@ -147,8 +148,8 @@ alongside this one.
       govern everything below this line and are at: <paths>."
    b. When (a) contributed, add: "The lenses below are fallback where the
       repo is silent; universal lenses always apply."
-   c. When (b) contributed, add: "Backend production lenses
-      (TX/IDM/TEN/CA/MIG/EXP) always apply on a backend diff — a repo rule
+   c. When (b) contributed, add: "The backend production lenses below
+      always apply — a repo rule
       changes what you prescribe, never whether you report; the tier's
       `Not a finding when:` guards are the only suppression rules."
 

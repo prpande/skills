@@ -24,11 +24,19 @@ full.
 
 ## Trigger
 
-The tier fires on a **backend diff**: the diff touches SQL or ORM bindings or
-repository-layer code, an HTTP endpoint or route, a GraphQL schema/resolver/loader,
-a message or event handler, a schema migration file, or cache access. This is the
-union of the `data-access`, `http`, `graphql`, and `runtime` triggers in the
-register, so no new detection is needed.
+Each group fires on its own subject. Load only the groups whose trigger the diff
+touches; a diff is **backend** when any group fires.
+
+| Group | Fires when the diff touches |
+|---|---|
+| `TX`, `IDM` | a write path (SQL or ORM writes, repository write methods, or an endpoint, mutation, or job that changes stored state), or a message or event handler |
+| `TEN`, `EXP` | SQL or ORM bindings or repository-layer code, an HTTP endpoint or route, or a GraphQL schema/resolver/loader |
+| `CA` | cache access |
+| `MIG` | a schema migration file |
+
+Scoping by subject suppresses nothing: a group whose subject the diff does not
+touch would be inapplicable under the rule above anyway. It keeps a read-only
+endpoint diff from loading the transaction, cache, and migration lenses.
 
 ## Severity defaults
 

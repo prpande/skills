@@ -18,12 +18,12 @@ Standalone review skill. Everything it needs ships in this directory:
 
 - `references/lens-register.md` — the rule set the review is graded
   against, and its precedence model (universal lenses always apply; the
-  backend tier always fires on a backend diff; repo-defined conventions
-  govern below that; scoped packs are fallback).
+  backend tier's groups always fire when their trigger matches;
+  repo-defined conventions govern below that; scoped packs are fallback).
 - `references/backend-lenses.md` — the governing backend tier (precedence
   rule 2 of the register): transactions, idempotency, tenancy, caching,
-  migrations, exposure bounds. Fires on any backend diff and cannot be
-  suppressed by a repo convention.
+  migrations, exposure bounds. Each group fires on its own subject and
+  cannot be suppressed by a repo convention.
 - `references/agent-briefs.md` — finder/verifier brief templates, the
   subagent hard-rules block, and model-selection guidance.
 
@@ -85,11 +85,9 @@ census. The cost is two more mid-tier finders on every run.
    per-directory convention docs. List their paths — they are handed to
    every agent and they outrank the register's scoped packs.
 3. Decide which register packs the diff triggers (each pack states its
-   trigger), and record whether the diff is **backend** — the diff touches
-   SQL or ORM bindings or repository-layer code, an HTTP endpoint or route, a
-   GraphQL schema/resolver/loader, a message or event handler, a schema
-   migration file, or cache access. A backend diff fires
-   `references/backend-lenses.md` under the register's precedence rule 2, and
+   trigger), and which groups of `references/backend-lenses.md` it triggers
+   (the tier's Trigger table). Those groups fire under the register's
+   precedence rule 2. A diff that triggers any group is **backend**, which
    adds angle 13 at `standard` and `max`.
 4. **Commit any in-flight work before dispatching agents** — see the
    hard-rules rationale in `references/agent-briefs.md`.
