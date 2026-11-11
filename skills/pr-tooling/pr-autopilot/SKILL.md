@@ -81,11 +81,7 @@ Phase 1 — Pre-publish verification
    `steps/02-preflight-review.md` at the same time, waits for both,
    fixes or declares every finding in one round, reviews the fixes, and
    writes the declarations into commit messages. Halts on a secret-scan
-   match or an unparsed review result.
-
-   Step 02 is not run on its own. It holds the lens agent that step
-   03.5 launches beside `/code-review`, which already covers general
-   bugs.
+   match or an unparsed review result. Step 02 is never run on its own.
 
 Phase 2 — Open PR
 

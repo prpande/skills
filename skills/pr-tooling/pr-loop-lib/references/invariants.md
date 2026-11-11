@@ -141,7 +141,7 @@ equivalent predicates live in `P02.*`.
 |---|---|
 | S35.1 | `context.pr_number` is still null when step 03.5 completes: no review, fix or declaration step runs after the PR exists. |
 | S35.2 | Unless `context.code_review_status` is `skipped`, it is `done`. A `running` status at the end of the step means step 04 was entered before the result arrived. |
-| S35.3 | Every `context.internal_review_findings` entry has a status other than `captured-only`; every entry with status `nit` has `severity: "minor"`. |
+| S35.3 | Every `context.internal_review_findings` entry with status `nit` has `severity: "minor"`. |
 | S35.4 | Every `context.internal_review_findings` entry with status `declared` has a `context.declarations[]` entry with the same `finding_id`, and every declaration has a non-null `in_commit`. Not checked under `--dry-run`, which commits nothing. |
 
 ### Step 04g — self-post guard (pr-autopilot)
