@@ -28,9 +28,10 @@ out-of-scope invariant is itself a bug.
   `pr-autopilot/steps/02-preflight-review.md` **when preflight performs
   fixer dispatch to address its findings** (mirroring the loop's
   `S04.*`, but keyed off `context.preflight_passes.merged[]` rather
-  than the loop's `actionable[]`). Step 04g's internal `/code-review`
-  dispatch also cites `P02.*` — same semantics, different finding
-  source (the synthetic `code-review:finding-N` ids registered in
+  than the loop's `actionable[]`). Step 03.5's `/code-review` and
+  fix-round dispatches also cite `P02.*` — same semantics, different
+  finding source (the synthetic `code-review:finding-N` and
+  `fix-round-R-N` ids registered in
   `context.internal_review_findings[]`).
 
 **Important cross-scope rule:** Preflight MUST NOT cite `S04.*`. The
@@ -136,11 +137,20 @@ equivalent predicates live in `P02.*`.
 | S11.2 | Lock **directory** (Primitive A in `state-protocol.md`) has been removed by the time this step completes. Verified via `test ! -d "<repo-root>/.pr-autopilot/pr-<N>.lock"`. Under α the lock was a flat file and this read "Lock file has been removed"; under β the directory-as-lock form requires `rm -rf`, but the presence-check predicate is unchanged in intent — the path must not exist. |
 | S11.3 | If `len(context.ui_deferred_items) > 0` at step entry, the log contains either exactly one `ui_deferred_prompt_skipped` event for this run OR one `ui_deferred_decision` event per item (matched by `feedback_id`), with `decision ∈ {apply, reject, skip}`. Re-dispatch of approved items is audited via the normal `subagent_dispatch` / `subagent_return` events on step 04, with each entry's `feedback_id` matching the approved item. |
 
-### Step 04g — post-open /code-review invocation (pr-autopilot)
+### Step 03.5 — pre-open review (pr-autopilot)
 
 | # | Predicate |
 |---|---|
-| S04g.1 | After step 04g completes, no top-level PR comment authored by `context.self_login` has a **first non-blank line** matching `^\s*#{1,6}\s*code[\s-]*review\b` (case-insensitive). Regression guard against α's posting behavior. Check using `gh api repos/<owner>/<repo>/issues/<PR>/comments --paginate` (paginated — `gh pr view --json comments` does NOT paginate and can miss comments past page 1 on busy PRs). Body-match is on the first non-blank line only so a quoted heading elsewhere in a comment doesn't false-positive. A hit = hard halt. Full check command is in `pr-autopilot/steps/04-open-pr.md#invariants`. |
+| S35.1 | `context.pr_number` is still null when step 03.5 completes: no review, fix or declaration step runs after the PR exists. |
+| S35.2 | Unless `context.code_review_status` is `skipped`, it is `done`. A `running` status at the end of the step means step 04 was entered before the result arrived. |
+| S35.3 | Every `context.internal_review_findings` entry has a status other than `captured-only`; every entry with status `nit` has `severity: "minor"`. |
+| S35.4 | Every `context.internal_review_findings` entry with status `declared` has a `context.declarations[]` entry with the same `finding_id`, and every declaration has a non-null `in_commit`. Not checked under `--dry-run`, which commits nothing. |
+
+### Step 04g — self-post guard (pr-autopilot)
+
+| # | Predicate |
+|---|---|
+| S04g.1 | After step 04 creates the PR, no top-level PR comment authored by `context.self_login` has a **first non-blank line** matching `^\s*#{1,6}\s*code[\s-]*review\b` (case-insensitive). Regression guard against α's posting behavior. Check using `gh api repos/<owner>/<repo>/issues/<PR>/comments --paginate` (paginated — `gh pr view --json comments` does NOT paginate and can miss comments past page 1 on busy PRs). Body-match is on the first non-blank line only so a quoted heading elsewhere in a comment doesn't false-positive. A hit = hard halt. Full check command is in `pr-autopilot/steps/04-open-pr.md#invariants`. |
 
 ## P02 — preflight-dispatch invariants (pr-autopilot step 02)
 

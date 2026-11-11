@@ -3,9 +3,12 @@ name: pr-autopilot
 description: >
   Autonomously publish a PR and drive it through the reviewer-bot feedback
   loop until CI is green. On Claude Code, first runs a quality-only
-  /simplify pass (host-gated; may be skipped); then preflight
-  self-review, spec/plan alignment, template-filled PR open, then loops
-  on reviewer comments
+  /simplify pass (host-gated; may be skipped); then a context map of
+  related services, legacy code, client apps and production data;
+  preflight self-review with a playbook checklist; spec/plan alignment;
+  a pre-open /code-review at max with every finding fixed or declared
+  and the fixes reviewed; a shipped-text check; template-filled PR
+  open; then loops on reviewer comments
   (addressing them with parallel fixer subagents, build+test sanity
   checking before every push) until quiescent, then final CI gate. Use
   when the user says "publish the PR", "ship with autopilot", "run
@@ -17,7 +20,9 @@ allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, Skill, ScheduleWakeup
 # pr-autopilot
 
 Orchestrator skill. Runs Phases 1 and 2 inline, then delegates to the
-shared `pr-loop-lib` for Phases 3-5.
+shared `pr-loop-lib` for Phases 3-5. Every internal review runs in
+Phase 1, before the PR exists: a finding is fixed or declared before any
+reviewer sees the code.
 
 ## Preconditions
 
@@ -61,23 +66,32 @@ Phase 1 — Pre-publish verification
 1. Perform step 01 per `steps/01-detect-context.md`. If it HALTs, stop.
 2. Perform step 01.5 per `steps/01.5-simplify.md` — the quality-only
    `/simplify` pass, run **before** any internal review so step 02 and
-   step 04g critique already-clean code. On claude-code it commits the
+   step 03.5 critique already-clean code. On claude-code it commits the
    cleanup separately and advances `context.head_sha`; on other hosts it
    is skipped (logged). May HALT only in the fold path's
    verify-fails-twice case (uncommitted work intermingled). `--dry-run`
    suppresses the commit.
-3. Perform step 02 per `steps/02-preflight-review.md`. Fix Critical +
-   Important findings in place, record Minor for the PR body.
-4. Perform step 03 per `steps/03-spec-alignment.md`. If it HALTs
+3. Perform step 01.7 per `steps/01.7-context-map.md`. Writes the
+   context map every later review reads; never blocks.
+4. Perform step 02 per `steps/02-preflight-review.md`. Every finding
+   above nit level is fixed in place or declared.
+5. Perform step 03 per `steps/03-spec-alignment.md`. If it HALTs
    (`context.blocked_drifts` non-empty), stop and present the diagnostic.
+6. Perform step 03.5 per `steps/03.5-pre-open-review.md`. Commits
+   locally, runs `/code-review max` and waits for its result, fixes or
+   declares every finding, reviews the fixes, and writes the declarations
+   into commit messages. Halts on a secret-scan match or an unparsed
+   review result.
 
 Phase 2 — Open PR
 
-5. Perform step 04 per `steps/04-open-pr.md`. Halts on secret-scan match.
+7. Perform step 04 per `steps/04-open-pr.md`. Fills the body, checks
+   every shipped text, pushes, and opens the PR. Halts on secret-scan
+   match.
 
 Phase 3 — Shared comment loop
 
-6. Enter `~/.claude/skills/pr-loop-lib/steps/01-wait-cycle.md`.
+8. Enter `~/.claude/skills/pr-loop-lib/steps/01-wait-cycle.md`.
    Iterate through `02-fetch-comments.md` → `03-triage.md` →
    `04-dispatch-fixers.md` → `04.5-local-verify.md` →
    `06-commit-push.md` → `07-reply-resolve.md` → `08-quiescence-check.md`
@@ -90,19 +104,19 @@ Phase 3 — Shared comment loop
 
 Phase 4 — CI gate (if step 08 exited quiescent, not on cap/runaway)
 
-7. Perform `~/.claude/skills/pr-loop-lib/steps/09-ci-gate.md`.
-8. If red, perform `~/.claude/skills/pr-loop-lib/steps/10-ci-failure-classify.md`.
-   Up to 3 re-entries of Phase 3. On cap, proceed to step 9.
+9. Perform `~/.claude/skills/pr-loop-lib/steps/09-ci-gate.md`.
+10. If red, perform `~/.claude/skills/pr-loop-lib/steps/10-ci-failure-classify.md`.
+   Up to 3 re-entries of Phase 3. On cap, proceed to step 11.
 
 Phase 5 — Report (and optional UI-deferred approval)
 
-9. Perform `~/.claude/skills/pr-loop-lib/steps/11-final-report.md`.
+11. Perform `~/.claude/skills/pr-loop-lib/steps/11-final-report.md`.
    If `context.ui_deferred_items` is non-empty, step 11 also runs an
    interactive approval phase (per-item apply / reject / skip via
    `AskUserQuestion`). Approved items re-enter step 04 with
    `UI_DEFERRAL_OVERRIDE=true` and go through step 06 for commit +
    push.
-10. Join this session's running `pr-watch`. Skip this step under `--dry-run`. Run:
+12. Join this session's running `pr-watch`. Skip this step under `--dry-run`. Run:
    ```bash
    python -c "import json,os;h=os.environ.get('PR_WATCH_HOME') or os.path.expanduser('~/.claude/pr-watch');f=os.path.join(h,'sessions',os.environ.get('CLAUDE_CODE_SESSION_ID','x'),'watch.json');print('join' if os.path.isfile(f) and (lambda w:not w.get('dry_run') and w.get('stopped_at') is None)(json.load(open(f,encoding='utf-8'))) else 'skip')"
    ```
@@ -126,7 +140,10 @@ Phase 5 — Report (and optional UI-deferred approval)
   follows the user's local git config; failures surface to the user
   rather than being silenced.
 - Never commit secrets. Secret scan is BLOCKING at steps 01.5
-  (separate-commit path), 04 and 06.
+  (separate-commit path), 03.5, 04 (shipped-text commit) and 06.
+- The host's `/code-review` runs at `max`, with the level named
+  explicitly, before the PR opens. Never omit the level, and never pass
+  a lower one.
 - Destructive git ops (reset --hard, clean -fd, push --force) are never
   used by this skill.
 - Rollback in step 04.5 uses `git checkout -- <file>` scoped to the current
@@ -142,9 +159,8 @@ Phase 5 — Report (and optional UI-deferred approval)
   cycle that step 08's confirmation rule routes through step 01 is
   ALSO mandatory. Neither can be bypassed because the repo has no
   visible `.github/workflows/`, because prior PRs show no bot
-  activity, because the repo is personal or a fork, because the
-  only PR comment is the orchestrator's own `/code-review` post,
-  or because the session is interactive. Reviewer latency — Copilot
+  activity, because the repo is personal or a fork, because the PR
+  has no comments yet, or because the session is interactive. Reviewer latency — Copilot
   code review, org-level policies, SonarCloud, human reviewers — is
   invisible until a comment lands. The only legitimate bypasses are
   the explicit user flags `--no-wait` (on `pr-autopilot`) or the

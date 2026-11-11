@@ -55,7 +55,7 @@ Rules:
 | `lock_lease_refreshed` | `{session_id}` |
 | `comments_fetched` | `{surface_counts: {inline, issue, review, thread}, total}` — `thread` is the AzDO surface; GitHub runs will have `thread: 0` |
 | `triage_result` | `{actionable, suspicious, filtered_self, filtered_known_bot, filtered_pre_push}` |
-| `triage_dedup_hit` | `{feedback_id, preflight_match_id, source}` — `source` is `"triage"` when the dedup came from iter-1 Filter B.5 on a real PR comment (feedback_id references `context.actionable[].id`) or `"code-review"` when step 04g internal dispatch deduped a synthetic `/code-review` finding (feedback_id is the synthetic `code-review:finding-N`, registered in `context.internal_review_findings[].fixer_feedback_id`). Consumers look up `feedback_id` in the array indicated by `source`. |
+| `triage_dedup_hit` | `{feedback_id, preflight_match_id, source}` — `source` is `"triage"` when the dedup came from iter-1 Filter B.5 on a real PR comment (feedback_id references `context.actionable[].id`) or `"code-review"` when pr-autopilot step 03.5 deduped a synthetic `/code-review` finding (feedback_id is the synthetic `code-review:finding-N`, registered in `context.internal_review_findings[].fixer_feedback_id`). Consumers look up `feedback_id` in the array indicated by `source`. |
 | `cluster_gate_fired` | `{items, clusters_formed}` |
 | `subagent_dispatch` | `{role, model, prompt_first_200_chars, feedback_id?, timeout_s}` |
 | `subagent_return` | `{role, feedback_id?, verdict, files_changed, reason_first_200_chars, duration_ms}` |
@@ -66,7 +66,11 @@ Rules:
 | `quiescence` | `{reason, loop_exit_reason, termination_reason}` |
 | `quiescence_pending` | `{iteration, reason, next_wait_seconds}` — emitted by `pr-loop-lib/steps/08-quiescence-check.md` when the *first* of two consecutive soft-quiescent iterations completes. `reason` is one of `quiescent-zero-actionable` \| `quiescent-no-code-change`. `next_wait_seconds` is the **effective** wait step 01 will use before the confirming iteration — i.e., the same `delay_seconds` step 01 computes: 300 by default, `max(300, context.wait_override_minutes * 60)` when `--wait` is set. Sub-floor `--wait` values (e.g., `--wait 2`) are clamped up to 300 by step 01 and `next_wait_seconds` reports the clamped 300, not the raw user input. Informational; the loop routes back to step 01 instead of step 09. The next iteration that actually exits (whether confirmed quiescent or by cap/runaway) emits the existing `quiescence` event. |
 | `ci_result` | `{check_name, state, link}` |
-| `code_review_invoked` | `{host, skill, invoked_at}` when a review skill is mapped and dispatched, OR `{host, skipped: true}` when no skill is mapped for this host (`skill`/`invoked_at` are omitted in the skipped variant) |
+| `code_review_invoked` | `{host, skill, level, invoked_at}` when a review skill is mapped and dispatched, OR `{host, skipped: true, reason?}` when no skill is mapped for this host or the run is `--dry-run` (`skill`/`level`/`invoked_at` are omitted in the skipped variant) |
+| `code_review_parse_failed` | `{raw_prefix, reason}` — pr-autopilot step 03.5 got a non-empty `/code-review` result it could not parse. `raw_prefix` is the first 200 chars |
+| `context_map_written` | `{path, sources, bullets}` — pr-autopilot step 01.7 |
+| `context_map_skipped` | `{reason}` — pr-autopilot step 01.7 wrote no usable map (`no-sources`, `empty`, `error`, `timeout`) |
+| `shipped_text_checked` | `{claims_reported, fixed_body, fixed_code}` — pr-autopilot step 04b |
 | `invariant_fail` | `{step, invariant, observed, expected}` |
 | `error` | `{stage, error_type, message}` |
 | `git_commit_argv` | `{argv}` — flat space-joined string of `git commit` arguments; emitted by step 06 immediately before the commit runs. Lossy for args that contain spaces; the predicate S06.3 only cares about flag presence (`--no-verify`, `--no-gpg-sign`, `-c commit.gpgsign=false`), so lossiness is acceptable |

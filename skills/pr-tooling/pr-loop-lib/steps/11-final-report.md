@@ -52,19 +52,24 @@ CI status at termination: <green | red | skipped | timeout>
 Internal review summary (local, not on PR):
   <repo-root>/.pr-autopilot/pr-<N>-review-summary.md
 
-  Preflight (Pass 2):
-    - Critical:   <n> fixed
-    - Important:  <n> fixed
-    - Minor:      <n> captured locally (NOT surfaced on PR)
+  Preflight (adversarial + playbook checklist):
+    - Fixed:      <n>
+    - Declared:   <n>
+    - Open (needs-human): <n>
+    - Nits:       <n> recorded only
 
-  /code-review (post-open, captured — not posted):
-    - Invoked:                    <true | false>
+  /code-review max (pre-open, not posted):
+    - Status:                     <done | skipped>
     - Raw findings:               <n>
     - Dedup vs preflight:         <n>
-    - Fixed by internal dispatch: <n>
-    - Fixed-differently:          <n>
-    - Deferred (feedback-wrong):  <n>
-    - Deferred (needs-human):     <n>
+    - Fixed:                      <n>
+    - Declared:                   <n>
+    - Open (needs-human):         <n>
+    - Checked and dismissed:      <n> (listed in the summary file)
+
+  Fix-round review: <n> rounds, <n> findings, <n> fixed
+  Shipped-text check: <n> claims corrected
+  Declarations in commits and PR body: <n>
 
 Needs your input:
   <for each needs-human item: file:line, quoted feedback sentence,

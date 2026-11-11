@@ -50,8 +50,8 @@ for the receiving-side pipeline, and
 `pr-autopilot/steps/02-preflight-review.md` "Per-finding
 description_hash" for the emitting-side pipeline.
 
-This override is authoritative for triage *and* for step 04g's
-internal `/code-review` dispatch. The category-based key above
+This override is authoritative for triage *and* for pr-autopilot
+step 03.5's `/code-review` dedup. The category-based key above
 remains the correct key when both sources carry `category` (e.g.,
 merging two adversarial-prompt outputs).
 

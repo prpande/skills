@@ -20,8 +20,10 @@ the admission rule in Maintenance.
    suppressed — see the tier's header.
 3. **Repo-defined conventions govern** everything below this line. Before
    applying any scoped pack, read the target repo's own rule sources:
-   `CLAUDE.md` / `AGENTS.md` / `ARCHITECTURE.md`, any repo review skill or
-   runbook under `.claude/skills/`, and per-directory convention docs. Where a
+   `CLAUDE.md` / `AGENTS.md` / `ARCHITECTURE.md`, the review playbook files
+   `.github/claude-review-instructions.md` and `.github/copilot-instructions.md`,
+   any repo review skill or runbook under `.claude/skills/`, and
+   per-directory convention docs. Where a
    repo rule and a scoped lens conflict, the repo rule wins — apply it and stay
    silent about the suppressed lens.
 4. **Scoped packs are fallback suggestions.** Apply a pack only when the diff

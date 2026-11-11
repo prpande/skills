@@ -76,11 +76,11 @@ deduplicates its findings against preflight.
 
 **Precondition:** Only run Stage 1 if `context.code_review_invoked == false`.
 When `code_review_invoked` is true, the `/code-review` output was captured
-internally by step 04g and never posted to the PR — so a self-authored comment
+internally by pr-autopilot step 03.5 and never posted to the PR — so a self-authored comment
 matching the heading regex is a genuine regression (S04g.1 should have caught
 it). Do NOT rescue it; log a `code_review_rescue_skipped` event instead and
 treat the comment as an ordinary self-reply drop. This prevents double-dispatch:
-findings already processed by 04g would not be in `preflight_passes.merged`,
+findings already processed by step 03.5 would not be in `preflight_passes.merged`,
 so Stage 2's dedup would not catch them, and they would be re-dispatched to
 fixers a second time.
 

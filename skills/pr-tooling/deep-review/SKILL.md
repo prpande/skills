@@ -79,7 +79,9 @@ census. The cost is two more mid-tier finders on every run.
    default branch) and the worktree path — the agent briefs substitute
    both.
 2. Locate the repo's own rule sources: `CLAUDE.md` / `AGENTS.md` /
-   `ARCHITECTURE.md`, review runbooks or skills under `.claude/skills/`,
+   `ARCHITECTURE.md`, the review playbook files
+   `.github/claude-review-instructions.md` and
+   `.github/copilot-instructions.md`, review runbooks or skills under `.claude/skills/`,
    per-directory convention docs. List their paths — they are handed to
    every agent and they outrank the register's scoped packs.
 3. Decide which register packs the diff triggers (each pack states its
