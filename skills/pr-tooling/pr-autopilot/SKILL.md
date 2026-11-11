@@ -146,8 +146,8 @@ Phase 5 — Report (and optional UI-deferred approval)
 - Never commit secrets. Secret scan is BLOCKING at steps 01.5
   (separate-commit path), 03.5, 04 (shipped-text commit) and 06.
 - The host's `/code-review` runs at `max`, with the level named
-  explicitly, before the PR opens. Never omit the level, and never pass
-  a lower one.
+  explicitly and `--max-findings all`, before the PR opens. Never omit
+  the level, and never pass a lower one.
 - Destructive git ops (reset --hard, clean -fd, push --force) are never
   used by this skill.
 - Rollback in step 04.5 uses `git checkout -- <file>` scoped to the current
