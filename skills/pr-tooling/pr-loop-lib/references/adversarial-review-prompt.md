@@ -1,22 +1,24 @@
 # Adversarial review prompt
 
-This is the full prompt template for the Pass 2 adversarial subagent
-dispatched during preflight (step 02). The prompt is kept here, not
-inlined in the step, so users can edit the persona without touching the
-orchestration logic.
+This is the full prompt template for pr-autopilot's fix-round review
+(step 03.5 E), which reviews the fixes written after `/code-review` and
+the lens agent. The step 02 lens agent appends this file's "Severity
+rubric", "Output format" and "Rules" blocks to its own prompt. The
+prompt is kept here, not inlined in a step, so users can edit the
+persona without touching the orchestration logic.
 
 ## Usage
 
-Step 02's markdown instructs the orchestrator to:
+Step 03.5 E instructs the orchestrator to:
 1. Read this file.
 2. Substitute placeholders (`{{BASE_SHA}}`, `{{HEAD_SHA}}`,
    `{{WHAT_WAS_BUILT}}`, `{{DIFF}}`, `{{INTENT_DOCS}}`,
    `{{CONTEXT_MAP}}` — step 01.7's file, empty string when it was
    skipped; `{{LENS_GUIDANCE}}` — see step 02's "Lens guidance rendering";
    empty string when the `deep-review` skill is not installed).
-3. Dispatch an Agent-tool subagent (`subagent_type: general-purpose`,
-   model: sonnet) with the rendered prompt.
-4. Collect the JSON response into `context.preflight_passes.pass2_raw`.
+3. Dispatch a `pr-reviewer` subagent, `model: "sonnet"`, with the
+   rendered prompt.
+4. Treat the JSON response's findings as step 03.5 E describes.
 
 ## Prompt template
 

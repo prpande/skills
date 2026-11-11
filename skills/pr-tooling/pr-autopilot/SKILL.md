@@ -5,8 +5,8 @@ description: >
   loop until CI is green. On Claude Code, first runs a quality-only
   /simplify pass (host-gated; may be skipped); then a context map of
   related services, legacy code, client apps and production data;
-  preflight self-review with a playbook checklist; spec/plan alignment;
-  a pre-open /code-review at max with every finding fixed or declared
+  spec/plan alignment; a pre-open /code-review at max with a lens,
+  reuse and playbook agent beside it, every finding fixed or declared
   and the fixes reviewed; a shipped-text check; template-filled PR
   open; then loops on reviewer comments
   (addressing them with parallel fixer subagents, build+test sanity
@@ -65,33 +65,37 @@ Phase 1 — Pre-publish verification
 
 1. Perform step 01 per `steps/01-detect-context.md`. If it HALTs, stop.
 2. Perform step 01.5 per `steps/01.5-simplify.md` — the quality-only
-   `/simplify` pass, run **before** any internal review so step 02 and
-   step 03.5 critique already-clean code. On claude-code it commits the
+   `/simplify` pass, run **before** any internal review so step 03.5
+   critiques already-clean code. On claude-code it commits the
    cleanup separately and advances `context.head_sha`; on other hosts it
    is skipped (logged). May HALT only in the fold path's
    verify-fails-twice case (uncommitted work intermingled). `--dry-run`
    suppresses the commit.
-3. Perform step 01.7 per `steps/01.7-context-map.md`. Writes the
-   context map every later review reads; never blocks.
-4. Perform step 02 per `steps/02-preflight-review.md`. Every finding
-   above nit level is fixed in place or declared.
-5. Perform step 03 per `steps/03-spec-alignment.md`. If it HALTs
+3. Perform step 01.7 per `steps/01.7-context-map.md`. Sets
+   `context.what_was_built` and writes the context map every later
+   review reads; never blocks.
+4. Perform step 03 per `steps/03-spec-alignment.md`. If it HALTs
    (`context.blocked_drifts` non-empty), stop and present the diagnostic.
-6. Perform step 03.5 per `steps/03.5-pre-open-review.md`. Commits
-   locally, runs `/code-review max` and waits for its result, fixes or
-   declares every finding, reviews the fixes, and writes the declarations
-   into commit messages. Halts on a secret-scan match or an unparsed
-   review result.
+5. Perform step 03.5 per `steps/03.5-pre-open-review.md`. Commits
+   locally, runs `/code-review max` and the lens agent defined in
+   `steps/02-preflight-review.md` at the same time, waits for both,
+   fixes or declares every finding in one round, reviews the fixes, and
+   writes the declarations into commit messages. Halts on a secret-scan
+   match or an unparsed review result.
+
+   Step 02 is not run on its own. It holds the lens agent that step
+   03.5 launches beside `/code-review`, which already covers general
+   bugs.
 
 Phase 2 — Open PR
 
-7. Perform step 04 per `steps/04-open-pr.md`. Fills the body, checks
+6. Perform step 04 per `steps/04-open-pr.md`. Fills the body, checks
    every shipped text, pushes, and opens the PR. Halts on secret-scan
    match.
 
 Phase 3 — Shared comment loop
 
-8. Enter `~/.claude/skills/pr-loop-lib/steps/01-wait-cycle.md`.
+7. Enter `~/.claude/skills/pr-loop-lib/steps/01-wait-cycle.md`.
    Iterate through `02-fetch-comments.md` → `03-triage.md` →
    `04-dispatch-fixers.md` → `04.5-local-verify.md` →
    `06-commit-push.md` → `07-reply-resolve.md` → `08-quiescence-check.md`
@@ -104,19 +108,19 @@ Phase 3 — Shared comment loop
 
 Phase 4 — CI gate (if step 08 exited quiescent, not on cap/runaway)
 
-9. Perform `~/.claude/skills/pr-loop-lib/steps/09-ci-gate.md`.
-10. If red, perform `~/.claude/skills/pr-loop-lib/steps/10-ci-failure-classify.md`.
+8. Perform `~/.claude/skills/pr-loop-lib/steps/09-ci-gate.md`.
+9. If red, perform `~/.claude/skills/pr-loop-lib/steps/10-ci-failure-classify.md`.
    Up to 3 re-entries of Phase 3. On cap, proceed to step 11.
 
 Phase 5 — Report (and optional UI-deferred approval)
 
-11. Perform `~/.claude/skills/pr-loop-lib/steps/11-final-report.md`.
+10. Perform `~/.claude/skills/pr-loop-lib/steps/11-final-report.md`.
    If `context.ui_deferred_items` is non-empty, step 11 also runs an
    interactive approval phase (per-item apply / reject / skip via
    `AskUserQuestion`). Approved items re-enter step 04 with
    `UI_DEFERRAL_OVERRIDE=true` and go through step 06 for commit +
    push.
-12. Join this session's running `pr-watch`. Skip this step under `--dry-run`. Run:
+11. Join this session's running `pr-watch`. Skip this step under `--dry-run`. Run:
    ```bash
    python -c "import json,os;h=os.environ.get('PR_WATCH_HOME') or os.path.expanduser('~/.claude/pr-watch');f=os.path.join(h,'sessions',os.environ.get('CLAUDE_CODE_SESSION_ID','x'),'watch.json');print('join' if os.path.isfile(f) and (lambda w:not w.get('dry_run') and w.get('stopped_at') is None)(json.load(open(f,encoding='utf-8'))) else 'skip')"
    ```

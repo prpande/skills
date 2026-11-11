@@ -1,13 +1,13 @@
 # Merge rules
 
 Deduplication and severity-escalation rules applied when merging
-findings from multiple sources (Pass 2 adversarial preflight and any
-later `/code-review` output landing in iter 1).
+findings from multiple sources (pr-autopilot's pre-open lens agent,
+`/code-review`, and review comments landing in iter 1).
 
 ## Why this file exists
 
-When both the preflight adversarial pass AND `/code-review` (running
-post-open) flag the same issue, we want:
+When both the lens agent AND `/code-review` flag the same issue, we
+want:
 1. One consolidated finding in the user's view, not two.
 2. Escalated severity signal (two independent reviewers converging
    is high confidence).
@@ -69,7 +69,7 @@ it's now this hash scheme.
 Severity strings match the adversarial-review-prompt's JSON output:
 always lowercase `critical`/`important`/`minor`.
 
-| Pass 2 severity | `/code-review` severity | Merged severity |
+| Lens severity | `/code-review` severity | Merged severity |
 |---|---|---|
 | `critical` | any | `critical` (no escalation needed) |
 | `important` | `important` or `critical` | `critical` |
@@ -104,8 +104,11 @@ before escalation.
 
 ## When to invoke the merge
 
-- **Preflight (step 02)**: no merge needed. Only Pass 2 runs; its
-  output IS the finding list.
+- **Pre-open (pr-autopilot step 03.5)**: the lens agent and
+  `/code-review` run together, and step 03.5 D merges their lists
+  before one fix round. `/code-review` findings carry no `category`, so
+  D matches on the description hash, or on same file, lines within 3
+  and the same failure.
 - **Iter 1 of the comment loop**: when triage extracts `/code-review`'s
   comment findings (via the known-bot exemption rule), compare each
   against `context.preflight_passes.merged` (from preflight). For

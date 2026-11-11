@@ -47,13 +47,13 @@ run `/simplify`).
 | `context_map_path` | string or null | default `null` | Path to `<repo-root>/.pr-autopilot/branch-<slug>-context-map.md`. `null` when step 01.7 wrote no usable map. Not renamed at PR create. |
 | `context_map_sources` | array of strings | default `[]` | Sources the context mapper read: `workspace-map`, `api-catalog`, `sibling-repos`, `new-relic`. |
 
-## Preflight (step 02) output
+## Lens review (step 02, launched in step 03.5) and spec alignment output
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `what_was_built` | string or null | no | Inferred intent summary |
+| `what_was_built` | string or null | no | Inferred intent summary, set by step 01.7 |
 | `preflight_minor_findings` | array of objects | default `[]` | Nit findings (`severity: "minor"`, `category: "style"`, no lens id), recorded in the local review summary and never dispatched. Every other Minor finding is dispatched. |
-| `preflight_passes` | object | default `{}` | `{pass2_raw: [...], merged: [...]}` |
+| `preflight_passes` | object | default `{}` | `{pass2_raw: [...], merged: [...]}`: the lens agent's findings |
 | `spec_updates` | array of objects | default `[]` | Spec file edits made by step 03 |
 | `blocked_drifts` | array of objects | default `[]` | Drifts that caused HALT before PR open |
 | `spec_alignment_notes` | array of strings | default `[]` | Human-readable notes for PR body |
@@ -103,7 +103,7 @@ run `/simplify`).
 | `fix_round_base_sha` | string (hex) or null | no | HEAD before step 03.5's fix commit; the base of the fix-round review diff. |
 | `declarations` | array of objects | default `[]` | Decisions kept on purpose, written into commit messages (step 03.5) and the PR body (step 04). Each entry: `{kind: "kept-finding" \| "difference" \| "scope", statement, file?, line?, finding_id?, in_commit}`. `statement` is one present-tense sentence. `in_commit` is the SHA of the commit whose message carries it. |
 | `internal_review_findings` | array of objects | default `[]` | Per-finding audit trail for the local review summary. Each entry: `{source: "preflight" \| "code-review" \| "fix-round", severity, file, line?, description, status: "fixed" \| "fixed-differently" \| "nit" \| "declared" \| "needs-human" \| "duplicate", fixer_feedback_id?, verifier_judgement?}`. Only `nit` findings are left undispatched. State files from older skill versions may hold `captured-only` or `feedback-wrong`; validation runs at write time. |
-| `internal_review_summary_path` | string or null | no | Path to the markdown summary file at `<repo-root>/.pr-autopilot/pr-<PR>-review-summary.md` (or `branch-<slug>-review-summary.md` pre-PR-assignment). Set by step 02 on first write; renamed by state-protocol at PR-create time alongside the other branch-* files. |
+| `internal_review_summary_path` | string or null | no | Path to the markdown summary file at `<repo-root>/.pr-autopilot/pr-<PR>-review-summary.md` (or `branch-<slug>-review-summary.md` pre-PR-assignment). Set in step 03.5 when the lens agent returns; renamed by state-protocol at PR-create time alongside the other branch-* files. |
 
 ## Nested schemas
 

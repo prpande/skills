@@ -237,6 +237,6 @@ added to `references/lens-register.md` in a deliberate update session.
 
 ## Related
 
-`pr-autopilot`'s preflight review consumes `references/lens-register.md` and
+`pr-autopilot`'s lens review and fix-round review consume `references/lens-register.md` and
 `references/backend-lenses.md` when this skill is installed alongside it, and
 degrades gracefully when either is absent. Keep both paths stable.

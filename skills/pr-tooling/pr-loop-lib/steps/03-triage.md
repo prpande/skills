@@ -208,7 +208,7 @@ For each candidate:
 **Miss logging (log-on-near-miss).** If the candidate does NOT dedup
 against any preflight finding, but the candidate's `author` is in the
 known-bots list (i.e., an automated reviewer is making a point the
-preflight adversarial review *might* have already considered), emit a
+pre-open lens review *might* have already considered), emit a
 `triage_dedup_miss` event with both normalized lead strings (not their
 hashes — the strings are what makes the miss diagnosable):
 
@@ -220,7 +220,7 @@ hashes — the strings are what makes the miss diagnosable):
 }}
 ```
 
-Note: preflight findings come from our own Sonnet adversarial subagent
+Note: preflight findings come from our own Sonnet lens agent
 and do not carry a reviewer `author` field. The miss signal we have
 is "candidate is automated" (author in known-bots), not
 "candidate author matches preflight author". If no preflight findings

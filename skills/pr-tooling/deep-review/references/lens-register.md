@@ -1,7 +1,7 @@
 # Review lens register
 
 The canonical rule set consumed by `deep-review` (all effort levels) and by
-`pr-autopilot`'s preflight review. Each lens in *this file* is a repeatable
+`pr-autopilot`'s lens review. Each lens in *this file* is a repeatable
 mistake class distilled from real review rounds — not a style guide. The
 governing backend tier in `references/backend-lenses.md` is distilled instead
 from production postmortems and published API-security guidance, and is held to

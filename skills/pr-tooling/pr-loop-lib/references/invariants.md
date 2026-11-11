@@ -24,15 +24,13 @@ out-of-scope invariant is itself a bug.
   owns it (e.g., `S01.*` for step 01 of pr-autopilot, `S03.*` for the
   loop's triage step). A step cites only its own `SNN.*` invariants
   plus any global `G*`.
-- **`P02.*`** — Preflight-dispatch scope. Applicable in
-  `pr-autopilot/steps/02-preflight-review.md` **when preflight performs
-  fixer dispatch to address its findings** (mirroring the loop's
-  `S04.*`, but keyed off `context.preflight_passes.merged[]` rather
-  than the loop's `actionable[]`). Step 03.5's `/code-review` and
-  fix-round dispatches also cite `P02.*` — same semantics, different
-  finding source (the synthetic `code-review:finding-N` and
-  `fix-round-R-N` ids registered in
-  `context.internal_review_findings[]`).
+- **`P02.*`** — Pre-open dispatch scope. Applicable to every fixer
+  dispatch in pr-autopilot step 03.5 (mirroring the loop's `S04.*`, but
+  keyed off pre-open finding ids rather than the loop's
+  `actionable[]`): the lens agent's `preflight-N` ids in
+  `context.preflight_passes.merged[]`, and the synthetic
+  `code-review:finding-N` and `fix-round-R-N` ids registered in
+  `context.internal_review_findings[]`.
 
 **Important cross-scope rule:** Preflight MUST NOT cite `S04.*`. The
 post-dispatch predicates in `S04.*` bake in assumptions — keyed off
@@ -62,7 +60,7 @@ equivalent predicates live in `P02.*`.
 | S01.4 | `context.self_login` is a non-empty string |
 | S01.5 | `context.base_sha != context.head_sha` (diff exists) — warn-only, not halt |
 
-### Step 02 — preflight-review (pr-autopilot)
+### Step 02 — lens review (pr-autopilot, checked in step 03.5 when the lens agent returns)
 
 | # | Predicate |
 |---|---|
@@ -152,16 +150,16 @@ equivalent predicates live in `P02.*`.
 |---|---|
 | S04g.1 | After step 04 creates the PR, no top-level PR comment authored by `context.self_login` has a **first non-blank line** matching `^\s*#{1,6}\s*code[\s-]*review\b` (case-insensitive). Regression guard against α's posting behavior. Check using `gh api repos/<owner>/<repo>/issues/<PR>/comments --paginate` (paginated — `gh pr view --json comments` does NOT paginate and can miss comments past page 1 on busy PRs). Body-match is on the first non-blank line only so a quoted heading elsewhere in a comment doesn't false-positive. A hit = hard halt. Full check command is in `pr-autopilot/steps/04-open-pr.md#invariants`. |
 
-## P02 — preflight-dispatch invariants (pr-autopilot step 02)
+## P02 — pre-open dispatch invariants (pr-autopilot step 03.5)
 
-Preflight runs an adversarial reviewer and may dispatch fixers to address
-its findings — all before any PR exists. The post-dispatch predicates
-below are the preflight-scope counterparts of `S04.*`. Preflight cites
-these, never `S04.*`.
+Step 03.5 dispatches fixers for the lens agent's and `/code-review`'s
+findings, then for the fix-round review's — all before any PR exists.
+The post-dispatch predicates below are the pre-open counterparts of
+`S04.*`. These dispatches cite them, never `S04.*`.
 
 | # | Predicate |
 |---|---|
-| P02.1 | Every `fixer_return` from preflight dispatch has a `feedback_id` that matches an `id` on an entry in `context.preflight_passes.merged[]`. Preflight findings are written to `preflight_passes.merged[]` by step 02 with a generated `id` field (step 02 assigns stable ids such as `preflight-N`). Unmatched returns indicate a drift between dispatch input and return. |
+| P02.1 | Every pre-open `fixer_return` has a `feedback_id` that matches either an `id` in `context.preflight_passes.merged[]` (the lens agent's stable `preflight-N` ids, step 02) or a `fixer_feedback_id` in `context.internal_review_findings[]` (`code-review:finding-N`, `fix-round-R-N`). Unmatched returns indicate a drift between dispatch input and return. |
 | P02.2 | If a `fixer_return.verdict` is `fixed` or `fixed-differently`, either (a) the working-tree diff is non-empty, OR (b) the return carries `no_diff_needed: true` (e.g., the fixer determined the finding was already addressed). |
 | P02.3 | For every rolled-back fixer return, the files listed in its `files_changed` are absent from the current working-tree diff. Rollback must be effective. |
 | P02.4 | The state file is still named `branch-<slug>.json` at preflight time. No `pr-<N>.json` writes may occur in preflight — the PR number does not exist yet; the state-rename happens in step 04. |
