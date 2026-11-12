@@ -47,6 +47,10 @@ For each missing-required drift:
 2. If **all three** criteria are met → auto-implement:
    - Dispatch a fixer subagent (loop lib `04-dispatch-fixers.md` mechanics)
      with the spec excerpt as the directive and the target file path.
+   - Before dispatching, set `context.unit_bases` to `{}` and record a
+     unit base per `04-dispatch-fixers.md` "Unit base" (`order` 1), so
+     `04.5-local-verify.md` has a wave base for its baseline and
+     rollback.
    - The fixer does not build or test. After it returns, run
      `04.5-local-verify.md` on the fixer's `files_changed`, passed as the
      file list (the step's skip condition reads that list;

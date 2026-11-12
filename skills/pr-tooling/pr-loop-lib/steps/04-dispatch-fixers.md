@@ -55,7 +55,15 @@ running (fewer when the host's cap is lower):
    dispatch.
 4. A dispatch the host refuses because of its cap goes back to the front
    of its queue and is tried again when the next subagent returns. A
-   refusal is never a failed fixer.
+   refusal is never a failed fixer. The host's cap also counts subagents
+   that are not this step's (a `/code-review` still running, another
+   skill's agents). When a dispatch is refused and no fixer or verifier
+   of this step is running, there is no return to wait for: try that
+   dispatch again at most 3 times, each after any background task of the
+   session reports or on the next turn; after the third refusal record
+   the unit's items `needs-human` with reason "the host refused the
+   dispatch" and go on with the queue. Log `dispatch_refused {unit,
+   attempt}` each time.
 
 The step ends when the queue is empty and every return is verified.
 
@@ -304,8 +312,9 @@ rollback in the policy ladder restores a file F for rolled-back unit A,
 any surviving return B in another unit that also lists F may have lost
 its edit to F.
 
-Procedure, run after **every** rollback in the policy ladder (steps
-`not-addresses` and `feedback-wrong`):
+Procedure, run after **every** verifier-ladder rollback (`not-addresses`
+and `feedback-wrong`), in pr-autopilot's pre-open fix round too; only the
+`S04.7` invariant is specific to the comment loop:
 
 ```
 1. Compute the overlap set:

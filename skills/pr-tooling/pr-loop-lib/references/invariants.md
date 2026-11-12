@@ -166,13 +166,12 @@ The post-dispatch predicates below are the pre-open counterparts of
 |---|---|
 | P02.1 | Every pre-open `fixer_return` has a `feedback_id` that matches either an `id` in `context.preflight_passes.merged[]` (the lens agents' stable `preflight-N` ids, step 02) or a `fixer_feedback_id` in `context.internal_review_findings[]` (`code-review:finding-N`, `simplify-N`, `fix-round-R-N`). Unmatched returns indicate a drift between dispatch input and return. |
 | P02.2 | If a `fixer_return.verdict` is `fixed` or `fixed-differently`, either (a) a file in its `files_changed` differs from its content in the unit's base (`04-dispatch-fixers.md` "Unit base"; for a file the base does not hold: the file exists and the index does not track it, or the base lacks it because the fixer created it), OR (b) the return carries `no_diff_needed: true` (e.g., the fixer determined the finding was already addressed). The same with or without `--dry-run`. |
-| P02.3 | For every rolled-back fixer return, each file listed in its `files_changed` has the content of the base it was rolled back to (its unit's base for a verifier-ladder rollback, the wave base for a `04.5` second-failure rollback), and a file that base does not hold is absent. Exempt: a file left in place under `04-dispatch-fixers.md` "Rollback" case 2 or 3, and a cluster file left because an accepted sibling lists it. Rollback must be effective. The same with or without `--dry-run`. |
+| P02.3 | For every rolled-back fixer return, each file listed in its `files_changed` has the content of the base it was rolled back to (its unit's base for a verifier-ladder rollback, the wave base for a `04.5` second-failure rollback), and a file that base does not hold is absent. Exempt: a file left in place under `04-dispatch-fixers.md` "Rollback" case 2 or 3, a cluster file left because an accepted sibling lists it, and a file restored under "Overlap re-verify" `demoted-overlap` (it holds the lower-order unit's base content, not the rolled-back unit's own). Rollback must be effective. The same with or without `--dry-run`. |
 | P02.4 | The state file is still named `branch-<slug>.json` at preflight time. No `pr-<N>.json` writes may occur in preflight — the PR number does not exist yet; the state-rename happens in step 04. |
 
-If the preflight dispatch also performs an overlap re-verify (same
-semantics as `S04.7`), add a preflight-scoped version here later. For β,
-preflight dispatch is rare and single-shot; overlap only matters in the
-comment loop where parallel fixers are typical.
+The pre-open dispatch runs "Overlap re-verify" as
+`04-dispatch-fixers.md` states it; `S04.7` is checked only in the
+comment loop.
 
 ## How to check an invariant
 

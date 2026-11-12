@@ -181,7 +181,7 @@ scan_slots() {
 collided_slot=$(scan_slots)
 
 if [ -n "$collided_slot" ]; then
-  # First collision — regenerate the nonce once and re-scan all three
+  # First collision — regenerate the nonce once and re-scan all four
   # slots with the new nonce.
   NONCE=$(printf '%08x' $(( (RANDOM << 15) | RANDOM )))
   collided_slot=$(scan_slots)

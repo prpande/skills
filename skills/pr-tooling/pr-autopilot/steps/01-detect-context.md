@@ -79,6 +79,11 @@ for the current branch and `--base` is set, HALT before any review:
 "--base backtests need a branch with no PR; create one at the PR's
 opening head."
 
+`context.base_override` and `context.base_sha` hold the output of
+`git rev-parse --verify <sha>^{commit}` (the full hex id), never the text
+the user typed, so a branch name or `HEAD~n` cannot move under a later
+step.
+
 When `context.base_override` is set, `base_sha` is that commit. HALT with
 "--base <sha> is not a commit that is an ancestor of HEAD." unless both pass:
 ```bash

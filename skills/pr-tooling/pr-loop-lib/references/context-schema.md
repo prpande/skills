@@ -109,7 +109,7 @@ run `/simplify`).
 | `code_review_invoked` | boolean | default `false` | True after pr-autopilot step 03.5 invokes `/code-review`. Its output is kept locally and never posted. |
 | `code_review_invoked_at` | string (ISO-8601) or null | no | When `/code-review` was dispatched; read by step 03.5's wait to bound it |
 | `code_review_invoked_head` | string (hex) or null | default `null` | `head_sha` the running or last `/code-review` was launched on |
-| `code_review_status` | enum or null | default `null` | `running` \| `done` \| `skipped`. `running` while step 03.5 waits for the background result; step 04 never starts while it is `running`. |
+| `code_review_status` | enum or null | default `null` | `running` \| `done` \| `skipped` \| `failed`. `running` while step 03.5 waits for the background result; step 04 never starts while it is `running`. `failed` after a step 03.5 HALT about `/code-review`; a re-invoke then launches afresh. |
 | `code_review_hints_rejected` | boolean | default `false` | True when step 03.5 B's `/code-review` refused the extra text in its args, so it never saw the settled file; step 03.5 D then tests its findings against the settled items itself. Reset to `false` before each launch. |
 | `code_review_raw_output` | string | default `""` | Result text of the host's `code-review` skill, parsed by step 03.5. Never posted. |
 | `code_review_dismissed` | array of objects | default `[]` | Candidates `/code-review` refuted or dropped: `{summary, reason}`. Re-checked by step 03.5's fix-round review. |

@@ -33,9 +33,11 @@ test|spec|unit|integration
 
 Every fixer dispatch in this step uses `subagent_type: "pr-fixer"` and
 `model: "sonnet"`, both passed explicitly (`general-purpose` where
-`pr-fixer` is not installed), after recording a unit base per
-`04-dispatch-fixers.md` "Unit base". The fixer does not build or test, so
-after it returns run `04.5-local-verify.md` on the fixer's `files_changed`
+`pr-fixer` is not installed), after setting `context.unit_bases` to `{}`
+(entries left by the comment loop's last step 04 run are for commits
+already made) and recording a unit base per `04-dispatch-fixers.md`
+"Unit base" with `order` 1. The fixer does not build or test, so after
+it returns run `04.5-local-verify.md` on the fixer's `files_changed`
 (passed as the file list) before the commit. A second verify failure rolls
 the fix back per that step and the CI failure is reported as not fixed.
 
