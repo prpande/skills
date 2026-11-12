@@ -6,6 +6,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import types
 import unittest
@@ -57,7 +58,7 @@ class NrqlTests(unittest.TestCase):
         return json.loads(self.state.read_text(encoding="utf-8"))["queries"]
 
     def lock_path(self):
-        return self.state.with_name(self.state.name + ".lock")
+        return nrql.lock_path(self.state)
 
     def test_runs_the_query_and_counts_it(self):
         code, out, _ = self.run_cli()
@@ -213,8 +214,10 @@ class NrqlTests(unittest.TestCase):
         self.assertEqual(self.saved_queries(), [{"query": QUERY, "exit": "timeout"}])
 
     def test_cli_with_a_script_suffix_is_unavailable(self):
-        code, _, _ = self.run_cli(which=lambda name: "C:/bin/newrelic.JS")
-        self.assertEqual(code, nrql.EXIT_UNAVAILABLE)
+        for found in ("C:/bin/newrelic.JS", "C:/bin/newrelic.cmd", "C:/bin/newrelic.bat"):
+            with self.subTest(found=found):
+                code, _, _ = self.run_cli(which=lambda name: found)
+                self.assertEqual(code, nrql.EXIT_UNAVAILABLE)
         self.assertEqual(self.calls, [])
         self.assertFalse(self.state.exists())
 
@@ -242,13 +245,45 @@ class NrqlTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertTrue(self.lock_path().exists())
 
-    def test_stale_lock_is_taken_and_released(self):
+    def test_reset_clears_a_lock_left_by_a_dead_run(self):
         self.state.parent.mkdir(parents=True)
         self.lock_path().write_text("", encoding="utf-8")
-        old = time.time() - nrql.STALE_LOCK_SECONDS - 5
-        os.utime(self.lock_path(), (old, old))
+        self.assertEqual(nrql.main(["--state", str(self.state), "--reset"]), 0)
         self.assertEqual(self.run_cli()[0], 0)
         self.assertFalse(self.lock_path().exists())
+
+    def test_overlapping_calls_never_pass_the_cap(self):
+        ran = []
+
+        def slow_run(argv, **kwargs):
+            ran.append(1)
+            time.sleep(0.05)
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        def call():
+            nrql.main(
+                ["--state", str(self.state), QUERY],
+                env={"NEW_RELIC_ACCOUNT_ID": "42"},
+                home=pathlib.Path(self.tmp.name),
+                which=lambda name: "newrelic-bin",
+                run=slow_run,
+                lock_wait=10,
+            )
+
+        threads = [threading.Thread(target=call) for _ in range(nrql.MAX_QUERIES + 4)]
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        self.assertEqual(len(ran), nrql.MAX_QUERIES)
+        self.assertEqual([q["exit"] for q in self.saved_queries()], [0] * nrql.MAX_QUERIES)
+
+    def test_failed_save_leaves_no_temp_file(self):
+        self.state.mkdir(parents=True)
+        with contextlib.redirect_stderr(io.StringIO()):
+            nrql.main(["--state", str(self.state), "--reset"])
+        self.assertEqual([p.name for p in self.state.parent.iterdir()], [self.state.name])
 
     def test_lock_is_not_held_while_the_cli_runs(self):
         seen = []
@@ -281,6 +316,7 @@ class NrqlTests(unittest.TestCase):
             "SELECT count(*) FROM T WHERE a = 'SINCE 1 day ago'",
             "SELECT count(*) FROM T SINCE 1 day ago FACET b",
             "SELECT * FROM T SINCE 1 day ago",
+            "SELECT * FROM T WHERE (a = 1) SINCE 1 day ago",
             "SELECT * FROM T SINCE 1 day ago WHERE a = 'LIMIT 5'",
             "SELECT count(*) FROM T SINCE 1 day ago LIMIT 0x5",
             "SELECT count(*) FROM T SINCE 1 day ago LIMIT \u0663",

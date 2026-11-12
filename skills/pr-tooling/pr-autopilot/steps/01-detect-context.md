@@ -165,7 +165,7 @@ committed by this skill, and step 03 does not align against them.
    basenames (without extension) and the route or type names the diff
    adds. For each folder, count the distinct terms that appear in the
    folder name or in any `.md` under it:
-   `git -C "<folder>" grep --no-index -l -i -e "<term>" -- .` (or the
+   `git -C "<folder>" grep --no-index -l -i -e "<term>" -- '*.md'` (or the
    host's file search; never a search above the root). Exit 1 means no
    match; any other non-zero exit is an error to log, not zero hits.
 3. A folder qualifies only when at least two different terms hit in it,

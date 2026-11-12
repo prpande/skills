@@ -57,7 +57,7 @@ Rules:
 | `triage_result` | `{actionable, suspicious, filtered_self, filtered_known_bot, filtered_pre_push}` |
 | `triage_dedup_hit` | `{feedback_id, preflight_match_id, source}` — `source` is `"triage"` when the dedup came from iter-1 Filter B.5 on a real PR comment (feedback_id references `context.actionable[].id`) or `"code-review"` / `"simplify"` when pr-autopilot step 03.5 deduped a synthetic `/code-review` finding or `/simplify` candidate (feedback_id is the synthetic `code-review:finding-N` or `simplify-N`, registered in the `duplicate` entry's `context.internal_review_findings[].fixer_feedback_id`, also when that entry is declared but risky; S35.5 forbids the id only on a declared-but-risky entry that is not a `duplicate`). Consumers look up `feedback_id` in the array indicated by `source`. |
 | `cluster_gate_fired` | `{items, clusters_formed}` |
-| `subagent_dispatch` | `{role, model, prompt_first_200_chars, feedback_id?, agent?, timeout_s?}` — `agent` names the step 02 lens agent (`context`, `pack:<name>`, `backend`, `universal`) when `role` is `lens-reviewer`; a lens agent logs no `timeout_s` |
+| `subagent_dispatch` | `{role, model, prompt_first_200_chars, feedback_id?, agent?, timeout_s?}` — `agent` names the step 02 lens agent (`context`, `pack:<name>`, `backend`, `universal`) when `role` is `lens-reviewer` |
 | `subagent_return` | `{role, feedback_id?, verdict, files_changed, reason_first_200_chars, duration_ms}` |
 | `verifier_judgement` | `{feedback_id, fixer_verdict_before, fixer_verdict_after, judgement, reason_first_200_chars}` |
 | `local_verify` | `{iteration, passed, failed_cmd?, retry_attempted, rolled_back}` |
@@ -73,7 +73,7 @@ Rules:
 | `context_map_unlisted_query` | `{query}` — a "Production signals" bullet quoted a query the nrql state file does not list; the bullet was removed |
 | `effort_docs_resolved` | `{root, folder, files}` — pr-autopilot step 01; `root: null` when no docs root exists |
 | `lens_dedup_hit` | `{kept_id, dropped_id}` — step 02 folded one lens agent's finding into another's |
-| `simplify_skipped_points` | `{count}` — step 01.5 stored the behaviour-changing points `/simplify` did not apply |
+| `simplify_skipped_points` | `{count, fallback?}` — step 01.5 stored the behaviour-changing points `/simplify` did not apply |
 | `context_map_skipped` | `{reason}` — pr-autopilot step 01.7 wrote no usable map (`no-sources`, `empty`, `error`, `timeout`) |
 | `shipped_text_checked` | `{claims_reported, fixed_body, fixed_code}` — pr-autopilot step 04b |
 | `invariant_fail` | `{step, invariant, observed, expected}` |

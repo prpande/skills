@@ -149,7 +149,9 @@ Phase 5 — Report (and optional UI-deferred approval)
 - Destructive git ops (reset --hard, clean -fd, push --force) are never
   used by this skill.
 - Rollback in step 04.5 uses `git checkout -- <file>` scoped to the current
-  iteration's modified files only.
+  iteration's modified files only; under `--dry-run`, step 03.5's pre-open
+  rollbacks restore from the snapshot tree instead
+  (`steps/03.5-pre-open-review.md` D2).
 - Never hard-code `--no-paginate` behavior on `gh api` for list
   endpoints. When fetching PR comments, reviews, or issue comments,
   always use `--paginate` (or the equivalent for the platform).

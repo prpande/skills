@@ -37,7 +37,7 @@ explicitly). With neither the register nor the tier installed, only
    where step 03.5 A committed nothing, take a snapshot tree per step
    03.5 "Dry-run" and write `git diff <base_sha> <tree>` instead. The
    snapshot holds exactly the paths A would commit, so a file the user
-   declined at step 01 is not reviewed. If the snapshot fails twice,
+   declined at step 01 and did not stage is not reviewed. If the snapshot fails twice,
    write `git diff <base_sha> -- <those paths>` and append a patch for
    each untracked one using step 01.7's procedure.
 2. Decide the agent list per "Lens guidance rendering" and fix its order:
@@ -63,8 +63,10 @@ explicitly). With neither the register nor the tier installed, only
    `agent: <name>`, `model: "sonnet"`, the first 200 chars of the prompt.
 5. Run at most 4 lens agents at once, `context` among the first four.
    Where the host runs agents in the background, start the next agent
-   as soon as one returns; otherwise dispatch in waves of up to 4. No
-   timeout is set or logged for a lens agent. `/code-review` is already
+   as soon as one returns; otherwise dispatch in waves of up to 4. A
+   lens agent with no reply 30 minutes after its dispatch counts as
+   "returns nothing usable" (Failure mode); log `timeout_s: 1800` in its
+   `subagent_dispatch`. `/code-review` is already
    running; never wait for it before a dispatch and never cancel it for
    one.
 6. Parse each JSON reply, log `subagent_return`, set the agent's
@@ -190,9 +192,11 @@ the answers are counted, not trusted:
    without one, add the finding yourself: `severity: "important"`,
    `category: "interface"`, file and line from the diff side of
    `evidence`, `description` the check's text followed by the reason.
-   First test the point against the settled decisions file: when a
-   settled item covers it, the finding also gets `declared_risk: true`
-   and that item as `settled_item`, so it is never dispatched.
+   First test the point against the settled decisions file as in step
+   03.5 D1 ("Settled items"): code that no longer matches the item is a
+   plain finding; one of the three consequence tests holding gives
+   `declared_risk: true` with that `settled_item`; otherwise record the
+   answer as `no` with the item named in `reason`.
 4. `cannot-tell` answers are listed in the review summary under
    "## Context checks not answered", with the check text, and counted in
    the step 11 report. They are a known gap in the review, never a pass.
@@ -400,7 +404,7 @@ step 03.5 ends the turn to wait for `/code-review`:
      "fixer_feedback_id": "<id>" or null,
      "verifier_judgement": "<addresses|partial|not-addresses|feedback-wrong>" or null,
      "declared_risk": true (only for a declared-but-risky finding; else omit),
-     "settled_item": "<the settled statement, with declared_risk>"
+     "settled_item": "<the settled statement; set with declared_risk, or on a declared entry that only restates the item>"
    }
    ```
 

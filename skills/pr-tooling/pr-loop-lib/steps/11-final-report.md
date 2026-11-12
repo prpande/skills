@@ -73,7 +73,7 @@ Internal review summary (local, not on PR):
     - Checked and dismissed:      <n> (listed in the summary file)
 
   Fix-round review: <n> rounds, <n> findings, <n> fixed
-                    (or "did not run: <reason>")
+                    (or "did not run: <context.fix_round_skipped_reason>")
   Shipped-text check: <n> claims corrected
   Declarations in commits and PR body: <n>
 
@@ -241,7 +241,7 @@ message (< 200 chars, no markdown) led by the actionable outcome. Map
 | `termination_reason` | Message lead (human-friendly — these reach a phone lock screen, so do not paste the raw enum value) |
 |---|---|
 | `ci-green` | `PR #<N> green — autopilot done` |
-| `user-intervention-needed` | `PR #<N> needs you: <K> open thread(s)` (K = `len(context.needs_human_items)`) |
+| `user-intervention-needed` | `PR #<N> needs you: <K> item(s) need your input` (K = `len(context.needs_human_items)`) |
 | `ci-red` | `PR #<N> CI failed — needs a fix` |
 | `ci-pre-existing-failures` | `PR #<N> CI red, but the failures pre-date this branch` |
 | `ci-reentry-cap` | `PR #<N> CI still red after 3 fix attempts` |

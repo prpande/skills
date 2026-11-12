@@ -29,8 +29,7 @@ MAX_LIMIT = 20
 REPLACE_ATTEMPTS = 5
 QUERY_TIMEOUT_SECONDS = 120
 LOCK_WAIT_SECONDS = 5.0
-STALE_LOCK_SECONDS = 60
-CLI_SUFFIXES = {"", ".exe", ".cmd", ".bat"}
+CLI_SUFFIXES = {"", ".exe"}
 EXIT_REJECTED = 64
 EXIT_CAP = 65
 EXIT_UNAVAILABLE = 66
@@ -59,7 +58,7 @@ def check_query(query: str) -> str | None:
     for limit in limits:
         if not re.fullmatch(r"[0-9]+", limit) or int(limit) > MAX_LIMIT:
             return f"LIMIT must be a number no higher than {MAX_LIMIT}"
-    if not limits and (facet or "(" not in text):
+    if not limits and (facet or not re.search(r"\w\(", text)):
         return f"add LIMIT {MAX_LIMIT} or lower (needed for FACET and raw rows)"
     return None
 
@@ -94,34 +93,36 @@ def load_state(path: pathlib.Path) -> dict:
 def save_state(path: pathlib.Path, state: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    for attempt in range(REPLACE_ATTEMPTS):
-        try:
-            tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
-            os.replace(tmp, path)
-            return
-        except PermissionError:
-            # Windows: a scanner or indexer can hold the target briefly.
-            if attempt == REPLACE_ATTEMPTS - 1:
-                raise
-            time.sleep(0.1 * (attempt + 1))
+    try:
+        for attempt in range(REPLACE_ATTEMPTS):
+            try:
+                tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                # Windows: a scanner or indexer can hold the target briefly.
+                if attempt == REPLACE_ATTEMPTS - 1:
+                    raise
+                time.sleep(0.1 * (attempt + 1))
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def lock_path(path: pathlib.Path) -> pathlib.Path:
+    return path.with_name(path.name + ".lock")
 
 
 @contextlib.contextmanager
 def state_lock(path: pathlib.Path, wait: float):
     path.parent.mkdir(parents=True, exist_ok=True)
-    lock = path.with_name(path.name + ".lock")
+    lock = lock_path(path)
     deadline = time.monotonic() + wait
     while True:
         try:
             os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
             break
-        except FileExistsError:
-            try:
-                if time.time() - lock.stat().st_mtime > STALE_LOCK_SECONDS:
-                    lock.unlink()
-                    continue
-            except FileNotFoundError:
-                continue
+        except (FileExistsError, PermissionError):
+            # Windows reports a lock that is being deleted as PermissionError.
             if time.monotonic() >= deadline:
                 raise LockTimeout(str(lock))
             time.sleep(0.05)
@@ -176,6 +177,7 @@ def main(
     if args.reset:
         try:
             save_state(args.state, {"queries": []})
+            lock_path(args.state).unlink(missing_ok=True)
         except (OSError, ValueError) as error:
             print(f"state file unusable ({error}); refusing to run", file=sys.stderr)
             return EXIT_CAP
