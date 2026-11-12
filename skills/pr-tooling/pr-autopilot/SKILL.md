@@ -9,8 +9,8 @@ description: >
   beside it (context, one per triggered pack, backend or universal), every
   finding fixed or declared and the fixes reviewed; a shipped-text check; template-filled PR
   open; then loops on reviewer comments
-  (addressing them with parallel fixer subagents, build+test sanity
-  checking before every push) until quiescent, then final CI gate. Use
+  (addressing them with parallel fixer subagents, then one build and
+  test run per wave before every push) until quiescent, then final CI gate. Use
   when the user says "publish the PR", "ship with autopilot", "run
   pr-autopilot", "/pr-autopilot", or similar.
 argument-hint: "[iteration-cap]"
@@ -54,6 +54,13 @@ Flags supported (parse from the raw invocation string):
 - `--dry-run` → execute every step, every pre-open review included,
   except commits, `gh/az pr create`, push, and thread resolve mutations.
   Print what would happen.
+- `--base <sha>` → use this commit as the diff base instead of the merge
+  base, for backtesting on a PR that is already merged. It sets
+  `context.base_sha` for every step of the run. Accepted only together
+  with `--dry-run`, since a real PR's diff is whatever the platform
+  computes; without `--dry-run`, step 01 HALTs. Valid only on a branch
+  that has no PR of its own (create one at the merged PR's opening
+  head). Stored in `context.base_override`.
 - `--no-wait` → skip the **first** wait cycle only (useful when bots
   are known to have already posted). Subsequent iterations still honor
   the 5-minute floor, AND the confirmation iteration that step 08 may
@@ -148,10 +155,10 @@ Phase 5 — Report (and optional UI-deferred approval)
   review stage to save cost.
 - Destructive git ops (reset --hard, clean -fd, push --force) are never
   used by this skill.
-- Rollback in step 04.5 uses `git checkout -- <file>` scoped to the current
-  iteration's modified files only; under `--dry-run`, step 03.5's pre-open
-  rollbacks restore from the snapshot tree instead
-  (`steps/03.5-pre-open-review.md` D2).
+- Every rollback, in the pre-open fix round and in the comment loop, with
+  or without `--dry-run`, follows the one procedure in
+  `pr-loop-lib/steps/04-dispatch-fixers.md` "Rollback", against the
+  unit's base tree.
 - Never hard-code `--no-paginate` behavior on `gh api` for list
   endpoints. When fetching PR comments, reviews, or issue comments,
   always use `--paginate` (or the equivalent for the platform).
@@ -224,7 +231,8 @@ per-comment `reply-<id>.md`, etc.) and print their paths instead of invoking
 the corresponding `gh`/`az`/git command. Reviews are not side effects:
 step 03.5 runs `/code-review max`, the lens agents, the fixers and the
 fix-round review under `--dry-run` exactly as in a real run, against
-the working tree (`steps/03.5-pre-open-review.md` "Dry-run").
+the working tree (`steps/03.5-pre-open-review.md` "Dry-run"). `--base <sha>`
+sets the diff base for the whole run.
 
 The directory is scoped to the session ID to prevent concurrent dry-runs
 (on shared CI runners or developer boxes) from overwriting each other's output

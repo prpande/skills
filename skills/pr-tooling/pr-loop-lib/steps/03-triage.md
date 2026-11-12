@@ -220,8 +220,8 @@ hashes — the strings are what makes the miss diagnosable):
 }}
 ```
 
-Note: preflight findings come from our own Sonnet lens agent
-and do not carry a reviewer `author` field. The miss signal we have
+Note: preflight findings come from our own lens agents
+(step 02) and do not carry a reviewer `author` field. The miss signal we have
 is "candidate is automated" (author in known-bots), not
 "candidate author matches preflight author". If no preflight findings
 exist at all (`preflight_passes.merged` empty), skip the miss log —

@@ -37,8 +37,121 @@ Build a file-overlap graph across all dispatch units (clusters + individuals):
 - Nodes: dispatch units
 - Edges: units that touch at least one common file
 
-Non-overlapping groups dispatch in parallel. Overlapping groups serialize.
-Batch size within a parallel group: 4.
+Units that share no file may run at the same time. Units that share a
+file run one after another.
+
+## Rolling dispatch
+
+Hosts cap how many subagents one session runs at once, and the cap
+counts this step's fixers and verifiers together. Keep at most 5 of them
+running (fewer when the host's cap is lower):
+
+1. Put every unit in a queue, in triage order.
+2. Whenever a slot is free, start a waiting verifier first. With no
+   verifier waiting, start the first queued unit that shares no file
+   with a unit still running or still being verified. A unit whose base
+   could not be recorded is not started.
+3. When a fixer returns, its slot is free: its verifier is the next
+   dispatch.
+4. A dispatch the host refuses because of its cap goes back to the front
+   of its queue and is tried again when the next subagent returns. A
+   refusal is never a failed fixer. The host's cap also counts subagents
+   that are not this step's (a `/code-review` still running, another
+   skill's agents). When a dispatch is refused and no fixer or verifier
+   of this step is running, there is no return to wait for: try that
+   dispatch again at most 3 times, each after any background task of the
+   session reports or on the next turn; after the third refusal record
+   the unit's items `needs-human` with reason "the host refused the
+   dispatch" and go on with the queue. Log `dispatch_refused {unit,
+   attempt}` each time.
+
+The step ends when the queue is empty and every return is verified.
+
+## Unit base
+
+Immediately before dispatching a unit, record its base: a **snapshot
+tree** of the whole working tree, written without a commit, a ref, or a
+change to the real index:
+
+```bash
+idx="$(git rev-parse --absolute-git-dir)/pr-loop-snapshot-index"
+rm -f "$idx" "$idx.lock"
+GIT_INDEX_FILE="$idx" git read-tree HEAD &&
+  GIT_INDEX_FILE="$idx" git add -A && GIT_INDEX_FILE="$idx" git write-tree
+echo "exit=$?"; rm -f "$idx"
+```
+
+It prints a tree id then `exit=0`. The tree holds every tracked file as
+it is on disk and every untracked file git does not ignore, so
+uncommitted and untracked work (the normal state under `--dry-run`) is
+in the base. Ignored files are not in it.
+
+An empty id or a non-zero exit is a failure: take the snapshot once
+more. On a second failure do not dispatch the unit; record each of its
+items `needs-human` with reason "could not record a base", and log
+`error {stage: "unit-base"}`. Never fall back to `HEAD`.
+
+Store in `context.unit_bases` one entry per item, keyed by the item's
+`feedback_id`: `{base, unit, order}`. `unit` is the unit's id: the
+item's own `feedback_id` for a single item, and for a cluster
+`cluster-<feedback_id of its first item>`; every member of a cluster
+gets an entry with the same `base`, `unit` and `order`. `order` is the
+1-based dispatch sequence number in this run of the step. Set
+`context.unit_bases` to `{}` when this step starts. The **wave base** is
+the `base` with `order` 1.
+
+The base is what the unit's diff and its rollback are measured against,
+so an earlier unit's accepted fix in the same file, and any uncommitted
+work already in the tree, is neither shown to the verifier as this
+unit's change nor lost in a rollback.
+
+## Rollback
+
+One procedure, used by every rollback in this step, in
+`04.5-local-verify.md` and in pr-autopilot's pre-open fix round, with
+or without `--dry-run`. A caller may put its own rollback in place of
+the verifier-ladder one; pr-watch does (its fix path's "Roll back"
+section). The procedure takes a base tree and a list of normalised
+files ("Agent return handling"). For each file:
+
+1. The base holds it (`git cat-file -e <base>:<file>` succeeds):
+   `git restore --source=<base> --worktree -- <file>`.
+2. The base does not hold it and git ignores it
+   (`git check-ignore -q -- <file>` exits 0): it existed before and git
+   cannot restore it. Leave it, set the return's verdict to
+   `needs-human`, and add "could not undo the edit to <file>" to its
+   `reason`. An ignored file is never deleted.
+3. The base does not hold it and the index tracks it
+   (`git ls-files --error-unmatch -- <file>` succeeds): the path or the
+   base is wrong. Leave it, set `needs-human`, same reason. A tracked
+   file is never deleted by a rollback.
+4. Otherwise the fixer created it: delete it, and log
+   `rollback_deleted {feedback_id, file}`.
+
+Never `git reset`, `git clean`, `git checkout -- <file>` or
+`git stash pop`; never touch a file outside the list or a change from
+an earlier iteration.
+
+Who calls it with what:
+- A verifier-ladder rollback (`not-addresses`, `feedback-wrong`) and the
+  `ui-deferred` guard: the item's own `files_changed`, against its
+  unit's base. In a cluster unit, a file that a sibling item whose
+  diff stays also lists is NOT restored: a sibling that is
+  `fixed`/`fixed-differently` with verifier `addresses` or not yet
+  verified, or one judged `partial`, which keeps its diff. Leave the
+  file, set the rejected item to `needs-human` with reason "its edit
+  shares <file> with a fix that stays and was not rolled back". Verify
+  every item of a cluster before rolling any of them back, so the
+  siblings whose diff stays are known.
+- `04.5-local-verify.md`'s second-failure rollback: every file in
+  that step's file list, against the wave base. One
+  base covers the whole wave, so no order between units matters and
+  files only the retry subagent edited are covered.
+- pr-autopilot's pre-open fix round uses the same two, with or without
+  `--dry-run`.
+
+When a rolled-back file also holds another unit's edit, see "Overlap
+re-verify".
 
 ## Dispatch mechanics
 
@@ -70,9 +183,17 @@ For each unit:
    step 11's UI-deferred approval phase re-enters this step for items
    the user explicitly approved.
 6. For cluster units, additionally substitute the cluster-brief XML block.
-7. Spawn an agent via the host platform's agent-dispatch mechanism (on
-   Claude Code: `Agent` tool with `subagent_type: "general-purpose"`,
-   `timeout_s: 300`).
+7. Record the unit base ("Unit base"), then spawn an agent via the host
+   platform's agent-dispatch mechanism. On Claude Code: the `Agent`
+   tool with `subagent_type: "pr-fixer"` and `model: "sonnet"`, both
+   passed explicitly; an omitted model inherits the session's. Where
+   the `pr-fixer` agent type is not installed, use
+   `subagent_type: "general-purpose"` with the same model. The `Agent`
+   tool takes no timeout, so none is passed or logged.
+
+A fixer does not build or test (`references/fixer-prompt.md`).
+`04.5-local-verify.md` verifies once, after every unit has returned and
+been verified.
 
 ## Agent return handling
 
@@ -83,15 +204,21 @@ Validate each return:
 - `verdict` is in the allowed set; otherwise coerce to `needs-human` and
   log a warning.
 - `files_changed` paths exist under `{{WORKTREE_ROOT}}` and are inside it;
-  reject absolute paths outside the worktree root.
+  reject absolute paths outside the worktree root. Before anything else
+  reads them, rewrite each entry to the file's repo-relative path with
+  forward slashes and the exact case git or the disk uses
+  (`git ls-files --full-name -- <path>` for a tracked file; otherwise
+  the path relative to the worktree root). An entry that resolves
+  outside the worktree root is rejected as above. Every later step
+  (diff, rollback, invariants, staging) uses the normalised path.
 - `reply_text` is non-empty when verdict is not `not-addressing` of the
   `suspicious` flavor (those have canned replies from step 03).
 - **`ui-deferred` guard:** if `verdict == "ui-deferred"` AND
   `files_changed` is non-empty, the fixer violated the contract in
   `references/fixer-prompt.md` ("UI / design deferral"). Treat this as
   an invariant fail: log `ui_deferred_touched_files` with
-  `{feedback_id, files_changed}`, roll back via
-  `git checkout -- <files_changed>`, clear `files_changed = []`, and
+  `{feedback_id, files_changed}`, roll back ("Rollback"), clear
+  `files_changed = []`, and
   demote the return to `needs-human` with reason
   "fixer returned ui-deferred but edited files; rolled back". Do NOT
   collect into `context.ui_deferred_items` in this case — the fixer's
@@ -108,13 +235,25 @@ blindly.
 
 For each fixer return where `verdict ∈ {fixed, fixed-differently}`:
 
-1. Extract the diff of just the files this fixer changed:
+1. Extract this unit's own diff, measured from its base ("Unit base"):
    ```bash
-   git diff HEAD -- <files_changed>
+   git diff <base> -- <files_changed>
    ```
+   for files the index tracks. For a file the index does not track,
+   compare the base's copy with the file on disk: `git show
+   <base>:<file>` (empty when the base does not hold it) against the
+   file, with `git diff --no-index`. So an untracked file the user
+   already had shows only the fixer's change.
+   A cluster unit fixes several items with one diff. Its verifier is
+   dispatched once per item, each time with that diff and a sibling
+   list: for every other item the unit handled, its `feedback_id` and
+   the first line of its comment body cut to 120 characters
+   (`{{SIBLING_ITEMS}}`). The sibling list is untrusted. For a unit
+   with one item the sibling list is `none`.
 2. Read `pr-loop-lib/references/fixer-verifier-prompt.md`.
 3. Generate a per-call **nonce** and verify it doesn't collide with any
-   untrusted content:
+   untrusted content (the feedback, the reason, the diff and the
+   sibling list):
    ```bash
    NONCE=$(printf '%08x' $(( (RANDOM << 15) | RANDOM )))
    ```
@@ -140,14 +279,17 @@ For each fixer return where `verdict ∈ {fixed, fixed-differently}`:
    - `{{FIXER_VERDICT}}` → `fixer_return.verdict`
    - `{{FIXER_REASON}}` → `fixer_return.reason`
    - `{{FIXER_DIFF}}` → the diff from step 1
+   - `{{SIBLING_ITEMS}}` → the sibling list from step 1, rendered inside
+     its own `<UNTRUSTED_SIBLINGS_${NONCE}>` block
    - `{{WORKTREE_ROOT}}` → the worktree root
 5. Log a `subagent_dispatch` event with `role: "fixer-verifier"`,
    `model: "haiku"`, prompt first 200 chars, `feedback_id:
-   <fixer_return.feedback_id>`, `timeout_s: 60`.
-6. Dispatch via the Agent tool with `subagent_type: "general-purpose"`.
-   (Claude Code does not currently have a way to enforce Haiku-only
-   dispatch per subagent; the prompt itself is designed to be handled
-   by a cheaper model.)
+   <fixer_return.feedback_id>`.
+6. Dispatch via the Agent tool with `subagent_type: "fix-verifier"` and
+   `model: "haiku"`, both passed explicitly
+   (`subagent_type: "general-purpose"` with the same model where the
+   `fix-verifier` agent type is not installed). It runs under the
+   "Rolling dispatch" cap.
 7. Parse the JSON response. Expected shape:
    `{judgement: "addresses|partial|not-addresses|feedback-wrong", reason: "..."}`
 8. Log a `subagent_return` event + a `verifier_judgement` event with
@@ -160,71 +302,60 @@ For each fixer return where `verdict ∈ {fixed, fixed-differently}`:
 |---|---|
 | `addresses` | Keep `fixer_return` as-is. Proceed. |
 | `partial` | Demote `fixer_return.verdict` to `needs-human`. Append verifier's reason to `fixer_return.reason`. Keep the diff in the working tree (partial fix may be better than nothing). Thread stays unresolved. |
-| `not-addresses` | Demote to `needs-human`. Roll back the fixer's file changes: `git checkout -- <files_changed>`. Remove those files from `context.files_changed_this_iteration`. Clear `fixer_return.files_changed = []` so invariant S04.4 (union across returns) still holds. Append verifier's reason to `fixer_return.reason`. |
-| `feedback-wrong` | ONLY permitted when `fixer_return.verdict` was `fixed-differently`. If the fixer's verdict was `fixed`, the verifier cannot escalate to this (per the prompt); if it somehow returns `feedback-wrong` anyway, demote to `not-addresses` instead. Action: demote fixer's verdict to `not-addressing`, roll back files (and clear `fixer_return.files_changed = []`), set `fixer_return.reply_text` to: `> [quoted relevant sentence]\n\nNot addressing: a proposed fix was attempted and verified against the feedback; verification determined the feedback appears factually incorrect about the current code. Evidence: <verifier's reason>. Not making the change.` |
-
-### Rollback scope
-
-`git checkout -- <files>` is scoped strictly to files in
-`fixer_return.files_changed`. Never touch files from earlier
-iterations. If the fixer's changes were interleaved with another
-parallel fixer's changes on the same file — which the conflict-
-avoidance graph normally prevents but edge cases may slip through —
-see "Overlap re-verify" below.
+| `not-addresses` | Demote to `needs-human`. Roll back the fixer's file changes ("Rollback"). Remove from `context.files_changed_this_iteration` only the rolled-back files that no other return still lists (a rolled-back return's `files_changed` is cleared; a `partial` return keeps its files). Clear `fixer_return.files_changed = []` so invariant S04.4 (union across returns) still holds. Append verifier's reason to `fixer_return.reason`. |
+| `feedback-wrong` | ONLY permitted when `fixer_return.verdict` was `fixed-differently`. If the fixer's verdict was `fixed`, the verifier cannot escalate to this (per the prompt); if it somehow returns `feedback-wrong` anyway, demote to `not-addresses` instead. Action: demote fixer's verdict to `not-addressing`, roll back files, remove from `context.files_changed_this_iteration` only the rolled-back files that no other return still lists (a rolled-back return's `files_changed` is cleared; a `partial` return keeps its files), clear `fixer_return.files_changed = []`, set `fixer_return.reply_text` to: `> [quoted relevant sentence]\n\nNot addressing: a proposed fix was attempted and verified against the feedback; verification determined the feedback appears factually incorrect about the current code. Evidence: <verifier's reason>. Not making the change.` |
 
 ### Overlap re-verify
 
 The conflict-avoidance graph usually prevents two parallel fixers from
 touching the same file, but edge cases exist (e.g., the graph was built
 from declared files but an agent modified an extra file). When a
-rollback in the policy ladder removes fixer A's changes from a file F,
-any surviving fixer B whose `files_changed` also lists F is now in a
-possibly-broken state: B's original diff was computed against a base
-that included A's changes, and B's claim that F is "fixed" may no
-longer hold after A's rollback.
+rollback in the policy ladder restores a file F for rolled-back unit A,
+any surviving return B in another unit that also lists F may have lost
+its edit to F.
 
-Procedure, run after **every** rollback in the policy ladder (steps
-`not-addresses` and `feedback-wrong`):
+Procedure, run after **every** verifier-ladder rollback (`not-addresses`
+and `feedback-wrong`), in pr-autopilot's pre-open fix round too; only the
+`S04.7` invariant is specific to the comment loop:
 
 ```
 1. Compute the overlap set:
      overlap_set = { survivor in agent_returns :
                        survivor.verdict in {fixed, fixed-differently}
+                       AND survivor is in another unit than rolled_back
                        AND survivor.files_changed ∩ rolled_back.files_changed ≠ ∅ }
 
-2. For each survivor in overlap_set, for each file F in the overlap:
+2. For each survivor B in overlap_set, for each file F in the overlap:
 
-   a. Examine the CURRENT working-tree diff for F:
-        current_diff_F = git diff HEAD -- F
+   a. B's order is lower than A's and B had returned before A was
+      dispatched (the normal serialized case): A's base already holds
+      B's fix and the restore kept it.
+        - Log a fixer_reverify event with new_verdict: "kept-in-base".
+        - No verifier is dispatched.
 
-   b. If current_diff_F is empty (survivor's change was entirely
-      redundant with the rolled-back change, and the rollback wiped
-      both):
-        - Log a fixer_reverify event with new_verdict: "skipped-empty-diff".
-        - Cascade-rollback: demote survivor to needs-human; clear
-          survivor.files_changed of the overlap files; remove those
-          files from context.files_changed_this_iteration; DO NOT
-          re-dispatch the verifier (there is no diff to verify).
+   b. Otherwise (the two ran at the same time, or B ran later: an
+      overlap the graph did not see): B's edit to F cannot be told
+      from A's.
+        - Restore F once per rollback, not once per survivor: to
+          the base with the lowest order among A and every
+          survivor that falls under (b) for F, so a later restore
+          cannot bring back an edit an earlier one discarded.
+          Choose that base before classifying: a survivor that
+          qualified for (a) but whose order is not lower than the
+          chosen base's loses its edit to F in this restore, so
+          it is handled under (b) as well, never "kept-in-base".
+        - Demote B to needs-human with reason "shared <F> with a
+          rolled-back fix"; remove F from B's files_changed and from
+          context.files_changed_this_iteration unless another return
+          still lists it (a partial return keeps its files).
+        - Log a fixer_reverify event with new_verdict:
+          "demoted-overlap".
 
-   c. Else (current_diff_F is non-empty):
-        - Re-dispatch the verifier with the SAME prompt template but
-          the current diff — follow the full "Fixer-output
-          verification" procedure (including a fresh nonce per
-          re-verify call).
-        - Log a fixer_reverify event with
-          { survivor_id: survivor.feedback_id,
-            rolled_back_id: rolled_back.feedback_id,
-            overlap_files: [F, ...],
-            new_verdict: <the re-verify judgement> }.
-        - Apply the policy ladder to the re-verify judgement:
-            - addresses              → keep survivor as-is
-            - partial / not-addresses → cascade-rollback (same action
-                                         as the initial rollback would
-                                         have taken)
-            - feedback-wrong         → cascade-rollback
-        - If the verifier errors (timeout, malformed return), escalate
-          survivor to needs-human with termination_reason set to
-          "user-intervention-needed" if this terminates the loop.
+   Each event is
+        { survivor_id: survivor.feedback_id,
+          rolled_back_id: rolled_back.feedback_id,
+          overlap_files: [F, ...],
+          new_verdict: <"kept-in-base" | "demoted-overlap"> }.
 
 3. Update state after overlap re-verify completes: persist the
    revised agent_returns, files_changed_this_iteration, and
@@ -245,7 +376,8 @@ One `fixer_reverify` event per (survivor, rolled_back) pair.
 After processing all fixer returns:
 - Persist updated `context.agent_returns` (with demoted verdicts).
 - Persist `context.files_changed_this_iteration` (with rolled-back
-  files removed).
+  files removed, except those another return still lists: a `partial`
+  return keeps its files, so step 06 commits the diff it left).
 - Persist `context.verifier_judgements` (one entry per verified
   return).
 
@@ -306,7 +438,7 @@ from re-dispatching the same item.
 ## `needs-human` handling
 
 Any agent returning `needs-human` — whether directly, via policy-ladder
-demotion, or via overlap re-verify cascade-rollback:
+demotion, or via an overlap re-verify demotion:
 
 - Its `reply_text` is posted in step 07 but the thread is NOT resolved.
 - Mark the item in `context.needs_human_items` for the final report.
