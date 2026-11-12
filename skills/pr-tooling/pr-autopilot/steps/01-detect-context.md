@@ -13,7 +13,7 @@ threaded through the entire skill.
 | `pr_number` | `gh pr view --json number` (GitHub) or `az repos pr list --source-branch <branch>` (AzDO). Empty on a fresh pr-autopilot run, since preflight check 5 halts on an open PR the run did not open; set when resuming the run that opened it, and under pr-followup |
 | `branch` | `git rev-parse --abbrev-ref HEAD` |
 | `head_sha` | `git rev-parse HEAD` |
-| `base_sha` | `git merge-base $base HEAD` |
+| `base_sha` | `context.base_override` when set (see "Base override"), else `git merge-base $base HEAD` |
 | `uncommitted` | `git status --porcelain` — list of paths with status codes |
 | `spec_candidates[]` | Glob: `docs/superpowers/specs/*.md`, `docs/superpowers/plans/*.md`, `specs/*/spec.md`, `specs/*/plan.md`, `specs/*/tasks.md`, `docs/specs/*.md`, `docs/plans/*.md` |
 | `effort_docs[]` | Intent docs kept outside the repo; see "Effort docs" below |
@@ -63,6 +63,17 @@ Run each command; halt with the quoted diagnostic on any failure.
    ```
    AzDO: `az repos pr list --source-branch <branch> --status active`.
    If an open PR #<N> exists and `<repo-root>/.pr-autopilot/pr-<N>.json` does not: HALT with "PR #<N> already exists for this branch. pr-autopilot opens new PRs; run pr-followup to handle its comments." No branch change has been made at this point. When that state file exists, this is a resume of the run that opened the PR: continue, and "State file initialization" loads it, unless the PR is a draft: then HALT with "PR is in draft state. Mark it ready for review before running pr-autopilot."
+
+## Base override
+
+`--base <sha>` without `--dry-run`: HALT with "--base is accepted only with --dry-run."
+
+When `context.base_override` is set, `base_sha` is that commit. HALT with
+"--base <sha> is not a commit that is an ancestor of HEAD." unless both pass:
+```bash
+git rev-parse --verify <sha>^{commit}
+git merge-base --is-ancestor <sha> HEAD
+```
 
 ## Host platform detection
 
@@ -138,7 +149,9 @@ Otherwise treat as unrelated.
 ## Spec-candidate ranking (for step 03)
 
 For each candidate spec file:
-- `mtime_days = (now - file.mtime_days)` — keep if ≤ 30
+- `mtime_days` = days between now and the file's last commit time
+  (`git log -1 --format=%ct -- <file>`); for a file git does not track,
+  or with no commit, the filesystem mtime — keep if ≤ 30
 - `keyword_overlap = count(branch_keywords & file_keywords)` — compute from
   file title, H1, H2 headings
 - Rank by `(keyword_overlap desc, mtime_days asc)`

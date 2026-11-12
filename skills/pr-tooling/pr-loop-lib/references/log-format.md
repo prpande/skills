@@ -57,7 +57,7 @@ Rules:
 | `triage_result` | `{actionable, suspicious, filtered_self, filtered_known_bot, filtered_pre_push}` |
 | `triage_dedup_hit` | `{feedback_id, preflight_match_id, source}` — `source` is `"triage"` when the dedup came from iter-1 Filter B.5 on a real PR comment (feedback_id references `context.actionable[].id`) or `"code-review"` / `"simplify"` when pr-autopilot step 03.5 deduped a synthetic `/code-review` finding or `/simplify` candidate (feedback_id is the synthetic `code-review:finding-N` or `simplify-N`, registered in the `duplicate` entry's `context.internal_review_findings[].fixer_feedback_id`, also when that entry is declared but risky; S35.5 forbids the id only on a declared-but-risky entry that is not a `duplicate`). Consumers look up `feedback_id` in the array indicated by `source`. |
 | `cluster_gate_fired` | `{items, clusters_formed}` |
-| `subagent_dispatch` | `{role, model, prompt_first_200_chars, feedback_id?, agent?, timeout_s?}` — `agent` names the step 02 lens agent (`context`, `pack:<name>`, `backend`, `universal`) when `role` is `lens-reviewer` |
+| `subagent_dispatch` | `{role, model, prompt_first_200_chars, feedback_id?, agent?, timeout_s?}` — `agent` names the step 02 lens agent (`context`, `pack:<name>`, `backend`, `universal`) when `role` is `lens-reviewer`. `timeout_s` is set only for lens agents (`1800`, step 02 "Dispatch"); fixers and verifiers have no timeout, so their events carry none |
 | `subagent_return` | `{role, feedback_id?, verdict, files_changed, reason_first_200_chars, duration_ms}` |
 | `verifier_judgement` | `{feedback_id, fixer_verdict_before, fixer_verdict_after, judgement, reason_first_200_chars}` |
 | `local_verify` | `{iteration, passed, failed_cmd?, retry_attempted, rolled_back}` |
@@ -66,7 +66,7 @@ Rules:
 | `quiescence` | `{reason, loop_exit_reason, termination_reason}` |
 | `quiescence_pending` | `{iteration, reason, next_wait_seconds}` — emitted by `pr-loop-lib/steps/08-quiescence-check.md` when the *first* of two consecutive soft-quiescent iterations completes. `reason` is one of `quiescent-zero-actionable` \| `quiescent-no-code-change`. `next_wait_seconds` is the **effective** wait step 01 will use before the confirming iteration — i.e., the same `delay_seconds` step 01 computes: 300 by default, `max(300, context.wait_override_minutes * 60)` when `--wait` is set. Sub-floor `--wait` values (e.g., `--wait 2`) are clamped up to 300 by step 01 and `next_wait_seconds` reports the clamped 300, not the raw user input. Informational; the loop routes back to step 01 instead of step 09. The next iteration that actually exits (whether confirmed quiescent or by cap/runaway) emits the existing `quiescence` event. |
 | `ci_result` | `{check_name, state, link}` |
-| `code_review_invoked` | `{host, skill, level, invoked_at}` when a review skill is mapped and dispatched, OR `{host, skipped: true, reason?}` when no skill is mapped for this host (`skill`/`level`/`invoked_at` are omitted in the skipped variant). A `--dry-run` run invokes the skill like any other |
+| `code_review_invoked` | `{host, skill, level, invoked_at, task_id?, relaunch?}` when a review skill is mapped and dispatched, OR `{host, skipped: true, reason?}` when no skill is mapped for this host (`skill`/`level`/`invoked_at` are omitted in the skipped variant). `task_id` is the background task's id when the launch returns one; `relaunch: true` marks step 03.5's one relaunch after a background task ended with no result. A `--dry-run` run invokes the skill like any other |
 | `code_review_hints_rejected` | `{}` — the skill refused the extra text in its args and was re-invoked with the level and branch, plus the read-only and dry-run text under `--dry-run`; sets `context.code_review_hints_rejected`. When the dry-run retry is refused too, the review is recorded as not run (`code_review_status: "skipped"`), never as zero findings |
 | `code_review_parse_failed` | `{raw_prefix, reason}` — pr-autopilot step 03.5 got a non-empty `/code-review` result it could not parse. `raw_prefix` is the first 200 chars |
 | `context_map_written` | `{path, sources, bullets, checks, nrql_queries}` — pr-autopilot step 01.7. `checks` is the number of `Check C<n>` entries, `nrql_queries` the count in the nrql state file (at most 6) |
@@ -116,10 +116,11 @@ printf '%s\n' '{
   "step": "02-preflight-review",
   "event": "subagent_dispatch",
   "data": {
-    "role": "adversarial-reviewer",
+    "role": "lens-reviewer",
+    "agent": "context",
     "model": "sonnet",
-    "prompt_first_200_chars": "You are a senior engineer conducting a skeptical...",
-    "timeout_s": 180
+    "prompt_first_200_chars": "Review one diff for what a general bug review does not know about...",
+    "timeout_s": 1800
   }
 }' >> "<repo_root>/.pr-autopilot/pr-<PR>.log"
 ```

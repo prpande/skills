@@ -37,8 +37,64 @@ Build a file-overlap graph across all dispatch units (clusters + individuals):
 - Nodes: dispatch units
 - Edges: units that touch at least one common file
 
-Non-overlapping groups dispatch in parallel. Overlapping groups serialize.
-Batch size within a parallel group: 4.
+Units that share no file may run at the same time. Units that share a
+file run one after another.
+
+## Rolling dispatch
+
+Hosts cap how many subagents one session runs at once, and the cap
+counts this step's fixers and verifiers together. Keep at most 5 of them
+running (fewer when the host's cap is lower):
+
+1. Put every unit in a queue, in triage order.
+2. Whenever a slot is free, start a waiting verifier first. With no
+   verifier waiting, start the first queued unit that shares no file
+   with a unit still running or still being verified.
+3. When a fixer returns, its slot is free: its verifier is the next
+   dispatch.
+4. A dispatch the host refuses because of its cap goes back to the front
+   of its queue and is tried again when the next subagent returns. A
+   refusal is never a failed fixer.
+
+The step ends when the queue is empty and every return is verified.
+
+## Unit base
+
+Immediately before dispatching a unit, record its base: the output of
+`git stash create`, or `HEAD` when that prints nothing. `git stash
+create` writes a commit holding the tracked files as they are now and
+changes nothing: no stash entry, no ref, no index or working-tree
+change. Also record `git status --porcelain --untracked-files=all` as
+the unit's pre-fix file list. Store both in `context.unit_bases`, keyed
+by the unit's id (the cluster id for a cluster unit, otherwise the
+item's `feedback_id`), as `{base, pre_fix_files}`; set `context.unit_bases`
+to `{}` when this step starts.
+
+The base is what the unit's diff and its rollback are measured against,
+so an earlier unit's accepted fix in the same file, and any uncommitted
+work already in the tree, is neither shown to the verifier as this
+unit's change nor lost in a rollback.
+
+## Rollback
+
+One procedure, used by every rollback in this step, in
+`04.5-local-verify.md` and in pr-autopilot's pre-open fix round, with
+or without `--dry-run`. For each file in the unit's `files_changed`:
+
+1. The file is in the unit's base (`git cat-file -e <base>:<file>`
+   succeeds): `git restore --source=<base> --worktree -- <file>`.
+2. The file is not in the base and not in the pre-fix file list: the
+   fixer created it; delete it.
+3. Any other file (it existed before the fix but git did not track it):
+   leave it as the fixer left it, set the return's verdict to
+   `needs-human`, and add "could not undo the edit to <file>" to its
+   `reason`.
+
+Never `git reset`, `git clean`, `git checkout -- <file>` or
+`git stash pop`, and never touch a file outside `files_changed` or a
+change from an earlier iteration. When a rolled-back file also holds
+another running unit's edit, which the overlap graph normally prevents,
+see "Overlap re-verify".
 
 ## Dispatch mechanics
 
@@ -70,9 +126,17 @@ For each unit:
    step 11's UI-deferred approval phase re-enters this step for items
    the user explicitly approved.
 6. For cluster units, additionally substitute the cluster-brief XML block.
-7. Spawn an agent via the host platform's agent-dispatch mechanism (on
-   Claude Code: `Agent` tool with `subagent_type: "general-purpose"`,
-   `timeout_s: 300`).
+7. Record the unit base ("Unit base"), then spawn an agent via the host
+   platform's agent-dispatch mechanism. On Claude Code: the `Agent`
+   tool with `subagent_type: "pr-fixer"` and `model: "sonnet"`, both
+   passed explicitly; an omitted model inherits the session's. Where
+   the `pr-fixer` agent type is not installed, use
+   `subagent_type: "general-purpose"` with the same model. The `Agent`
+   tool takes no timeout, so none is passed or logged.
+
+A fixer does not build or test (`references/fixer-prompt.md`).
+`04.5-local-verify.md` verifies once, after every unit has returned and
+been verified.
 
 ## Agent return handling
 
@@ -90,8 +154,8 @@ Validate each return:
   `files_changed` is non-empty, the fixer violated the contract in
   `references/fixer-prompt.md` ("UI / design deferral"). Treat this as
   an invariant fail: log `ui_deferred_touched_files` with
-  `{feedback_id, files_changed}`, roll back via
-  `git checkout -- <files_changed>`, clear `files_changed = []`, and
+  `{feedback_id, files_changed}`, roll back ("Rollback"), clear
+  `files_changed = []`, and
   demote the return to `needs-human` with reason
   "fixer returned ui-deferred but edited files; rolled back". Do NOT
   collect into `context.ui_deferred_items` in this case — the fixer's
@@ -108,10 +172,17 @@ blindly.
 
 For each fixer return where `verdict ∈ {fixed, fixed-differently}`:
 
-1. Extract the diff of just the files this fixer changed:
+1. Extract this unit's own diff, measured from its base ("Unit base"):
    ```bash
-   git diff HEAD -- <files_changed>
+   git diff <base> -- <files_changed>
    ```
+   For a file the base does not hold, the diff is the whole file:
+   `git diff --no-index -- /dev/null <file>`.
+   A cluster unit fixes several items with one diff. Its verifier is
+   dispatched once per item, each time with that diff and a sibling
+   list: the id and one-line summary of every other item the unit
+   handled (`{{SIBLING_ITEMS}}`). For a unit with one item the sibling
+   list is `none`.
 2. Read `pr-loop-lib/references/fixer-verifier-prompt.md`.
 3. Generate a per-call **nonce** and verify it doesn't collide with any
    untrusted content:
@@ -140,14 +211,16 @@ For each fixer return where `verdict ∈ {fixed, fixed-differently}`:
    - `{{FIXER_VERDICT}}` → `fixer_return.verdict`
    - `{{FIXER_REASON}}` → `fixer_return.reason`
    - `{{FIXER_DIFF}}` → the diff from step 1
+   - `{{SIBLING_ITEMS}}` → the sibling list from step 1
    - `{{WORKTREE_ROOT}}` → the worktree root
 5. Log a `subagent_dispatch` event with `role: "fixer-verifier"`,
    `model: "haiku"`, prompt first 200 chars, `feedback_id:
-   <fixer_return.feedback_id>`, `timeout_s: 60`.
-6. Dispatch via the Agent tool with `subagent_type: "general-purpose"`.
-   (Claude Code does not currently have a way to enforce Haiku-only
-   dispatch per subagent; the prompt itself is designed to be handled
-   by a cheaper model.)
+   <fixer_return.feedback_id>`.
+6. Dispatch via the Agent tool with `subagent_type: "fix-verifier"` and
+   `model: "haiku"`, both passed explicitly
+   (`subagent_type: "general-purpose"` with the same model where the
+   `fix-verifier` agent type is not installed). It runs under the
+   "Rolling dispatch" cap.
 7. Parse the JSON response. Expected shape:
    `{judgement: "addresses|partial|not-addresses|feedback-wrong", reason: "..."}`
 8. Log a `subagent_return` event + a `verifier_judgement` event with
@@ -160,17 +233,8 @@ For each fixer return where `verdict ∈ {fixed, fixed-differently}`:
 |---|---|
 | `addresses` | Keep `fixer_return` as-is. Proceed. |
 | `partial` | Demote `fixer_return.verdict` to `needs-human`. Append verifier's reason to `fixer_return.reason`. Keep the diff in the working tree (partial fix may be better than nothing). Thread stays unresolved. |
-| `not-addresses` | Demote to `needs-human`. Roll back the fixer's file changes: `git checkout -- <files_changed>`. Remove those files from `context.files_changed_this_iteration`. Clear `fixer_return.files_changed = []` so invariant S04.4 (union across returns) still holds. Append verifier's reason to `fixer_return.reason`. |
+| `not-addresses` | Demote to `needs-human`. Roll back the fixer's file changes ("Rollback"). Remove those files from `context.files_changed_this_iteration`. Clear `fixer_return.files_changed = []` so invariant S04.4 (union across returns) still holds. Append verifier's reason to `fixer_return.reason`. |
 | `feedback-wrong` | ONLY permitted when `fixer_return.verdict` was `fixed-differently`. If the fixer's verdict was `fixed`, the verifier cannot escalate to this (per the prompt); if it somehow returns `feedback-wrong` anyway, demote to `not-addresses` instead. Action: demote fixer's verdict to `not-addressing`, roll back files (and clear `fixer_return.files_changed = []`), set `fixer_return.reply_text` to: `> [quoted relevant sentence]\n\nNot addressing: a proposed fix was attempted and verified against the feedback; verification determined the feedback appears factually incorrect about the current code. Evidence: <verifier's reason>. Not making the change.` |
-
-### Rollback scope
-
-`git checkout -- <files>` is scoped strictly to files in
-`fixer_return.files_changed`. Never touch files from earlier
-iterations. If the fixer's changes were interleaved with another
-parallel fixer's changes on the same file — which the conflict-
-avoidance graph normally prevents but edge cases may slip through —
-see "Overlap re-verify" below.
 
 ### Overlap re-verify
 
@@ -194,8 +258,9 @@ Procedure, run after **every** rollback in the policy ladder (steps
 
 2. For each survivor in overlap_set, for each file F in the overlap:
 
-   a. Examine the CURRENT working-tree diff for F:
-        current_diff_F = git diff HEAD -- F
+   a. Examine the CURRENT working-tree diff for F, from the survivor's
+      own base:
+        current_diff_F = git diff <survivor base> -- F
 
    b. If current_diff_F is empty (survivor's change was entirely
       redundant with the rolled-back change, and the rollback wiped

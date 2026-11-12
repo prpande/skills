@@ -11,7 +11,8 @@ not auto-fixable.
 ## Match specs to the current work
 
 Run the spec-candidate ranking from step 01. Keep candidates where:
-- `mtime_days <= 30`, AND
+- `mtime_days <= 30` (days since the file's last commit, as defined in
+  step 01), AND
 - `keyword_overlap > 0` with the branch name, AND
 - the spec file mentions at least one file or module in the diff.
 

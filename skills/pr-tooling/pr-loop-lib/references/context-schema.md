@@ -19,7 +19,8 @@ Required fields are marked as such.
 | `base` | string | yes | Base branch (e.g., `main`) |
 | `branch` | string | yes | Current branch |
 | `head_sha` | string (hex) | yes | `git rev-parse HEAD` |
-| `base_sha` | string (hex) | yes | `git merge-base $base HEAD` |
+| `base_sha` | string (hex) | yes | `git merge-base $base HEAD`, or `base_override` when set |
+| `base_override` | string or null | default `null` | A base commit passed with `--base <sha>`; when set, step 01 uses it as `base_sha` instead of the merge base. Valid only with `--dry-run` |
 | `pr_number` | integer or null | no | Set by step 01 if PR exists, else after step 04 |
 | `pr_url` | string or null | no | PR URL, set after create |
 | `template_path` | string or null | no | Repo's PR-template path, if found |
@@ -86,6 +87,9 @@ run `/simplify`).
 | `consecutive_quiescent_iterations` | integer | default `0` | Incremented on each soft-quiescent iteration (`quiescent-zero-actionable` or `quiescent-no-code-change`). Reset to `0` on any non-quiescent iteration outcome. Read by step 08 to decide between routing back to step 01 (counter == 1) or onward to step 09 (counter >= 2). |
 | `last_quiescence_reason` | enum or null | default `null` | The most recent soft-quiescent reason; one of `quiescent-zero-actionable` \| `quiescent-no-code-change`. Set on each soft-quiescent iteration (in lockstep with `consecutive_quiescent_iterations` increment). Cleared (set to `null`) when the counter resets. Carried for the report and for log readability. |
 | `sanity_check_passed` | object | default `{}` | `{ <iteration>: <bool> }` |
+| `verify_excluded_suites` | array of objects | default `[]` | `{suite, reason}` suites step 04.5 did not run locally |
+| `verify_preexisting_failures` | array of strings | default `[]` | Tests that fail without this iteration's fixes |
+| `unit_bases` | object | default `{}` | Dispatch unit id to `{base, pre_fix_files}`, recorded by step 04 "Unit base"; cleared at the start of each step 04 run |
 
 ## CI gate
 
@@ -106,7 +110,7 @@ run `/simplify`).
 | `code_review_hints_rejected` | boolean | default `false` | True when step 03.5 B's `/code-review` refused the extra text in its args, so it never saw the settled file; step 03.5 D then tests its findings against the settled items itself. Reset to `false` before each launch. |
 | `code_review_raw_output` | string | default `""` | Result text of the host's `code-review` skill, parsed by step 03.5. Never posted. |
 | `code_review_dismissed` | array of objects | default `[]` | Candidates `/code-review` refuted or dropped: `{summary, reason}`. Re-checked by step 03.5's fix-round review. |
-| `fix_round_base_sha` | string (hex) or null | no | HEAD before step 03.5's fix commit; the base of the fix-round review diff. Under `--dry-run`, the id of the snapshot tree taken before the fixers ran: also the rollback source and the verifier's base. |
+| `fix_round_base_sha` | string (hex) or null | no | HEAD before step 03.5's fix commit; the base of the fix-round review diff. Under `--dry-run`, the id of the snapshot tree taken before the fixers ran. Rollback and the verifier's diff use `unit_bases`, not this. |
 | `fix_round_head_tree` | string (hex) or null | default `null` | `--dry-run` only: the snapshot tree taken after the fixers ran, also when none changed a file; the head of the fix-round review diff. |
 | `fix_round_skipped_reason` | string or null | default `null` | Why step 03.5 E did not run under `--dry-run` (`"snapshot failed"`); step 11 prints it in the fix-round line. |
 | `declarations` | array of objects | default `[]` | Decisions kept on purpose, written into commit messages (step 03.5) and the PR body (step 04). Each entry: `{kind: "kept-finding" \| "difference" \| "scope", statement, file?, line?, finding_id?, in_commit}`. `statement` is one present-tense sentence. `in_commit` is the SHA of the commit whose message carries it. |

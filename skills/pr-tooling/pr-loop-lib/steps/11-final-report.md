@@ -45,6 +45,8 @@ Verifier judgements (<total>):
 
 Local sanity checks:
   - iterations with build + tests green: <X>/<Y>
+  - not run locally (CI covers them): <suite: reason, ...>
+  - pre-existing failures (fail without our fixes): <test, ...>
 
 CI status at termination: <green | red | skipped | timeout>
 <per-check table if red or timeout>
@@ -102,6 +104,11 @@ Audit trail:
   state: <repo-root>/.pr-autopilot/pr-<N>.json
   review summary: <repo-root>/.pr-autopilot/pr-<N>-review-summary.md
 ```
+
+Under "Local sanity checks", "not run locally" comes from
+`context.verify_excluded_suites` and "pre-existing failures" from
+`context.verify_preexisting_failures`; print each line only when its
+field is non-empty.
 
 Under "Internal review summary", the Fixed, Declared, Open, Nits,
 Dedup and /simplify counts come from `context.internal_review_findings`,
