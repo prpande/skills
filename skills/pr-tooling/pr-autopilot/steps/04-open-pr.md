@@ -15,7 +15,7 @@ If `context.template_path` is set:
 3. Auto-fill each section per the Section Fill Rules below.
 4. Replace any remaining `PR Author TODO:` placeholders with the
    best-effort prose from the fill rules.
-5. Write to `/tmp/pr-body.md`.
+5. Write to `/tmp/pr-body.md`, or `$DRYRUN_DIR/pr-body.md` under `--dry-run`.
 
 If `context.template_path` is empty:
 Use `pr-loop-lib/references/pr-template-fallback.md` template. Apply the
@@ -49,6 +49,7 @@ placeholders by mode:
 
 | Placeholder | Normal run | `--dry-run` |
 |---|---|---|
+| `<pr_body_path>` | `/tmp/pr-body.md` | `$DRYRUN_DIR/pr-body.md` |
 | `<code_ref>` | `head_sha` | the working tree (implementation, simplify edits and review fixes are uncommitted) |
 | `<commit_messages>` | output of `git log --format=%B <base_sha>..<head_sha>` | the intended messages saved in the dry-run directory (`commit-msg.txt` and any other commit message file there) |
 | `<diff_source>` | `git diff <base_sha>...HEAD` | `git diff <base_sha>` plus each in-scope untracked file as a new-file diff |
@@ -58,7 +59,7 @@ Prompt:
 ```
 Check every claim this PR ships against the code at <code_ref>. Read-only.
 
-PR body: /tmp/pr-body.md
+PR body: <pr_body_path>
 Commit messages: <commit_messages>
 Diff: <repo-root>/.pr-autopilot/branch-<slug>.diff, rewritten before dispatch as <diff_source>
 Context map: <context_map_path or "none">
@@ -83,7 +84,7 @@ null>, "line": <int or null>, "claim": "...", "truth": "...",
 ```
 
 Apply the results:
-- `body`: edit `/tmp/pr-body.md`.
+- `body`: edit `<pr_body_path>`.
 - `code`: edit the text in place (text only, no behaviour change), then
   run the build and test commands detected per the Command detection
   table in `pr-loop-lib/steps/04.5-local-verify.md`, under its Execution
