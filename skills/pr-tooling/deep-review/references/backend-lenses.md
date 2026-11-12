@@ -29,8 +29,9 @@ touches; a diff is **backend** when any group fires.
 
 | Group | Fires when the diff touches |
 |---|---|
-| `TX`, `IDM` | a write path (SQL or ORM writes, repository write methods, or an endpoint, mutation, or job that changes stored state), or a message or event handler |
-| `TEN`, `EXP` | SQL or ORM bindings or repository-layer code, an HTTP endpoint or route, or a GraphQL schema/resolver/loader; `TEN` also fires on cache access, for `TEN2` and `TEN6` |
+| `TX` | a write path (SQL or ORM writes, repository write methods, or an endpoint, mutation, or job that changes stored state), or a message or event handler |
+| `IDM` | a write path or a message or event handler, as for `TX`; also a retry, backoff, or resilience policy, on a read or a write |
+| `TEN`, `EXP` | SQL or ORM bindings or repository-layer code, an HTTP endpoint or route, a GraphQL schema/resolver/loader, or a message or event handler; `TEN` also fires on cache access, for `TEN2` and `TEN6` |
 | `CA` | cache access |
 | `MIG` | a schema migration file |
 

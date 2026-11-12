@@ -10,7 +10,7 @@ threaded through the entire skill.
 | `platform` | `git remote get-url origin` substring match: `github.com` → `"github"`; `dev.azure.com` or `visualstudio.com` → `"azdo"`; else `"github"` + warning log |
 | `base` | `gh pr view --json baseRefName` if a PR exists for the current branch; else `git symbolic-ref refs/remotes/origin/HEAD --short` (strip `origin/`); fallback `"main"` |
 | `template_path` | First hit from: `.github/PULL_REQUEST_TEMPLATE.md`, `.github/PULL_REQUEST_TEMPLATE/*.md`, `docs/pull_request_template.md`, `.azuredevops/pull_request_template.md`. If multi-template directory, prompt user to pick |
-| `pr_number` | `gh pr view --json number` (GitHub) or `az repos pr list --source-branch <branch>` (AzDO). Empty on first run — that is fine |
+| `pr_number` | `gh pr view --json number` (GitHub) or `az repos pr list --source-branch <branch>` (AzDO). Empty on a fresh run, since preflight check 5 halts on an open PR the run did not open; set when resuming the run that opened it |
 | `branch` | `git rev-parse --abbrev-ref HEAD` |
 | `head_sha` | `git rev-parse HEAD` |
 | `base_sha` | `git merge-base $base HEAD` |
@@ -55,13 +55,13 @@ Run each command; halt with the quoted diagnostic on any failure.
      ```
      On failure: HALT with "az CLI is not authenticated. Run `az login` and re-invoke."
 
-5. **Draft PR check** (only if a PR already exists for the current branch):
+5. **Existing PR check** (before any commit, review or state write):
    ```bash
    # GitHub:
-   gh pr view --json isDraft --jq .isDraft 2>/dev/null
+   gh pr view --json number,state --jq 'select(.state == "OPEN") | .number' 2>/dev/null
    ```
-   If result is `true`: HALT with "PR is in draft state. Mark it ready for review before running pr-autopilot."
-   (pr-followup allows drafts; pr-autopilot does not.)
+   AzDO: `az repos pr list --source-branch <branch> --status active`.
+   If an open PR #<N> exists and `<repo-root>/.pr-autopilot/pr-<N>.json` does not: HALT with "PR #<N> already exists for this branch. pr-autopilot opens new PRs; run pr-followup to handle its comments." No branch change has been made at this point. When that state file exists, this is a resume of the run that opened the PR: continue, and "State file initialization" loads it.
 
 ## Host platform detection
 

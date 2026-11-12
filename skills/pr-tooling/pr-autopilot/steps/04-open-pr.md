@@ -44,14 +44,23 @@ Every text the PR ships makes claims about the code, and reviewers
 often find those claims wrong. Check them all once, after the body
 exists and before anything is pushed.
 
-Dispatch one `pr-reviewer` agent, `model: "sonnet"`. Prompt:
+Dispatch one `pr-reviewer` agent, `model: "sonnet"`. Fill the prompt
+placeholders by mode:
+
+| Placeholder | Normal run | `--dry-run` |
+|---|---|---|
+| `<code_ref>` | `head_sha` | the working tree (implementation, simplify edits and review fixes are uncommitted) |
+| `<commit_messages>` | output of `git log --format=%B <base_sha>..<head_sha>` | the intended messages saved in the dry-run directory (`commit-msg.txt` and any other commit message file there) |
+| `<diff_source>` | `git diff <base_sha>...HEAD` | `git diff <base_sha>` plus each in-scope untracked file as a new-file diff |
+
+Prompt:
 
 ```
-Check every claim this PR ships against the code at <head_sha>. Read-only.
+Check every claim this PR ships against the code at <code_ref>. Read-only.
 
 PR body: /tmp/pr-body.md
-Commit messages: output of `git log --format=%B <base_sha>..<head_sha>`
-Diff: <repo-root>/.pr-autopilot/branch-<slug>.diff, rewritten from `git diff <base_sha>...HEAD` before dispatch
+Commit messages: <commit_messages>
+Diff: <repo-root>/.pr-autopilot/branch-<slug>.diff, rewritten before dispatch as <diff_source>
 Context map: <context_map_path or "none">
 
 Texts to check: every PR body section (Security Impact and the file

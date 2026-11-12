@@ -165,6 +165,29 @@ tier's Trigger table). A diff is **backend** when any group fires.
   *Not a finding when:* the construct implements a published interface or
   framework contract, or a second consumer arrives in a named, in-flight
   change — say which.
+- **U21 — Order of operations: defaults, guards, and markers sit in the
+  right place.** Apply a default or normalization before every consumer of
+  the value (validation, geocoding, merge, length limits, the returned
+  value), and hold the defaulted value to the same limits as a
+  caller-supplied one. Run a null or argument guard before any feature-flag
+  branch, set a handled or logged marker only after the effect it describes
+  succeeds, and capture a result after the last step that can overwrite it.
+  Cheap no-op inputs return before the expensive call. The same holds in
+  scripts and skill steps.
+
+  *Not a finding when:* the order is forced by a data dependency documented
+  at the call site.
+- **U22 — String matching says exactly what it matches.** A pattern, key, or
+  lookup over text matches exactly the intended set: anchor regexes with an
+  end-of-string form that rejects a trailing newline, never substring- or
+  suffix-match a delimiter-joined list, and use one case policy at every
+  place the same key is parsed or looked up (a case-sensitive dictionary
+  behind case-insensitive configuration, a writer accepting any case that a
+  reader parses lowercase only). Culture-dependent comparison of invisible
+  characters needs an explicit comparer. The same holds in scripts.
+
+  *Not a finding when:* the match is deliberately loose and a test pins the
+  looser cases.
 
 ## Pack: tests — trigger: any test file in the diff
 
@@ -369,29 +392,6 @@ tier's Trigger table). A diff is **backend** when any group fires.
 - **N10 — `dynamic` and reflection need justification.** Both are review
   red flags in production code; the burden is on the author to show why a
   strongly-typed alternative isn't viable.
-- **N11 — Order of operations: defaults, guards, and markers sit in the
-  right place.** Apply a default or normalization before every consumer of
-  the value (validation, geocoding, merge, length limits, the returned
-  value), and hold the defaulted value to the same limits as a
-  caller-supplied one. Run a null or argument guard before any feature-flag
-  branch, set a handled or logged marker only after the effect it describes
-  succeeds, and capture a result after the last step that can overwrite it.
-  Cheap no-op inputs return before the expensive call. The same holds in
-  scripts and skill steps.
-
-  *Not a finding when:* the order is forced by a data dependency documented
-  at the call site.
-- **N12 — String matching says exactly what it matches.** A pattern, key, or
-  lookup over text matches exactly the intended set: anchor regexes with an
-  end-of-string form that rejects a trailing newline, never substring- or
-  suffix-match a delimiter-joined list, and use one case policy at every
-  place the same key is parsed or looked up (a case-sensitive dictionary
-  behind case-insensitive configuration, a writer accepting any case that a
-  reader parses lowercase only). Culture-dependent comparison of invisible
-  characters needs an explicit comparer. The same holds in scripts.
-
-  *Not a finding when:* the match is deliberately loose and a test pins the
-  looser cases.
 
 ## Pack: runtime — trigger: caching, logging/telemetry, resilience code
 
