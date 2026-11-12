@@ -23,7 +23,7 @@ fallback and read as actionable.
 | `mergewatch-playlist` | Top-level PR comment | starts with `<!-- mergewatch-review -->` | Parse — the summary, see below |
 | `mergewatch-playlist` | Review body | starts with `<!-- mergewatch-review -->` | Parse — re-read the current summary, see below |
 | `copilot-pull-request-reviewer` | Inline review comment | any body | Actionable |
-| `copilot-pull-request-reviewer` | Review body | contains `### Suppressed comments` or `previously missed issues` | Parse — one finding per item, see below |
+| `copilot-pull-request-reviewer` | Review body | contains `### Suppressed comments` or `previously missed issue` | Parse — one finding per item, see below |
 | `copilot-pull-request-reviewer` | Review body | neither | Skip — verdict and counts only |
 
 Signatures verified against live comments on the last 40 PRs of
@@ -112,13 +112,14 @@ refers to; that bullet is one actionable finding, and the review carries
 them even when its counts say `Comments generated: 0 new`.
 
 A newer review body (it opens with `<!-- ccr-overview-v2 -->`) can also
-hold a `<details>` block whose summary reads `<N> previously missed
-issues`: findings in code that has not changed since the last review,
+hold a `<details>` block whose summary reads `1 previously missed issue`
+or `<N> previously missed issues`: findings in code that has not changed since the last review,
 which Copilot does not post inline. Each `<details>` nested inside it is
 one actionable finding. Its `<summary>` holds a severity image
 (`alt="High severity"`, `alt="Medium severity"`) and the title; after it
 come a `` `<path>:<line>` `` line and the finding text. The path carries a
-zero-width space (U+200B) after each `/`; strip those before using it.
+zero-width space (U+200B) after each `/`; strip those before using it,
+in the key too.
 The `resolved since last review` block and the open issues line are not
 findings; the open issues are the review's inline comments.
 
