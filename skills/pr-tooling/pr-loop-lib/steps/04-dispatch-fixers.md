@@ -340,6 +340,10 @@ and `feedback-wrong`), in pr-autopilot's pre-open fix round too; only the
           the base with the lowest order among A and every
           survivor that falls under (b) for F, so a later restore
           cannot bring back an edit an earlier one discarded.
+          Choose that base before classifying: a survivor that
+          qualified for (a) but whose order is not lower than the
+          chosen base's loses its edit to F in this restore, so
+          it is handled under (b) as well, never "kept-in-base".
         - Demote B to needs-human with reason "shared <F> with a
           rolled-back fix"; remove F from B's files_changed and from
           context.files_changed_this_iteration unless another return
