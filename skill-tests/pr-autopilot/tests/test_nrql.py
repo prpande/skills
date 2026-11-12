@@ -57,6 +57,14 @@ class NrqlTests(unittest.TestCase):
         self.assertIn("6 of 6", err)
         self.assertEqual(len(self.calls), nrql.MAX_QUERIES)
 
+    def test_reset_starts_a_new_count(self):
+        for _ in range(nrql.MAX_QUERIES):
+            self.run_cli()
+        self.assertEqual(nrql.main(["--state", str(self.state), "--reset"]), 0)
+        self.assertEqual(self.run_cli()[0], 0)
+        saved = json.loads(self.state.read_text(encoding="utf-8"))
+        self.assertEqual(len(saved["queries"]), 1)
+
     def test_failed_query_still_counts(self):
         self.assertEqual(self.run_cli(exit_code=1)[0], 1)
         saved = json.loads(self.state.read_text(encoding="utf-8"))

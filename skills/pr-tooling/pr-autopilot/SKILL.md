@@ -81,8 +81,7 @@ Phase 1 — Pre-publish verification
    locally, runs `/code-review max` and the lens agents defined in
    `steps/02-preflight-review.md` at the same time, waits for all of
    them, fixes or declares every finding in one round, reviews the
-   fixes, and writes the declarations into commit messages. A settled
-   decision whose consequence is risky is reported, not silenced. Halts on a secret-scan
+   fixes, and writes the declarations into commit messages. Halts on a secret-scan
    match or an unparsed review result. Step 02 is never run on its own.
 
 Phase 2 — Open PR

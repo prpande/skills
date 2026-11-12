@@ -54,10 +54,11 @@ explicitly). With neither the register nor the tier installed, only
      `{{CONTEXT_MAP}}` replaced by the map's path
 4. Log `subagent_dispatch` per agent with `role: "lens-reviewer"`,
    `agent: <name>`, `model: "sonnet"`, the first 200 chars of the prompt.
-5. Dispatch in the foreground, at most 4 agents in one message. When a
-   batch returns, dispatch the next until the list is empty. `context`
-   is in the first batch. `/code-review` is already running; never wait
-   for it before a batch and never cancel it for one.
+5. Dispatch in the foreground as a rolling pool of 4: start the first
+   four in one message, `context` among them, and start the next agent
+   as soon as any one returns, until the list is empty. `/code-review`
+   is already running; never wait for it before a dispatch and never
+   cancel it for one.
 6. Parse each JSON reply, log `subagent_return`, set the agent's
    `status` to `done`, and append its findings to
    `context.preflight_passes.pass2_raw` in the fixed agent order, each
@@ -278,15 +279,8 @@ assigned PR number) that does not exist before the PR opens. `S04.7`
 duplicates folded, which happens because every lens agent carries the
 Universal section:
 
-1. Two findings are the same when they name the same file, their lines
-   are within 3 of each other (or both are null), and they either cite
-   the same lens id or share a `category` and describe the same failure.
-   Never fold on file and line alone: two lenses can hit one line.
-2. Keep the entry with the lower id. Give it the higher severity of the
-   two, `declared_risk: true` if either has it, the other's `check_id`
-   when it has none, and the other's id in `duplicate_ids[]`. Append the
-   other's recommendation when it differs.
-3. Log `lens_dedup_hit {kept_id, dropped_id}` per fold.
+apply `pr-loop-lib/references/merge-rules.md` "Lens-agent fold" and
+log `lens_dedup_hit {kept_id, dropped_id}` per fold.
 
 Every id in `pass2_raw` is then either an `id` or a `duplicate_ids`
 member in `merged`, and none is both. Later, iter 1's triage step may dedup
@@ -421,12 +415,5 @@ If an agent returns malformed JSON or times out:
 
 ## Invariants
 
-After the lens agents' findings are stored, verify (per
-`pr-loop-lib/references/invariants.md`):
-- `context.preflight_passes.pass2_raw` is set (may be empty).
-- `context.preflight_passes.merged` is set, and its `id`s and
-  `duplicate_ids` together are exactly the ids of `pass2_raw`.
-- No `context.lens_agents[]` entry is still `pending`.
-- Every id in `context.context_map_checks` has one answer in
-  `context.context_check_answers`.
-- Every `severity` in the findings is one of `critical`/`important`/`minor`.
+After the lens agents' findings are stored, verify `S02.1` to `S02.5`
+of `pr-loop-lib/references/invariants.md`.

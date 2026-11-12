@@ -6,7 +6,7 @@ findings from multiple sources (pr-autopilot's pre-open lens agents,
 
 ## Why this file exists
 
-When both the lens agent AND `/code-review` flag the same issue, we
+When both a lens agent AND `/code-review` flag the same issue, we
 want:
 1. One consolidated finding in the user's view, not two.
 2. Escalated severity signal (two independent reviewers converging
@@ -64,6 +64,23 @@ table (the common non-`/code-review` bot shape). If you see a
 pointer to "Triage override" expecting the older equality form,
 it's now this hash scheme.
 
+## Lens-agent fold
+
+pr-autopilot step 02 runs one lens agent per pack, each with the
+Universal lenses, so two agents can report one defect. Before anything
+else reads the list:
+
+1. Two lens findings are the same when they name the same file, their
+   lines are within 3 of each other (or both are null), and they either
+   cite the same lens id or share a `category` and describe the same
+   failure. Never fold on file and line alone: two lenses can hit one
+   line.
+2. Keep the entry with the lower id. Give it the higher severity of the
+   two (no escalation: the agents are not independent reviewers of the
+   Universal lenses), `declared_risk: true` if either has it, the
+   other's `check_id` when it has none, and the other's id in
+   `duplicate_ids[]`. Append the other's recommendation when it differs.
+
 ## Severity escalation
 
 Severity strings match the adversarial-review-prompt's JSON output:
@@ -106,8 +123,7 @@ before escalation.
 
 - **Pre-open (pr-autopilot step 03.5)**: the lens agents and
   `/code-review` run together. Step 02 first folds the lens agents'
-  own lists into one (its "Merged list" rule: same file, lines within 3,
-  and the same lens id or the same category and failure), and step 03.5
+  own lists into one ("Lens-agent fold" below), and step 03.5
   D then merges that list with `/code-review`'s and with step 01.5's
   skipped points before one fix round. A merged finding is declared but
   risky when any of its sources marked it so. `/code-review` findings carry no `category`, so

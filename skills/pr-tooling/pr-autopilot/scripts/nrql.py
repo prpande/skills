@@ -2,11 +2,14 @@
 """Run one read-only NRQL query for the pr-autopilot context mapper.
 
 Usage: nrql.py --state <file> "<NRQL>"
+       nrql.py --state <file> --reset
 
 The state file counts the queries run for one context map. The query
 after the cap is refused, so the cap holds whatever the caller intends.
-Exit codes: 0 ran, 2 query rejected (not counted), 3 cap reached,
-4 no account id or no `newrelic` CLI, else the CLI's own exit code.
+`--reset` starts a new map's count.
+Exit codes: 0 ran, 2 query rejected (not counted), 3 cap reached or
+state file unreadable, 4 no account id or no `newrelic` CLI, else the
+CLI's own exit code.
 """
 from __future__ import annotations
 
@@ -18,9 +21,11 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 MAX_QUERIES = 6
 MAX_LIMIT = 20
+REPLACE_ATTEMPTS = 5
 EXIT_REJECTED = 2
 EXIT_CAP = 3
 EXIT_UNAVAILABLE = 4
@@ -75,16 +80,31 @@ def save_state(path: pathlib.Path, state: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    for attempt in range(REPLACE_ATTEMPTS):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            # Windows: a scanner or indexer can hold the target briefly.
+            if attempt == REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(0.1 * (attempt + 1))
 
 
 def main(argv=None, *, env=None, home=None, which=shutil.which, run=subprocess.run) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--state", required=True, type=pathlib.Path)
-    parser.add_argument("query")
+    parser.add_argument("--reset", action="store_true")
+    parser.add_argument("query", nargs="?")
     args = parser.parse_args(argv)
     env = os.environ if env is None else env
     home = pathlib.Path.home() if home is None else home
+
+    if args.reset:
+        save_state(args.state, {"queries": []})
+        return 0
+    if args.query is None:
+        parser.error("a query is required unless --reset is given")
 
     refusal = check_query(args.query)
     if refusal:
