@@ -317,6 +317,7 @@ class NrqlTests(unittest.TestCase):
             "SELECT count(*) FROM T SINCE 1 day ago FACET b",
             "SELECT * FROM T SINCE 1 day ago",
             "SELECT * FROM T WHERE (a = 1) SINCE 1 day ago",
+            "SELECT * FROM T WHERE a IN('x') AND(b = 1) SINCE 1 day ago",
             "SELECT * FROM T SINCE 1 day ago WHERE a = 'LIMIT 5'",
             "SELECT count(*) FROM T SINCE 1 day ago LIMIT 0x5",
             "SELECT count(*) FROM T SINCE 1 day ago LIMIT \u0663",

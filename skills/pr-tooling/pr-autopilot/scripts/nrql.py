@@ -35,6 +35,7 @@ EXIT_CAP = 65
 EXIT_UNAVAILABLE = 66
 
 STRING_LITERAL = re.compile(r"'(?:[^'\\]|\\.|'')*'")
+FUNCTION_CALL = re.compile(r"\b(?!(?:IN|AND|OR|NOT|LIKE|WHERE)\()\w+\(", re.IGNORECASE)
 
 
 class LockTimeout(Exception):
@@ -58,7 +59,7 @@ def check_query(query: str) -> str | None:
     for limit in limits:
         if not re.fullmatch(r"[0-9]+", limit) or int(limit) > MAX_LIMIT:
             return f"LIMIT must be a number no higher than {MAX_LIMIT}"
-    if not limits and (facet or not re.search(r"\w\(", text)):
+    if not limits and (facet or not FUNCTION_CALL.search(text)):
         return f"add LIMIT {MAX_LIMIT} or lower (needed for FACET and raw rows)"
     return None
 
