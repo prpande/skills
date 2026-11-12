@@ -19,7 +19,7 @@ If multiple match, use the highest-ranked. If the highest-ranked is older
 than 7 days, ask the user: "Which spec does this PR implement? (list)".
 
 If none match, log `"no spec alignment performed — no matching candidate"`
-and skip to step 04.
+and go to step 03.5.
 
 ## Drift classification
 
@@ -47,7 +47,8 @@ For each missing-required drift:
    - Dispatch a fixer subagent (loop lib `04-dispatch-fixers.md` mechanics)
      with the spec excerpt as the directive and the target file path.
    - After the fixer returns, re-run `04.5-local-verify.md`.
-   - If the build/tests pass, the drift is resolved; continue.
+   - If the build/tests pass, the drift is resolved; add the fixer's
+     `files_changed` to `context.uncommitted` and continue.
    - If they fail twice, fall back to the diagnostic path (next bullet).
 
 3. Otherwise → write a diagnostic block to `stderr`-equivalent
@@ -96,13 +97,13 @@ scan and apply the source-of-truth heuristic below directly.
   code as Missing-required drift.
 - Additive / refactor → code wins. Update spec prose.
 - Contradictory behavior → flag; do NOT guess. Write the drift to
-  `context.blocked_drifts` and HALT before step 04.
+  `context.blocked_drifts` and HALT before step 03.5.
 
 ## Output
 
 - `context.spec_updates` — list of `{spec_file, diff_summary}` applied,
   for inclusion in the PR commit.
-- `context.blocked_drifts` — any that triggered HALT (step 04 does not run
-  if this is non-empty).
+- `context.blocked_drifts` — any that triggered HALT (steps 03.5 and 04 do
+  not run if this is non-empty).
 - `context.spec_alignment_notes` — short bullet list describing silent
   auto-updates, for inclusion in PR body.

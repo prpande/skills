@@ -52,19 +52,24 @@ CI status at termination: <green | red | skipped | timeout>
 Internal review summary (local, not on PR):
   <repo-root>/.pr-autopilot/pr-<N>-review-summary.md
 
-  Preflight (Pass 2):
-    - Critical:   <n> fixed
-    - Important:  <n> fixed
-    - Minor:      <n> captured locally (NOT surfaced on PR)
+  Lens review (lenses, reuse, playbook, context map):
+    - Fixed:      <n>
+    - Declared:   <n>
+    - Open (needs-human): <n>
+    - Nits:       <n> recorded only
 
-  /code-review (post-open, captured — not posted):
-    - Invoked:                    <true | false>
+  /code-review max (pre-open, not posted):
+    - Status:                     <done | skipped>
     - Raw findings:               <n>
-    - Dedup vs preflight:         <n>
-    - Fixed by internal dispatch: <n>
-    - Fixed-differently:          <n>
-    - Deferred (feedback-wrong):  <n>
-    - Deferred (needs-human):     <n>
+    - Dedup vs lens review:       <n>
+    - Fixed:                      <n>
+    - Declared:                   <n>
+    - Open (needs-human):         <n>
+    - Checked and dismissed:      <n> (listed in the summary file)
+
+  Fix-round review: <n> rounds, <n> findings, <n> fixed
+  Shipped-text check: <n> claims corrected
+  Declarations in commits and PR body: <n>
 
 Needs your input:
   <for each needs-human item: file:line, quoted feedback sentence,
@@ -254,7 +259,7 @@ expected — do not retry, do not treat as an error.
 The internal review summary
 (`context.internal_review_summary_path`, default
 `<repo-root>/.pr-autopilot/pr-<N>-review-summary.md`) holds the
-preflight + `/code-review` findings that are deliberately **not** posted
+lens review + `/code-review` findings that are deliberately **not** posted
 to the PR. Surface it so the user can read it without hunting the path:
 
 ```
@@ -265,9 +270,9 @@ SendUserFile(
 )
 ```
 
-Only call when the file exists (it always does after step 02 created it,
-but guard with a `test -f` for the rare `pr-followup`-on-foreign-PR case
-where no preflight ran). On success log `artifact_sent {path}`; when the
+Only call when the file exists (pr-autopilot's step 03.5 always creates
+it, but guard with a `test -f` for the rare `pr-followup`-on-foreign-PR
+case where no pre-open review ran). On success log `artifact_sent {path}`; when the
 file is absent log `artifact_skipped {reason: "absent"}` and do not call
 the tool.
 
