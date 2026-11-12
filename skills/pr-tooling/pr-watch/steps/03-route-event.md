@@ -86,8 +86,8 @@ Write the file after every numbered action below that changes it.
    - A thread whose whole tail is Skip: append the tail's last comment id
      to `settled_ids`; drop the thread.
    - A top-level item that is Skip: `handled_top_level_ids[<id>] = "skipped"`.
-   - A Parse row yields several records keyed `<summary id>|<path>|<title>`
-     per `pr-watch/references/known-bots-overlay.md`; they travel
+   - A Parse row yields several records keyed as that bot's section of
+     `pr-watch/references/known-bots-overlay.md` says; they travel
      together and settle under that key, not a comment id.
 5. Already escalated. Before Filter C:
    - a top-level record whose id is in `escalated_ids`: drop it;

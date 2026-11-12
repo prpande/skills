@@ -23,7 +23,7 @@ fallback and read as actionable.
 | `mergewatch-playlist` | Top-level PR comment | starts with `<!-- mergewatch-review -->` | Parse — the summary, see below |
 | `mergewatch-playlist` | Review body | starts with `<!-- mergewatch-review -->` | Parse — re-read the current summary, see below |
 | `copilot-pull-request-reviewer` | Inline review comment | any body | Actionable |
-| `copilot-pull-request-reviewer` | Review body | contains `### Suppressed comments` or `previously missed issue` | Parse — one finding per item, see below |
+| `copilot-pull-request-reviewer` | Review body | contains `### Suppressed comments` or `previously missed issue</strong>` or `previously missed issues</strong>` | Parse — one finding per item, see below |
 | `copilot-pull-request-reviewer` | Review body | neither | Skip — verdict and counts only |
 
 Signatures verified against live comments on the last 40 PRs of
@@ -112,16 +112,19 @@ refers to; that bullet is one actionable finding, and the review carries
 them even when its counts say `Comments generated: 0 new`.
 
 A newer review body (it opens with `<!-- ccr-overview-v2 -->`) can also
-hold a `<details>` block whose summary reads `1 previously missed issue`
-or `<N> previously missed issues`: findings in code that has not changed since the last review,
-which Copilot does not post inline. Each `<details>` nested inside it is
-one actionable finding. Its `<summary>` holds a severity image
-(`alt="High severity"`, `alt="Medium severity"`) and the title; after it
-come a `` `<path>:<line>` `` line and the finding text. The path carries a
-zero-width space (U+200B) after each `/`; strip those before using it,
-in the key too.
-The `resolved since last review` block and the open issues line are not
-findings; the open issues are the review's inline comments.
+hold a `<details>` block whose summary is
+`<strong>1 previously missed issue</strong>` or
+`<strong><N> previously missed issues</strong>`: findings in code that
+has not changed since the last review, which Copilot does not post
+inline. Each `<details>` nested inside it is one actionable finding. Its
+`<summary>` holds a severity image (`alt="High severity"`, `Medium` or
+`Low`) and the title; after it come a `` `<path>:<line>` `` line and the
+finding text. The path carries a zero-width space (U+200B) after each
+`/`; strip those before using it, in the key too. The
+`<N> resolved since last review` block and the `<N> open issues` block
+(or the `**No open issues**` line) are not findings: the resolved ones
+are fixed, and the open issues are bullets linking to the review's
+inline comments.
 
 For both kinds, record the disposition in `handled_top_level_ids` (in the
 PR's progress file) under `copilot|<path>|<the bullet's first sentence>`
@@ -130,8 +133,6 @@ missed issue, and the review's own id under `parsed`. Copilot repeats a
 finding it still sees in the next review, under a new review id and often
 a moved line, so neither belongs in the key; the path and the sentence or
 title carry across and keep an answered finding from being raised again.
-These findings have no thread, so the reply is one top-level comment that
-answers each finding not yet handled, in the review's order.
 
 A comment that matches no row falls through to the library's unknown-bot
 fallback. When a status line changes shape, update the row here rather
