@@ -5,9 +5,9 @@ description: >
   loop until CI is green. On Claude Code, first runs a quality-only
   /simplify pass (host-gated; may be skipped); then a context map of
   related services, legacy code, client apps and production data;
-  spec/plan alignment; a pre-open /code-review at max with a lens,
-  reuse and playbook agent beside it, every finding fixed or declared
-  and the fixes reviewed; a shipped-text check; template-filled PR
+  spec/plan alignment; a pre-open /code-review at max with lens agents
+  beside it (context, one per triggered pack, backend or universal), every
+  finding fixed or declared and the fixes reviewed; a shipped-text check; template-filled PR
   open; then loops on reviewer comments
   (addressing them with parallel fixer subagents, build+test sanity
   checking before every push) until quiescent, then final CI gate. Use
@@ -51,8 +51,9 @@ Flags supported (parse from the raw invocation string):
   exit rule; together they preserve the ~10-minute wall-clock window
   needed to capture late reviewer-bot findings while halving the
   time-to-react when bots DO post in the first window.
-- `--dry-run` → execute every step except `gh/az pr create`, push, and
-  thread resolve mutations. Print what would happen.
+- `--dry-run` → execute every step, every pre-open review included,
+  except commits, `gh/az pr create`, push, and thread resolve mutations.
+  Print what would happen.
 - `--no-wait` → skip the **first** wait cycle only (useful when bots
   are known to have already posted). Subsequent iterations still honor
   the 5-minute floor, AND the confirmation iteration that step 08 may
@@ -77,10 +78,10 @@ Phase 1 — Pre-publish verification
 4. Perform step 03 per `steps/03-spec-alignment.md`. If it HALTs
    (`context.blocked_drifts` non-empty), stop and present the diagnostic.
 5. Perform step 03.5 per `steps/03.5-pre-open-review.md`. Commits
-   locally, runs `/code-review max` and the lens agent defined in
-   `steps/02-preflight-review.md` at the same time, waits for both,
-   fixes or declares every finding in one round, reviews the fixes, and
-   writes the declarations into commit messages. Halts on a secret-scan
+   locally, runs `/code-review max` and the lens agents defined in
+   `steps/02-preflight-review.md` at the same time, waits for all of
+   them, fixes or declares every finding in one round, reviews the
+   fixes, and writes the declarations into commit messages. Halts on a secret-scan
    match or an unparsed review result. Step 02 is never run on its own.
 
 Phase 2 — Open PR
@@ -142,12 +143,15 @@ Phase 5 — Report (and optional UI-deferred approval)
 - Never commit secrets. Secret scan is BLOCKING at steps 01.5
   (separate-commit path), 03.5, 04 (shipped-text commit) and 06.
 - The host's `/code-review` runs at `max`, with the level named
-  explicitly and `--max-findings all`, before the PR opens. Never omit
-  the level, and never pass a lower one.
+  explicitly and `--max-findings all`, before the PR opens, on every
+  PR. Never omit the level, never pass a lower one, and never drop a
+  review stage to save cost.
 - Destructive git ops (reset --hard, clean -fd, push --force) are never
   used by this skill.
 - Rollback in step 04.5 uses `git checkout -- <file>` scoped to the current
-  iteration's modified files only.
+  iteration's modified files only; under `--dry-run`, step 03.5's pre-open
+  rollbacks restore from the snapshot tree instead
+  (`steps/03.5-pre-open-review.md` D2).
 - Never hard-code `--no-paginate` behavior on `gh api` for list
   endpoints. When fetching PR comments, reviews, or issue comments,
   always use `--paginate` (or the equivalent for the platform).
@@ -217,7 +221,10 @@ No library required — JSON-lines is plain text.
 When `--dry-run` is set, preserve all side-effecting operations' inputs to
 a session-scoped temp directory as text files (`pr-body.md`, `commit-msg.txt`,
 per-comment `reply-<id>.md`, etc.) and print their paths instead of invoking
-the corresponding `gh`/`az`/git command.
+the corresponding `gh`/`az`/git command. Reviews are not side effects:
+step 03.5 runs `/code-review max`, the lens agents, the fixers and the
+fix-round review under `--dry-run` exactly as in a real run, against
+the working tree (`steps/03.5-pre-open-review.md` "Dry-run").
 
 The directory is scoped to the session ID to prevent concurrent dry-runs
 (on shared CI runners or developer boxes) from overwriting each other's output

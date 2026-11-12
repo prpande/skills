@@ -283,6 +283,29 @@ tier's Trigger table). A diff is **backend** when any group fires.
   a field non-nullable only when it is truly populated for *every* type the
   shared DTO represents; otherwise keep it nullable and document which
   types populate it. Loosening later is a breaking change.
+- **W10 — A field that can go missing is checked against the client
+  decoders.** For each response field the diff can make absent, null, or
+  empty where it was not before, find how every shipped client decodes it.
+  Routes to absence include a nullable source, a blank-to-null
+  normalization, a visibility or permission gate, a failed optional read,
+  and a serializer that skips nulls or defaults (confirm the setting per
+  W4): any of these turns a null into a missing key. Open the client models
+  (the context map lists them; otherwise search the app repos the workspace
+  names) and classify each field: a non-optional Swift `Codable` property
+  fails the decode of the whole response on a missing key or a null, a
+  Kotlin non-null property throws or crashes at parse or first use, and a
+  client that treats blank and absent differently (a `""` default, an
+  `isEmpty` check, a fallback built from another field) changes what the
+  user sees. Report each field whose new shape a shipped client does not
+  handle, citing the server line that produces it and the client line that
+  reads it, and say which app versions are affected when the map shows it.
+  Released app versions cannot be patched, so the remedy is on the server:
+  keep the key and the old empty value.
+
+  *Not a finding when:* every shipped client decodes the field as optional
+  and handles absent, null, and blank the same way, with the client lines
+  cited. Without access to a client's source, report the unverified field
+  rather than assuming it is safe.
 
 ## Pack: http — trigger: endpoints, routes, request/response handling
 

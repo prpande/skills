@@ -55,9 +55,9 @@ Rules:
 | `lock_lease_refreshed` | `{session_id}` |
 | `comments_fetched` | `{surface_counts: {inline, issue, review, thread}, total}` — `thread` is the AzDO surface; GitHub runs will have `thread: 0` |
 | `triage_result` | `{actionable, suspicious, filtered_self, filtered_known_bot, filtered_pre_push}` |
-| `triage_dedup_hit` | `{feedback_id, preflight_match_id, source}` — `source` is `"triage"` when the dedup came from iter-1 Filter B.5 on a real PR comment (feedback_id references `context.actionable[].id`) or `"code-review"` when pr-autopilot step 03.5 deduped a synthetic `/code-review` finding (feedback_id is the synthetic `code-review:finding-N`, registered in `context.internal_review_findings[].fixer_feedback_id`). Consumers look up `feedback_id` in the array indicated by `source`. |
+| `triage_dedup_hit` | `{feedback_id, preflight_match_id, source}` — `source` is `"triage"` when the dedup came from iter-1 Filter B.5 on a real PR comment (feedback_id references `context.actionable[].id`) or `"code-review"` / `"simplify"` when pr-autopilot step 03.5 deduped a synthetic `/code-review` finding or `/simplify` candidate (feedback_id is the synthetic `code-review:finding-N` or `simplify-N`, registered in the `duplicate` entry's `context.internal_review_findings[].fixer_feedback_id`, also when that entry is declared but risky; S35.5 forbids the id only on a declared-but-risky entry that is not a `duplicate`). Consumers look up `feedback_id` in the array indicated by `source`. |
 | `cluster_gate_fired` | `{items, clusters_formed}` |
-| `subagent_dispatch` | `{role, model, prompt_first_200_chars, feedback_id?, timeout_s}` |
+| `subagent_dispatch` | `{role, model, prompt_first_200_chars, feedback_id?, agent?, timeout_s?}` — `agent` names the step 02 lens agent (`context`, `pack:<name>`, `backend`, `universal`) when `role` is `lens-reviewer` |
 | `subagent_return` | `{role, feedback_id?, verdict, files_changed, reason_first_200_chars, duration_ms}` |
 | `verifier_judgement` | `{feedback_id, fixer_verdict_before, fixer_verdict_after, judgement, reason_first_200_chars}` |
 | `local_verify` | `{iteration, passed, failed_cmd?, retry_attempted, rolled_back}` |
@@ -66,9 +66,14 @@ Rules:
 | `quiescence` | `{reason, loop_exit_reason, termination_reason}` |
 | `quiescence_pending` | `{iteration, reason, next_wait_seconds}` — emitted by `pr-loop-lib/steps/08-quiescence-check.md` when the *first* of two consecutive soft-quiescent iterations completes. `reason` is one of `quiescent-zero-actionable` \| `quiescent-no-code-change`. `next_wait_seconds` is the **effective** wait step 01 will use before the confirming iteration — i.e., the same `delay_seconds` step 01 computes: 300 by default, `max(300, context.wait_override_minutes * 60)` when `--wait` is set. Sub-floor `--wait` values (e.g., `--wait 2`) are clamped up to 300 by step 01 and `next_wait_seconds` reports the clamped 300, not the raw user input. Informational; the loop routes back to step 01 instead of step 09. The next iteration that actually exits (whether confirmed quiescent or by cap/runaway) emits the existing `quiescence` event. |
 | `ci_result` | `{check_name, state, link}` |
-| `code_review_invoked` | `{host, skill, level, invoked_at}` when a review skill is mapped and dispatched, OR `{host, skipped: true, reason?}` when no skill is mapped for this host or the run is `--dry-run` (`skill`/`level`/`invoked_at` are omitted in the skipped variant) |
+| `code_review_invoked` | `{host, skill, level, invoked_at}` when a review skill is mapped and dispatched, OR `{host, skipped: true, reason?}` when no skill is mapped for this host (`skill`/`level`/`invoked_at` are omitted in the skipped variant). A `--dry-run` run invokes the skill like any other |
+| `code_review_hints_rejected` | `{}` — the skill refused the extra text in its args and was re-invoked with the level and branch, plus the read-only and dry-run text under `--dry-run`; sets `context.code_review_hints_rejected`. When the dry-run retry is refused too, the review is recorded as not run (`code_review_status: "skipped"`), never as zero findings |
 | `code_review_parse_failed` | `{raw_prefix, reason}` — pr-autopilot step 03.5 got a non-empty `/code-review` result it could not parse. `raw_prefix` is the first 200 chars |
-| `context_map_written` | `{path, sources, bullets}` — pr-autopilot step 01.7 |
+| `context_map_written` | `{path, sources, bullets, checks, nrql_queries}` — pr-autopilot step 01.7. `checks` is the number of `Check C<n>` entries, `nrql_queries` the count in the nrql state file (at most 6) |
+| `context_map_unlisted_query` | `{query}` — a "Production signals" bullet quoted a query the nrql state file does not list; the bullet was removed |
+| `effort_docs_resolved` | `{root, folder, files}` — pr-autopilot step 01; `root: null` when no docs root exists |
+| `lens_dedup_hit` | `{kept_id, dropped_id}` — step 02 folded one lens agent's finding into another's |
+| `simplify_skipped_points` | `{count, fallback?}` — step 01.5 stored the behaviour-changing points `/simplify` did not apply |
 | `context_map_skipped` | `{reason}` — pr-autopilot step 01.7 wrote no usable map (`no-sources`, `empty`, `error`, `timeout`) |
 | `shipped_text_checked` | `{claims_reported, fixed_body, fixed_code}` — pr-autopilot step 04b |
 | `invariant_fail` | `{step, invariant, observed, expected}` |

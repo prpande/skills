@@ -1,12 +1,12 @@
 # Merge rules
 
 Deduplication and severity-escalation rules applied when merging
-findings from multiple sources (pr-autopilot's pre-open lens agent,
+findings from multiple sources (pr-autopilot's pre-open lens agents,
 `/code-review`, and review comments landing in iter 1).
 
 ## Why this file exists
 
-When both the lens agent AND `/code-review` flag the same issue, we
+When both a lens agent AND `/code-review` flag the same issue, we
 want:
 1. One consolidated finding in the user's view, not two.
 2. Escalated severity signal (two independent reviewers converging
@@ -64,6 +64,32 @@ table (the common non-`/code-review` bot shape). If you see a
 pointer to "Triage override" expecting the older equality form,
 it's now this hash scheme.
 
+## Lens-agent fold
+
+pr-autopilot step 02 runs one lens agent per pack, each with the
+Universal lenses, so two agents can report one defect. Before anything
+else reads the list:
+
+This fold is the only one applied to the lens agents' findings of one
+run; the category key under "Deduplication key" is not applied on top.
+
+1. Two lens findings match when they name the same file, their lines
+   are within 3 of each other (or both are null), they describe the
+   same failure, and one of these holds: they cite the same lens id,
+   they share a `category`, or one carries a `check_id`. Never fold on
+   file and line alone, or on a shared lens id alone: two lenses can hit
+   one line, and one lens can flag two fields on adjacent lines.
+2. Findings that match directly or through a chain of matches form one
+   group, even when two members of the chain are more than 3 lines
+   apart. Each group yields one entry in `merged`.
+3. Keep the member with the lowest id. Give it the highest severity in
+   the group (no escalation: the agents are not independent reviewers
+   of the Universal lenses), `declared_risk: true` if any member has
+   it, the `settled_item` and `check_id` of whichever member carries
+   one, and every other member's id in `duplicate_ids[]`. Append to its
+   description every lens id a member's description cites that it
+   lacks, and each member's recommendation that differs from its own.
+
 ## Severity escalation
 
 Severity strings match the adversarial-review-prompt's JSON output:
@@ -104,9 +130,12 @@ before escalation.
 
 ## When to invoke the merge
 
-- **Pre-open (pr-autopilot step 03.5)**: the lens agent and
-  `/code-review` run together, and step 03.5 D merges their lists
-  before one fix round. `/code-review` findings carry no `category`, so
+- **Pre-open (pr-autopilot step 03.5)**: the lens agents and
+  `/code-review` run together. Step 02 first folds the lens agents'
+  own lists into one ("Lens-agent fold" above), and step 03.5
+  D then merges that list with `/code-review`'s and with step 01.5's
+  skipped points before one fix round. A merged finding is declared but
+  risky when any of its sources marked it so. `/code-review` findings carry no `category`, so
   two findings are the same only when they name the same file and either
   their `description_hash` values are equal or their lines are within 3
   of each other and both describe the same failure.
@@ -130,7 +159,9 @@ preflight_passes.merged) → C (prompt-injection refusal)
 
 ## Determinism
 
-The merge is deterministic given the same inputs. The LLM performs it by
-reading both finding lists and applying the three-step dedup key +
-severity table mechanically. No judgement calls — if the key matches,
-they're the same; if it doesn't, they're different.
+The file, line-window, lens-id, category, hash and severity tests are
+mechanical: given the same inputs they give the same result. Whether two
+findings "describe the same failure" (the Lens-agent fold and the
+pre-open merge with `/code-review`) is a judgement the LLM makes by
+reading both descriptions; every other step of the merge applies the
+rules above as written.

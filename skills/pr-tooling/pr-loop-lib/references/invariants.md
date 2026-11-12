@@ -27,9 +27,9 @@ out-of-scope invariant is itself a bug.
 - **`P02.*`** — Pre-open dispatch scope. Applicable to every fixer
   dispatch in pr-autopilot step 03.5 (mirroring the loop's `S04.*`, but
   keyed off pre-open finding ids rather than the loop's
-  `actionable[]`): the lens agent's `preflight-N` ids in
+  `actionable[]`): the lens agents' `preflight-N` ids in
   `context.preflight_passes.merged[]`, and the synthetic
-  `code-review:finding-N` and `fix-round-R-N` ids registered in
+  `code-review:finding-N`, `simplify-N` and `fix-round-R-N` ids registered in
   `context.internal_review_findings[]`.
 
 **Important cross-scope rule:** Preflight MUST NOT cite `S04.*`. The
@@ -60,13 +60,15 @@ equivalent predicates live in `P02.*`.
 | S01.4 | `context.self_login` is a non-empty string |
 | S01.5 | `context.base_sha != context.head_sha` (diff exists) — warn-only, not halt |
 
-### Step 02 — lens review (pr-autopilot, checked in step 03.5 when the lens agent returns)
+### Step 02 — lens review (pr-autopilot, checked in step 03.5 when the last lens agent returns)
 
 | # | Predicate |
 |---|---|
 | S02.1 | `context.preflight_passes.pass2_raw` is set (array; may be empty) |
-| S02.2 | `context.preflight_passes.merged` is set and equals `pass2_raw` at this point (no other passes run at preflight) |
+| S02.2 | `context.preflight_passes.merged` is set, and the ids in its `id` and `duplicate_ids` fields are exactly the ids of `pass2_raw`, each once |
 | S02.3 | Every `severity` in `pass2_raw` findings is one of `critical`/`important`/`minor` (lowercase) |
+| S02.4 | No `context.lens_agents[]` entry has status `pending`: each is `done` or `failed` |
+| S02.5 | The ids in `context.context_check_answers` are exactly the ids in `context.context_map_checks`, and every `yes` answer has a `pass2_raw` finding with that `check_id` |
 
 ### Step 03 — triage
 
@@ -142,7 +144,10 @@ equivalent predicates live in `P02.*`.
 | S35.1 | `context.pr_number` is still null when step 03.5 completes: no review, fix or declaration step runs after the PR exists. |
 | S35.2 | Unless `context.code_review_status` is `skipped`, it is `done`. A `running` status at the end of the step means step 04 was entered before the result arrived. |
 | S35.3 | Every `context.internal_review_findings` entry with status `nit` has `severity: "minor"`. |
-| S35.4 | Every `context.internal_review_findings` entry with status `declared` has a `context.declarations[]` entry with the same `finding_id`, and every declaration has a non-null `in_commit`. Not checked under `--dry-run`, which commits nothing. |
+| S35.4 | Every `context.internal_review_findings` entry with status `declared` either has a `settled_item` (already declared by that item) or has a `context.declarations[]` entry with the same `finding_id`, and every declaration has a non-null `in_commit`. Not checked under `--dry-run`, which commits nothing. |
+| S35.5 | No `context.internal_review_findings` entry with `declared_risk: true` and a status other than `duplicate` has a `fixer_feedback_id`; each has status `needs-human` or `duplicate` and appears under "Declared but risky" in the review summary. |
+| S35.6 | Every `context.simplify_skipped` entry has a `context.internal_review_findings` entry with `source: "simplify"`. |
+| S35.7 | Every `context.lens_agents[]` entry with status `failed` is named in the review summary's "Agents" line. |
 
 ### Step 04g — self-post guard (pr-autopilot)
 
@@ -152,16 +157,16 @@ equivalent predicates live in `P02.*`.
 
 ## P02 — pre-open dispatch invariants (pr-autopilot step 03.5)
 
-Step 03.5 dispatches fixers for the lens agent's and `/code-review`'s
-findings, then for the fix-round review's — all before any PR exists.
+Step 03.5 dispatches fixers for the lens agents' and `/code-review`'s
+findings and step 01.5's skipped points, then for the fix-round review's — all before any PR exists.
 The post-dispatch predicates below are the pre-open counterparts of
 `S04.*`. These dispatches cite them, never `S04.*`.
 
 | # | Predicate |
 |---|---|
-| P02.1 | Every pre-open `fixer_return` has a `feedback_id` that matches either an `id` in `context.preflight_passes.merged[]` (the lens agent's stable `preflight-N` ids, step 02) or a `fixer_feedback_id` in `context.internal_review_findings[]` (`code-review:finding-N`, `fix-round-R-N`). Unmatched returns indicate a drift between dispatch input and return. |
-| P02.2 | If a `fixer_return.verdict` is `fixed` or `fixed-differently`, either (a) the working-tree diff is non-empty, OR (b) the return carries `no_diff_needed: true` (e.g., the fixer determined the finding was already addressed). |
-| P02.3 | For every rolled-back fixer return, the files listed in its `files_changed` are absent from the current working-tree diff. Rollback must be effective. |
+| P02.1 | Every pre-open `fixer_return` has a `feedback_id` that matches either an `id` in `context.preflight_passes.merged[]` (the lens agents' stable `preflight-N` ids, step 02) or a `fixer_feedback_id` in `context.internal_review_findings[]` (`code-review:finding-N`, `simplify-N`, `fix-round-R-N`). Unmatched returns indicate a drift between dispatch input and return. |
+| P02.2 | If a `fixer_return.verdict` is `fixed` or `fixed-differently`, either (a) the working-tree diff is non-empty, OR (b) the return carries `no_diff_needed: true` (e.g., the fixer determined the finding was already addressed). Under `--dry-run`, (a) reads: a file in its `files_changed` differs from its blob in the dispatch's base tree (`context.fix_round_base_sha`), or exists where that tree holds none. |
+| P02.3 | For every rolled-back fixer return, the files listed in its `files_changed` are absent from the current working-tree diff. Rollback must be effective. Under `--dry-run` it reads: each such file's content equals its blob in the dispatch's base tree (`context.fix_round_base_sha`), and a file that tree does not hold is absent. |
 | P02.4 | The state file is still named `branch-<slug>.json` at preflight time. No `pr-<N>.json` writes may occur in preflight — the PR number does not exist yet; the state-rename happens in step 04. |
 
 If the preflight dispatch also performs an overlap re-verify (same
