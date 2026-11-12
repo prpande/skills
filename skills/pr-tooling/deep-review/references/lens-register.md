@@ -1,7 +1,7 @@
 # Review lens register
 
 The canonical rule set consumed by `deep-review` (all effort levels) and by
-`pr-autopilot`'s preflight review. Each lens in *this file* is a repeatable
+`pr-autopilot`'s lens review. Each lens in *this file* is a repeatable
 mistake class distilled from real review rounds — not a style guide. The
 governing backend tier in `references/backend-lenses.md` is distilled instead
 from production postmortems and published API-security guidance, and is held to
@@ -10,7 +10,8 @@ the admission rule in Maintenance.
 ## Precedence
 
 1. **Universal lenses (`U`) always apply.**
-2. **Backend production lenses always fire on a backend diff.** The tier in
+2. **Backend production lenses always fire when their group's trigger
+   matches.** The tier in
    `references/backend-lenses.md` is not suppressible: a repo rule may *narrow*
    a finding — swap the prescribed remedy, name the repo's own helper — but may
    not remove the flag. The boundary is one test: a repo rule changes what you
@@ -20,8 +21,10 @@ the admission rule in Maintenance.
    suppressed — see the tier's header.
 3. **Repo-defined conventions govern** everything below this line. Before
    applying any scoped pack, read the target repo's own rule sources:
-   `CLAUDE.md` / `AGENTS.md` / `ARCHITECTURE.md`, any repo review skill or
-   runbook under `.claude/skills/`, and per-directory convention docs. Where a
+   `CLAUDE.md` / `AGENTS.md` / `ARCHITECTURE.md`, the review playbook files
+   `.github/claude-review-instructions.md` and `.github/copilot-instructions.md`,
+   any repo review skill or runbook under `.claude/skills/`, and
+   per-directory convention docs. Where a
    repo rule and a scoped lens conflict, the repo rule wins — apply it and stay
    silent about the suppressed lens.
 4. **Scoped packs are fallback suggestions.** Apply a pack only when the diff
@@ -34,10 +37,8 @@ code false-positive.
 ## Backend production tier
 
 `references/backend-lenses.md` holds the governing tier described in precedence
-rule 2 — six groups, firing on a backend diff: the diff touches SQL or ORM
-bindings or repository-layer code, an HTTP endpoint or route, a GraphQL
-schema/resolver/loader, a message or event handler, a schema migration file, or
-cache access.
+rule 2 — six groups, each loaded only when the diff touches its subject (the
+tier's Trigger table). A diff is **backend** when any group fires.
 
 | Prefix | Subject |
 |---|---|
@@ -93,7 +94,12 @@ cache access.
   referencing removed code and ticketless TODOs are findings.
 - **U8 — Pre-existing defects don't ride feature PRs.** Unrelated fixes and
   cleanups go in a standalone PR. Exception: a tiny, clearly-labeled fix
-  that unblocks this PR's own CI.
+  that unblocks this PR's own CI. When the diff fixes a defect and leaves
+  its siblings (the same bug on another route, another envelope, another
+  caller) unfixed on purpose, the commit message and the PR body name each
+  unfixed sibling and where it is tracked. A missing declaration is the
+  finding, not the sibling itself; without it reviewers raise the sibling on
+  every push.
 - **U9 — Split/stacked PRs: say where the fix landed.** A reviewer reads only
   the PR they were asked to review. When a fix lives in another PR or
   branch, reply on the original thread with the pointer immediately.
@@ -159,6 +165,29 @@ cache access.
   *Not a finding when:* the construct implements a published interface or
   framework contract, or a second consumer arrives in a named, in-flight
   change — say which.
+- **U21 — Order of operations: defaults, guards, and markers sit in the
+  right place.** Apply a default or normalization before every consumer of
+  the value (validation, geocoding, merge, length limits, the returned
+  value), and hold the defaulted value to the same limits as a
+  caller-supplied one. Run a null or argument guard before any feature-flag
+  branch, set a handled or logged marker only after the effect it describes
+  succeeds, and capture a result after the last step that can overwrite it.
+  Cheap no-op inputs return before the expensive call. The same holds in
+  scripts and skill steps.
+
+  *Not a finding when:* the order is forced by a data dependency documented
+  at the call site.
+- **U22 — String matching says exactly what it matches.** A pattern, key, or
+  lookup over text matches exactly the intended set: anchor regexes with an
+  end-of-string form that rejects a trailing newline, never substring- or
+  suffix-match a delimiter-joined list, and use one case policy at every
+  place the same key is parsed or looked up (a case-sensitive dictionary
+  behind case-insensitive configuration, a writer accepting any case that a
+  reader parses lowercase only). Culture-dependent comparison of invisible
+  characters needs an explicit comparer. The same holds in scripts.
+
+  *Not a finding when:* the match is deliberately loose and a test pins the
+  looser cases.
 
 ## Pack: tests — trigger: any test file in the diff
 
@@ -214,6 +243,16 @@ cache access.
   parser/mapper/context over mocking its interface so the real path gets
   coverage — and don't add test complexity for a theoretical concern with
   no observed failure.
+- **T15 — The test diff keeps every guarantee it touches.** For each test
+  row, assertion, or comment the diff deletes or narrows, name the test that
+  now pins the guarantee. For each branch, enum arm, validator rule, or
+  degraded path the diff adds or reroutes, name a row that fails when it is
+  wrong (an exhaustive walk over an enum-to-status map catches a dropped
+  arm). A trimmed test that hid a dependency, or a documented promise with
+  no enforcing test, is a finding.
+
+  *Not a finding when:* the removed test is replaced by a higher-seam test
+  in the same diff (T1) and the PR points to it.
 
 ## Pack: wire-contracts — trigger: public API surface, shared client packages, serialized DTOs
 
@@ -373,6 +412,18 @@ cache access.
 - **R6 — Fail loudly on permission/config fetch errors.** Returning
   "false/off for everything" on an upstream error disguises an outage as a
   policy decision — especially dangerous in authorization paths.
+- **R7 — One failure is recorded once, at the right level, with enough
+  identity to act on.** For each new log line or metric, decide who must act
+  on it: an expected degradation (budget expiry, user error) is not a
+  stack-traced warning, and an error already recorded by the exception
+  filter or an outer handler is not logged again. Telemetry for a shadow or
+  optional leg is recorded only if the primary outcome it describes was
+  served, and a status mapped to a client-error code still records an
+  outage the service already knows about. The line names the instance (which
+  walk, which id) and never reports a state the code did not reach.
+
+  *Not a finding when:* the duplicate or loud line is the deliberate audit
+  record and the PR says so.
 
 ## Pack: authz — trigger: endpoints, resolvers, loaders, permission checks
 
@@ -431,6 +482,77 @@ cache access.
 - **I5 — Vulnerable transitive dependencies get pinned directly** at the
   patched version, and the upstream package that pulls them in is checked
   for its own update at the same time.
+
+## Pack: migration — trigger: a diff that re-implements, cuts over, shadows, or claims parity with a legacy endpoint or flow
+
+- **M1 — Port the legacy edge cases, not the happy path.** For every
+  input normalization, gate, filter, or lookup the diff ports, list the
+  legacy behavior at each edge input (blank or leading-empty element, short
+  or non-canonical form, mapped or alternate representation, missing
+  identity, sentinel id, cancelled or inactive row, other-region record) and
+  mark each as preserved, changed, or dropped. A parity or
+  no-behavior-change claim must cite the legacy source it was checked
+  against; an unverified claim is a finding, and a dropped edge case needs a
+  declared decision (U12). Without access to the legacy source, report the
+  unverified claim rather than guessing the edge cases.
+
+  *Not a finding when:* the divergence is declared in the PR or design as
+  deliberate with its rationale, or the legacy behavior is a known defect
+  the team has agreed not to carry forward.
+- **M2 — A parity comparer compares what the caller is served, on equal
+  footing.** Applies when the diff adds or changes a shadow read or
+  comparer. For each compared field, ask whether the two sides can differ
+  for a reason other than a defect: visibility gating applied to one side
+  only, formatting or ordering the new path deliberately changes, rows the
+  new path deliberately excludes, or slimmer rows on the old version than
+  the one served. Normalize or exclude those so they cannot record permanent
+  false mismatches, and do not silently skip fields the new path changes, or
+  a green match can drive the ramp while responses differ. A withheld or
+  skipped flag comes from the request or the gate, never inferred from the
+  data; validate the compared field list at startup.
+
+  *Not a finding when:* the comparer is documented as informational only and
+  no ramp, alert, or cutover decision reads its result.
+
+## Pack: downstream — trigger: code that calls other services and maps their responses
+
+- **B1 — Absence is not an answer.** When an upstream body, collection, or
+  field is null or missing, do not coalesce it into an authoritative empty
+  list, blank string, or default. A null data array, a null name, or a
+  failed identity lookup must throw, degrade with an explicit warning, or
+  drop the row, matching how the sibling reads of the same upstream behave.
+  Read the sibling read for the existing treatment before accepting a
+  coalesce. A 401 or 403 degraded into a warning is N7 / R6, not this lens.
+
+  *Not a finding when:* the upstream contract documents null as equivalent
+  to empty, or the PR states and tests that choice.
+- **B2 — Shape every outbound request explicitly and check the response
+  honors it.** For each upstream call, enumerate the request parameters the
+  upstream treats specially: an empty id list (often meaning no filter),
+  repeated ids, sentinel ids the old path never sent, and paging or filter
+  defaults the upstream applies when a parameter is omitted. Set each
+  explicitly, matching the sibling calls, and short-circuit the empty case.
+  When the response is keyed to the request, verify it honors the filter
+  and answers exactly the requested set rather than trusting the upstream
+  to.
+
+  *Not a finding when:* the upstream contract pins the default being relied
+  on and a sibling call relies on it the same way.
+
+## Pack: workflow-state — trigger: skill or agent-workflow markdown, or scripts, that persist state, counters, handled markers, or verdicts
+
+- **K1 — Sibling paths share the gate and the transition.** For each flag,
+  counter, handled marker, or verdict the diff touches, list every path
+  that sets or clears it and walk each event kind (reply, approval hold,
+  escalation, no-change poll, seen / unseen / human / retired row) through
+  the same filter order. A guard added to one path goes on its siblings, a
+  marker set before the filters run can strand an item, a transition that
+  clears a cap on one path also clears it on the equivalent one, and two
+  row kinds follow one precedence rule. Write the table in the spec and test
+  one row per cell.
+
+  *Not a finding when:* the asymmetry between paths is a stated design rule
+  with its rationale.
 
 ## Maintenance
 

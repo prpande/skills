@@ -35,16 +35,25 @@ run `/simplify`).
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `simplify_outcome` | enum or null | default `null` | `committed` \| `folded` \| `no-changes` \| `rolled-back` \| `skipped`. Result of the pre-review `/simplify` pass; `null` when the step has not run (e.g. on `pr-followup`, which never runs it). `committed`: cleanup committed separately and `head_sha` advanced. `folded`: edits left in the tree to be committed by step 04 (uncommitted work overlapped). `skipped`: non-claude-code host or empty range. |
-| `simplify_files` | array of strings | default `[]` | Relative paths `/simplify` touched. On the fold path these are also merged into `uncommitted` so step 04 stages them. |
+| `simplify_outcome` | enum or null | default `null` | `committed` \| `folded` \| `no-changes` \| `rolled-back` \| `skipped`. Result of the pre-review `/simplify` pass; `null` when the step has not run (e.g. on `pr-followup`, which never runs it). `committed`: cleanup committed separately and `head_sha` advanced. `folded`: edits left in the tree to be committed by step 03.5 A (uncommitted work overlapped). `skipped`: non-claude-code host or empty range. |
+| `simplify_files` | array of strings | default `[]` | Relative paths `/simplify` touched. On the fold path these are also merged into `uncommitted` so step 03.5 A stages them. |
 
-## Preflight (step 02) output
+## Context map (step 01.7) output
+
+`pr-autopilot` only.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `what_was_built` | string or null | no | Inferred intent summary |
-| `preflight_minor_findings` | array of objects | default `[]` | Minor findings captured for the local review summary. Under β these are NOT folded into the PR body (see Section 5 of the β spec); α's "Known minor observations" PR-body section was removed. |
-| `preflight_passes` | object | default `{}` | `{pass2_raw: [...], merged: [...]}` |
+| `context_map_path` | string or null | default `null` | Path to `<repo-root>/.pr-autopilot/branch-<slug>-context-map.md`. `null` when step 01.7 wrote no usable map. Not renamed at PR create. |
+| `context_map_sources` | array of strings | default `[]` | Sources the context mapper read: `workspace-map`, `api-catalog`, `sibling-repos`, `new-relic`. |
+
+## Lens review (step 02, launched in step 03.5) and spec alignment output
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `what_was_built` | string or null | no | Inferred intent summary, set by step 01.7 |
+| `preflight_minor_findings` | array of objects | default `[]` | Nit findings (`severity: "minor"`, `category: "style"`, no lens id), recorded in the local review summary and never dispatched. Every other Minor finding is dispatched. |
+| `preflight_passes` | object | default `{}` | `{pass2_raw: [...], merged: [...]}`: the lens agent's findings |
 | `spec_updates` | array of objects | default `[]` | Spec file edits made by step 03 |
 | `blocked_drifts` | array of objects | default `[]` | Drifts that caused HALT before PR open |
 | `spec_alignment_notes` | array of strings | default `[]` | Human-readable notes for PR body |
@@ -86,11 +95,15 @@ run `/simplify`).
 |---|---|---|---|
 | `loop_exit_reason` | enum or null | no | `quiescent-confirmed` \| `iteration-cap` \| `runaway-detected`. The two old soft-quiescent values (`quiescent-zero-actionable`, `quiescent-no-code-change`) were removed in 2026-05-06; they no longer cause a loop exit on their own — they are recorded on `last_quiescence_reason` (above) on the first quiescent iteration, and the loop continues. Only the second consecutive quiescent iteration writes `loop_exit_reason = quiescent-confirmed` and exits. State files written by older skill versions may contain the removed values; that is expected — schema validation runs at write time, not on every read. |
 | `termination_reason` | enum or null | no | `ci-green` \| `ci-red` \| `ci-skipped` \| `ci-timeout` \| `ci-reentry-cap` \| `ci-pre-existing-failures` \| `iteration-cap` \| `runaway-detected` \| `user-intervention-needed` |
-| `code_review_invoked` | boolean | default `false` | True after `/code-review` fires. Under β this means "captured locally and dispatched" — NOT "posted as a PR comment". |
+| `code_review_invoked` | boolean | default `false` | True after pr-autopilot step 03.5 invokes `/code-review`. Its output is kept locally and never posted. |
 | `code_review_invoked_at` | string (ISO-8601) or null | no | When `/code-review` was dispatched |
-| `code_review_raw_output` | string | default `""` | Raw rendered output captured from the host's `review` skill. Never written to `gh pr comment` under β. Used as input to the internal parser + fixer dispatch in step 04g. |
-| `internal_review_findings` | array of objects | default `[]` | Per-finding audit trail for the local review summary. Each entry: `{source: "preflight" \| "code-review", severity, file, line?, description, status: "fixed" \| "fixed-differently" \| "captured-only" \| "feedback-wrong" \| "needs-human", fixer_feedback_id?, verifier_judgement?}`. |
-| `internal_review_summary_path` | string or null | no | Path to the markdown summary file at `<repo-root>/.pr-autopilot/pr-<PR>-review-summary.md` (or `branch-<slug>-review-summary.md` pre-PR-assignment). Set by step 02 on first write; renamed by state-protocol at PR-create time alongside the other branch-* files. |
+| `code_review_status` | enum or null | default `null` | `running` \| `done` \| `skipped`. `running` while step 03.5 waits for the background result; step 04 never starts while it is `running`. |
+| `code_review_raw_output` | string | default `""` | Result text of the host's `code-review` skill, parsed by step 03.5. Never posted. |
+| `code_review_dismissed` | array of objects | default `[]` | Candidates `/code-review` refuted or dropped: `{summary, reason}`. Re-checked by step 03.5's fix-round review. |
+| `fix_round_base_sha` | string (hex) or null | no | HEAD before step 03.5's fix commit; the base of the fix-round review diff. |
+| `declarations` | array of objects | default `[]` | Decisions kept on purpose, written into commit messages (step 03.5) and the PR body (step 04). Each entry: `{kind: "kept-finding" \| "difference" \| "scope", statement, file?, line?, finding_id?, in_commit}`. `statement` is one present-tense sentence. `in_commit` is the SHA of the commit whose message carries it. |
+| `internal_review_findings` | array of objects | default `[]` | Per-finding audit trail for the local review summary. Each entry: `{source: "preflight" \| "code-review" \| "fix-round", severity, file, line?, description, status: "fixed" \| "fixed-differently" \| "nit" \| "declared" \| "needs-human" \| "duplicate" \| "captured-only" \| "feedback-wrong", fixer_feedback_id?, verifier_judgement?}`. Only `nit` findings are left undispatched. `captured-only` and `feedback-wrong` are legacy values: step 03.5 never writes them, and validation accepts them so `/pr-followup` can load and rewrite state files from older skill versions. |
+| `internal_review_summary_path` | string or null | no | Path to the markdown summary file at `<repo-root>/.pr-autopilot/pr-<PR>-review-summary.md` (or `branch-<slug>-review-summary.md` pre-PR-assignment). Set in step 03.5 when the lens agent returns; renamed by state-protocol at PR-create time alongside the other branch-* files. |
 
 ## Nested schemas
 
