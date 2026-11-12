@@ -2,18 +2,19 @@
 """Run one read-only NRQL query for the pr-autopilot context mapper.
 
 Usage: nrql.py --state <file> "<NRQL>"
-       nrql.py --state <file> --reset
 
 The state file counts the queries run for one context map. The query
-after the cap is refused, so the cap holds whatever the caller intends.
-`--reset` starts a new map's count.
-Exit codes: 0 ran, 2 query rejected (not counted), 3 cap reached or
-state file unreadable, 4 no account id or no `newrelic` CLI, else the
-CLI's own exit code.
+after the cap is refused. The cap holds for serial or overlapping calls
+on one state file. The orchestrator, not the mapper, starts a new map's
+count with `--reset`.
+Exit codes: 0 ran; 64 rejected, not counted; 65 cap reached or state
+file unusable; 66 no account id or no usable newrelic CLI; any other
+code is the CLI's own (or 2 for a usage error).
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import pathlib
@@ -26,14 +27,24 @@ import time
 MAX_QUERIES = 6
 MAX_LIMIT = 20
 REPLACE_ATTEMPTS = 5
-EXIT_REJECTED = 2
-EXIT_CAP = 3
-EXIT_UNAVAILABLE = 4
+QUERY_TIMEOUT_SECONDS = 120
+LOCK_WAIT_SECONDS = 5.0
+STALE_LOCK_SECONDS = 60
+CLI_SUFFIXES = {"", ".exe", ".cmd", ".bat"}
+EXIT_REJECTED = 64
+EXIT_CAP = 65
+EXIT_UNAVAILABLE = 66
+
+STRING_LITERAL = re.compile(r"'(?:[^'\\]|\\.|'')*'")
+
+
+class LockTimeout(Exception):
+    pass
 
 
 def check_query(query: str) -> str | None:
     """Return why the query is refused, or None when it may run."""
-    text = " ".join(query.split())
+    text = STRING_LITERAL.sub("''", " ".join(query.split()))
     upper = text.upper()
     if not re.match(r"^(SELECT|FROM)\b", upper):
         return "only SELECT queries are allowed"
@@ -41,11 +52,15 @@ def check_query(query: str) -> str | None:
         return "one statement per call"
     if not re.search(r"\bSINCE\b", upper):
         return "add a SINCE clause (SINCE 7 days ago)"
-    if re.search(r"\bFACET\b", upper) and re.search(r"\bTIMESERIES\b", upper):
+    facet = re.search(r"\bFACET\b", upper)
+    if facet and re.search(r"\bTIMESERIES\b", upper):
         return "FACET with TIMESERIES is not parsed by the CLI; drop one"
-    for limit in re.findall(r"\bLIMIT\s+(\S+)", upper):
-        if not limit.isdigit() or int(limit) > MAX_LIMIT:
+    limits = re.findall(r"\bLIMIT\s+(\w+)", upper)
+    for limit in limits:
+        if not re.fullmatch(r"[0-9]+", limit) or int(limit) > MAX_LIMIT:
             return f"LIMIT must be a number no higher than {MAX_LIMIT}"
+    if not limits and (facet or "(" not in text):
+        return f"add LIMIT {MAX_LIMIT} or lower (needed for FACET and raw rows)"
     return None
 
 
@@ -78,10 +93,10 @@ def load_state(path: pathlib.Path) -> dict:
 
 def save_state(path: pathlib.Path, state: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     for attempt in range(REPLACE_ATTEMPTS):
         try:
+            tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
             os.replace(tmp, path)
             return
         except PermissionError:
@@ -91,62 +106,145 @@ def save_state(path: pathlib.Path, state: dict) -> None:
             time.sleep(0.1 * (attempt + 1))
 
 
-def main(argv=None, *, env=None, home=None, which=shutil.which, run=subprocess.run) -> int:
+@contextlib.contextmanager
+def state_lock(path: pathlib.Path, wait: float):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock = path.with_name(path.name + ".lock")
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            break
+        except FileExistsError:
+            try:
+                if time.time() - lock.stat().st_mtime > STALE_LOCK_SECONDS:
+                    lock.unlink()
+                    continue
+            except FileNotFoundError:
+                continue
+            if time.monotonic() >= deadline:
+                raise LockTimeout(str(lock))
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        lock.unlink(missing_ok=True)
+
+
+def settle_entry(path: pathlib.Path, query: str, outcome, wait: float) -> None:
+    """Record the exit of the pending entry for `query`; None removes it."""
+    with state_lock(path, wait):
+        state = load_state(path)
+        pending = {"query": query, "exit": None}
+        for index in range(len(state["queries"]) - 1, -1, -1):
+            if state["queries"][index] == pending:
+                if outcome is None:
+                    del state["queries"][index]
+                else:
+                    state["queries"][index]["exit"] = outcome
+                break
+        save_state(path, state)
+
+
+def use_utf8_output() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
+def main(
+    argv=None,
+    *,
+    env=None,
+    home=None,
+    which=shutil.which,
+    run=subprocess.run,
+    lock_wait=LOCK_WAIT_SECONDS,
+) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--state", required=True, type=pathlib.Path)
-    parser.add_argument("--reset", action="store_true")
+    parser.add_argument("--reset", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("query", nargs="?")
     args = parser.parse_args(argv)
+    if args.reset and args.query is not None:
+        parser.error("--reset takes no query")
+    if not args.reset and args.query is None:
+        parser.error("a query is required")
     env = os.environ if env is None else env
     home = pathlib.Path.home() if home is None else home
 
     if args.reset:
-        save_state(args.state, {"queries": []})
+        try:
+            save_state(args.state, {"queries": []})
+        except (OSError, ValueError) as error:
+            print(f"state file unusable ({error}); refusing to run", file=sys.stderr)
+            return EXIT_CAP
         return 0
-    if args.query is None:
-        parser.error("a query is required unless --reset is given")
 
     refusal = check_query(args.query)
     if refusal:
         print(f"query rejected, not counted: {refusal}", file=sys.stderr)
         return EXIT_REJECTED
 
-    try:
-        state = load_state(args.state)
-    except ValueError as error:
-        print(f"{error}; refusing to run", file=sys.stderr)
-        return EXIT_CAP
-    used = len(state["queries"])
-    if used >= MAX_QUERIES:
-        print(
-            f"query cap reached: {used} of {MAX_QUERIES} used. "
-            "Write the map from the results you have.",
-            file=sys.stderr,
-        )
-        return EXIT_CAP
-
     cli = which("newrelic")
+    if cli and pathlib.Path(cli).suffix.lower() not in CLI_SUFFIXES:
+        cli = None
     account = account_id(env, home)
     if not cli or not account:
-        print("no newrelic CLI or account id; skip production signals", file=sys.stderr)
+        print("no usable newrelic CLI or account id; skip production signals", file=sys.stderr)
         return EXIT_UNAVAILABLE
 
-    state["queries"].append({"query": args.query, "exit": None})
-    save_state(args.state, state)
-    result = run(
-        [cli, "nrql", "query", "--accountId", account, "--query", args.query],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    state["queries"][-1]["exit"] = result.returncode
-    save_state(args.state, state)
+    try:
+        with state_lock(args.state, lock_wait):
+            state = load_state(args.state)
+            used = len(state["queries"])
+            if used >= MAX_QUERIES:
+                print(
+                    f"query cap reached: {used} of {MAX_QUERIES} used. "
+                    "Write the map from the results you have.",
+                    file=sys.stderr,
+                )
+                return EXIT_CAP
+            state["queries"].append({"query": args.query, "exit": None})
+            save_state(args.state, state)
+    except LockTimeout:
+        print("state file busy; refusing to run", file=sys.stderr)
+        return EXIT_CAP
+    except (OSError, ValueError) as error:
+        print(f"state file unusable ({error}); refusing to run", file=sys.stderr)
+        return EXIT_CAP
+
+    def settle(outcome) -> None:
+        try:
+            settle_entry(args.state, args.query, outcome, lock_wait)
+        except (OSError, ValueError, LockTimeout) as error:
+            print(f"warning: could not update the query count ({error})", file=sys.stderr)
+
+    try:
+        result = run(
+            [cli, "nrql", "query", "--accountId", account, "--query", args.query],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdin=subprocess.DEVNULL,
+            timeout=QUERY_TIMEOUT_SECONDS,
+        )
+    except OSError as error:
+        print(f"newrelic CLI could not start ({error}); query not run", file=sys.stderr)
+        settle(None)
+        return EXIT_UNAVAILABLE
+    except subprocess.TimeoutExpired:
+        print(f"newrelic CLI timed out after {QUERY_TIMEOUT_SECONDS}s; query counted", file=sys.stderr)
+        settle("timeout")
+        return 1
     sys.stdout.write(result.stdout or "")
     sys.stderr.write(result.stderr or "")
     print(f"[{used + 1} of {MAX_QUERIES} queries used]", file=sys.stderr)
+    settle(result.returncode)
     return result.returncode
 
 
 if __name__ == "__main__":
+    use_utf8_output()
     sys.exit(main())

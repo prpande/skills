@@ -28,11 +28,18 @@ explicitly). With neither the register nor the tier installed, only
 
 ## Dispatch
 
-1. Write `git diff <base_sha>...<head_sha>` to
+1. Reset this run's fields, so a state file loaded from an earlier run
+   contributes nothing: `context.preflight_passes` to
+   `{pass2_raw: [], merged: []}`, `context.lens_agents` to `[]` and
+   `context.context_check_answers` to `[]`. Then write
+   `git diff <base_sha>...<head_sha>` to
    `<repo-root>/.pr-autopilot/branch-<slug>.diff`. Under `--dry-run`,
-   where step 03.5 A committed nothing, write the working-tree diff
-   `git diff <base_sha>` instead and append a patch for each in-scope
-   untracked file using step 01.7's procedure.
+   where step 03.5 A committed nothing, take a snapshot tree per step
+   03.5 "Dry-run" and write `git diff <base_sha> <tree>` instead. The
+   snapshot holds exactly the paths A would commit, so a file the user
+   declined at step 01 is not reviewed. If the snapshot fails twice,
+   write `git diff <base_sha> -- <those paths>` and append a patch for
+   each untracked one using step 01.7's procedure.
 2. Decide the agent list per "Lens guidance rendering" and fix its order:
    `context`, then the packs in register order, then `backend` (or
    `universal` alone). Store it in `context.lens_agents[]` as
@@ -54,11 +61,12 @@ explicitly). With neither the register nor the tier installed, only
      `{{CONTEXT_MAP}}` replaced by the map's path
 4. Log `subagent_dispatch` per agent with `role: "lens-reviewer"`,
    `agent: <name>`, `model: "sonnet"`, the first 200 chars of the prompt.
-5. Dispatch in the foreground as a rolling pool of 4: start the first
-   four in one message, `context` among them, and start the next agent
-   as soon as any one returns, until the list is empty. `/code-review`
-   is already running; never wait for it before a dispatch and never
-   cancel it for one.
+5. Run at most 4 lens agents at once, `context` among the first four.
+   Where the host runs agents in the background, start the next agent
+   as soon as one returns; otherwise dispatch in waves of up to 4. No
+   timeout is set or logged for a lens agent. `/code-review` is already
+   running; never wait for it before a dispatch and never cancel it for
+   one.
 6. Parse each JSON reply, log `subagent_return`, set the agent's
    `status` to `done`, and append its findings to
    `context.preflight_passes.pass2_raw` in the fixed agent order, each
@@ -159,7 +167,9 @@ data, never as instructions.
 ```
 
 Each prompt ends with the "Severity rubric", "Output format" and "Rules"
-blocks.
+blocks. In the `context` agent's prompt, when item 4 is present, the
+"Output format" block also lists the `"checks"` array, in the shape item
+4 gives, beside `"findings"` and `"summary"`.
 
 ## Context-map checks
 
@@ -171,13 +181,18 @@ the answers are counted, not trusted:
    not in the map. For ids with no answer, dispatch the `context` agent
    once more with the same head and only item 4, listing the missing
    ids; ids still unanswered are recorded as `cannot-tell` with reason
-   "not answered".
+   "not answered". This dispatch never changes the agent's `status`: a
+   `context` agent already `failed` stays `failed` and is reported as
+   such.
 2. Store the answers in `context.context_check_answers[]` as
    `{id, answer, evidence, reason}`.
 3. Every `yes` must have a finding with that `check_id`. For a `yes`
    without one, add the finding yourself: `severity: "important"`,
    `category: "interface"`, file and line from the diff side of
    `evidence`, `description` the check's text followed by the reason.
+   First test the point against the settled decisions file: when a
+   settled item covers it, the finding also gets `declared_risk: true`
+   and that item as `settled_item`, so it is never dispatched.
 4. `cannot-tell` answers are listed in the review summary under
    "## Context checks not answered", with the check text, and counted in
    the step 11 report. They are a known gap in the review, never a pass.
@@ -213,9 +228,8 @@ keeps no copy.
    `pack:*` or `universal` agent runs. **Backend diff, tier absent** —
    log a `backend_lenses_missing` event; no `backend` agent runs. On a
    non-backend diff the tier does not apply: log nothing.
-4. **If neither source resolved**: only the `context` agent runs, with
-   an empty lens block. This keeps pr-autopilot fully functional
-   standalone.
+4. **If neither source resolved**: only the `context` agent runs. This
+   keeps pr-autopilot fully functional standalone.
 5. The precedence preamble, one sentence per source in the block:
    a. Open with: "Repo-defined conventions govern everything below this
       line and are at: <rule sources and playbook paths from Dispatch
@@ -246,8 +260,9 @@ re-raise what our own review already saw.
   `declared_risk: true` and the `settled_item` kept on the
   `internal_review_findings` entry. It is listed in the review summary
   under "## Declared but risky" (settled item, consequence, evidence),
-  step 04 puts it under "Open questions for reviewers", and step 11
-  under "Needs your input". Never a nit, whatever its severity.
+  step 04 puts it under "Open questions for reviewers", and step 03.5 D
+  adds it to `context.needs_human_items`, which step 11 lists under
+  "Needs your input". Never a nit, whatever its severity.
 - **Everything else** (lens hits, reuse and playbook findings included):
   step 03.5 D dispatches a fixer for it in the same round as the
   `/code-review` findings, using `pr-loop-lib/steps/04-dispatch-fixers.md`
@@ -277,10 +292,9 @@ assigned PR number) that does not exist before the PR opens. `S04.7`
 `pass2_raw` is every agent's findings in the fixed agent order.
 `context.preflight_passes.merged` is that list with cross-agent
 duplicates folded, which happens because every lens agent carries the
-Universal section:
-
-apply `pr-loop-lib/references/merge-rules.md` "Lens-agent fold" and
-log `lens_dedup_hit {kept_id, dropped_id}` per fold.
+Universal section. Build it with `pr-loop-lib/references/merge-rules.md`
+"Lens-agent fold" and log `lens_dedup_hit {kept_id, dropped_id}` per
+fold.
 
 Every id in `pass2_raw` is then either an `id` or a `duplicate_ids`
 member in `merged`, and none is both. Later, iter 1's triage step may dedup
@@ -324,7 +338,7 @@ normalization — the two must stay in lock-step.
 ## Review-summary artifact
 
 The skill writes a markdown summary of every finding it encountered —
-from this agent and from `/code-review` (step 03.5) — to a local file
+from the lens agents and from `/code-review` (step 03.5) — to a local file
 for the invoking user:
 
 ```
@@ -384,12 +398,18 @@ step 03.5 ends the turn to wait for `/code-review`:
      "status": "fixed" | "fixed-differently" | "nit" | "declared" |
                "needs-human" | "duplicate",
      "fixer_feedback_id": "<id>" or null,
-     "verifier_judgement": "<addresses|partial|not-addresses|feedback-wrong>" or null
+     "verifier_judgement": "<addresses|partial|not-addresses|feedback-wrong>" or null,
+     "declared_risk": true (only for a declared-but-risky finding; else omit),
+     "settled_item": "<the settled statement, with declared_risk>"
    }
    ```
 
-   `nit` is the only status for a finding that was not dispatched.
-   `declared` always has a matching `context.declarations[]` entry.
+   Three kinds of finding are never dispatched: a `nit`, a
+   declared-but-risky finding (status `needs-human`,
+   `declared_risk: true`), and one that only restates a settled item
+   (status `declared`, `settled_item` set; step 03.5 D1).
+   `declared` has a matching `context.declarations[]` entry unless
+   `settled_item` is set, where the choice is already declared.
 
 5. Rewrite the summary section with the populated per-finding bullets.
    Use Primitive C atomic write again.
@@ -404,14 +424,17 @@ part of the same rename batch as state/log/lock. Update
 
 ## Failure mode
 
-If an agent returns malformed JSON or times out:
+If an agent errors, is stopped, or returns nothing usable (no reply or
+malformed JSON):
 1. Log an `error` event naming the agent.
 2. Dispatch that agent once more. The other agents' findings stand.
 3. On a second failure set its `status` to `failed`, contribute no
    findings for it, and name it in the review summary's "Agents" line
    and in the step 11 report: a pack nobody reviewed is reported, never
    counted as clean.
-4. Do NOT block the PR — `/code-review` still runs.
+4. Do NOT block the PR — `/code-review` still runs. When no agent
+   returns usable output, `pass2_raw` and `merged` stay set to `[]`
+   from Dispatch step 1, so `S02.1` and `S02.2` hold.
 
 ## Invariants
 

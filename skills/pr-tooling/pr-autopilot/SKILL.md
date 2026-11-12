@@ -5,8 +5,8 @@ description: >
   loop until CI is green. On Claude Code, first runs a quality-only
   /simplify pass (host-gated; may be skipped); then a context map of
   related services, legacy code, client apps and production data;
-  spec/plan alignment; a pre-open /code-review at max with one lens
-  agent per triggered pack plus a context agent beside it, every
+  spec/plan alignment; a pre-open /code-review at max with lens agents
+  beside it (context, one per triggered pack, backend or universal), every
   finding fixed or declared and the fixes reviewed; a shipped-text check; template-filled PR
   open; then loops on reviewer comments
   (addressing them with parallel fixer subagents, build+test sanity

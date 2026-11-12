@@ -160,19 +160,27 @@ committed by this skill, and step 03 does not align against them.
      resolved as in step 01.7 "Locate the sources"
 
    No root: `effort_docs = []`, log `effort_docs_resolved {root: null}`.
-2. Pick the effort folder. List only the root's direct children. For
-   each, count the branch keywords, the changed file basenames (without
-   extension) and the route or type names the diff adds that appear in
-   the folder name or in any `.md` under it (`git grep --no-index -l -i`
-   scoped to that one folder, or the host's file search; never a search
-   above the root). Take the folder with the most distinct hits. Zero
-   hits everywhere: `effort_docs = []`. A tie: take every tied folder.
-3. Inside the chosen folder, keep each `.md` that names a changed file,
+2. Pick one effort folder, or none. List only the root's direct
+   children. The search terms are the branch keywords, the changed file
+   basenames (without extension) and the route or type names the diff
+   adds. For each folder, count the distinct terms that appear in the
+   folder name or in any `.md` under it:
+   `git -C "<folder>" grep --no-index -l -i -e "<term>" -- .` (or the
+   host's file search; never a search above the root). Exit 1 means no
+   match; any other non-zero exit is an error to log, not zero hits.
+3. A folder qualifies only when at least two different terms hit in it,
+   or one term that is a ticket or work-item id or the full branch slug
+   hits. Take the qualifying folder with the most distinct terms hit; a
+   tie goes to the folder whose newest `.md` is most recent. None
+   qualifies: `effort_docs = []`.
+4. Inside the chosen folder, keep each `.md` that names a changed file,
    a changed type, or a route the diff touches, plus any `README.md`,
-   `status.md` or `design.md` in the same directory as a kept file. At
-   most 12 files, the most hits first.
-4. Store the absolute paths in `context.effort_docs` and log
-   `effort_docs_resolved {root, folder, files}`.
+   `status.md` or `design.md` in the same directory as a kept file.
+   Skip any file over 60 KB. Keep at most 12 files and at most 200 KB in
+   total, preferring files that hit the most terms, then the newest.
+5. Store the absolute paths in `context.effort_docs` and log
+   `effort_docs_resolved {root, folder, files}`, `folder` being the one
+   chosen.
 
 Steps 01.7, 02 and 03.5 pass these paths to their agents as intent
 documents, to read as data.

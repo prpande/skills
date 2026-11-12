@@ -73,12 +73,14 @@ Internal review summary (local, not on PR):
     - Checked and dismissed:      <n> (listed in the summary file)
 
   Fix-round review: <n> rounds, <n> findings, <n> fixed
+                    (or "did not run: <reason>")
   Shipped-text check: <n> claims corrected
   Declarations in commits and PR body: <n>
 
 Needs your input:
-  <for each needs-human item: file:line, quoted feedback sentence,
-   agent's reason>
+  <for each context.needs_human_items entry, declared-but-risky
+   findings included: file:line, quoted feedback sentence, agent's
+   reason>
 
 UI / design suggestions deferred to you (<total>):
   <for each ui_deferred_items entry: file:line, author, quoted
@@ -101,9 +103,14 @@ Audit trail:
   review summary: <repo-root>/.pr-autopilot/pr-<N>-review-summary.md
 ```
 
-The counts under "Internal review summary" are computed from
-`context.internal_review_findings`, grouped by `source` and `status`.
-The full detail (per-finding file:line, description, fixer/verifier
+Under "Internal review summary", the Fixed, Declared, Open, Nits,
+Dedup and /simplify counts come from `context.internal_review_findings`,
+grouped by `source` and `status`; "Agents" from `context.lens_agents`;
+"Context-map checks" from `context.context_check_answers`; and
+"Declared but risky" from entries with `declared_risk: true`. A
+declared-but-risky finding is counted in that row only, never in
+"Open (needs-human)". A `/code-review` status of `skipped` names its
+reason (host unmapped, or the dry-run hint refused). The full detail (per-finding file:line, description, fixer/verifier
 outcome) lives in the review-summary file on disk — step 11 only
 prints counts to keep the terminal output scannable.
 
@@ -245,6 +252,8 @@ message (< 200 chars, no markdown) led by the actionable outcome. Map
 
 Append `· <K> awaiting approval` when `context.ui_deferred_items` is
 non-empty and the approval phase was skipped (non-interactive host).
+Append `· <K> need your input` when `context.needs_human_items` is
+non-empty and the lead is not the `user-intervention-needed` one.
 Always `status: "proactive"` — this is unsolicited and meant to reach
 the user's phone.
 
