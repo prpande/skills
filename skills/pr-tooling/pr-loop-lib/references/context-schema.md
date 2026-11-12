@@ -87,8 +87,9 @@ run `/simplify`).
 | `consecutive_quiescent_iterations` | integer | default `0` | Incremented on each soft-quiescent iteration (`quiescent-zero-actionable` or `quiescent-no-code-change`). Reset to `0` on any non-quiescent iteration outcome. Read by step 08 to decide between routing back to step 01 (counter == 1) or onward to step 09 (counter >= 2). |
 | `last_quiescence_reason` | enum or null | default `null` | The most recent soft-quiescent reason; one of `quiescent-zero-actionable` \| `quiescent-no-code-change`. Set on each soft-quiescent iteration (in lockstep with `consecutive_quiescent_iterations` increment). Cleared (set to `null`) when the counter resets. Carried for the report and for log readability. |
 | `sanity_check_passed` | object | default `{}` | `{ <iteration>: <bool> }` |
-| `verify_excluded_suites` | array of objects | default `[]` | `{suite, reason}` suites step 04.5 did not count: left out by "Local suites", or failing the same way without the fixes. Reset by step 03.5 B and after step 11 prints them |
-| `verify_preexisting_failures` | array of strings | default `[]` | Tests that fail the same way on the wave base; same reset |
+| `verify_excluded_suites` | array of objects | default `[]` | `{suite, reason}` suites step 04.5 did not count: left out by "Local suites", or failing the same way without the fixes. Reset by pr-autopilot step 01 on a run with no PR yet and after step 11 prints them |
+| `verify_preexisting_failures` | array of objects | default `[]` | `{test, error}`: tests that fail the same way on the wave base, with the error seen there; same reset |
+| `verify_baseline_files` | array of strings | default `[]` | The file list step 04.5 replaced for the baseline held in `verify_baseline_tree`; written and cleared with it |
 | `verify_baseline_tree` | string (tree id) or null | default `null` | The snapshot of the fixed tree that step 04.5 holds while it runs the baseline; non-null at step start means a baseline run was interrupted |
 | `verify_tests_ran` | object | default `{}` | `{ <iteration>: <bool> }`, false when step 04.5 built but ran no test |
 | `unit_bases` | object | default `{}` | `feedback_id` to `{base, unit, order}`, recorded by step 04 "Unit base"; `base` is a snapshot tree id; reset to `{}` when step 04 starts |

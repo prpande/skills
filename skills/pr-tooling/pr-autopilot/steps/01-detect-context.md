@@ -74,8 +74,10 @@ not pass the flag.
 `--base <sha>` without `--dry-run`: HALT with "--base is accepted only with --dry-run."
 
 `--base` is for a branch with no PR of its own (a new branch created at
-the PR's opening head). When `gh pr view` finds any PR, open or merged,
-for the current branch and `--base` is set, HALT before any review:
+the PR's opening head). When the platform's lookup (GitHub:
+`gh pr view`; AzDO: `az repos pr list --source-branch <branch>
+--status all`) finds any PR, open or merged, for the current branch and
+`--base` is set, HALT before any review:
 "--base backtests need a branch with no PR; create one at the PR's
 opening head."
 
@@ -125,6 +127,13 @@ If a state file for the current PR or branch already exists (re-entry
 after a `ScheduleWakeup`), LOAD the existing state instead of
 re-initializing. Refresh the lock lease. Log a `skill_start` event
 noting `resumed: true`.
+
+On a run that has not opened its PR (`context.pr_number` is empty),
+set `context.verify_excluded_suites` and
+`context.verify_preexisting_failures` to `[]` after the state is
+loaded and before step 01.5, the first step that can run a test: a
+state file from an earlier run contributes none, and what steps 01.5
+and 03 record in this run reaches step 03.5 and the report.
 
 ## Blocking conditions
 

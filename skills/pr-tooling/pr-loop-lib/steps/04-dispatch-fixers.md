@@ -300,8 +300,8 @@ For each fixer return where `verdict ∈ {fixed, fixed-differently}`:
 |---|---|
 | `addresses` | Keep `fixer_return` as-is. Proceed. |
 | `partial` | Demote `fixer_return.verdict` to `needs-human`. Append verifier's reason to `fixer_return.reason`. Keep the diff in the working tree (partial fix may be better than nothing). Thread stays unresolved. |
-| `not-addresses` | Demote to `needs-human`. Roll back the fixer's file changes ("Rollback"). Remove from `context.files_changed_this_iteration` only the rolled-back files that no other return with verdict `fixed` or `fixed-differently` still lists. Clear `fixer_return.files_changed = []` so invariant S04.4 (union across returns) still holds. Append verifier's reason to `fixer_return.reason`. |
-| `feedback-wrong` | ONLY permitted when `fixer_return.verdict` was `fixed-differently`. If the fixer's verdict was `fixed`, the verifier cannot escalate to this (per the prompt); if it somehow returns `feedback-wrong` anyway, demote to `not-addresses` instead. Action: demote fixer's verdict to `not-addressing`, roll back files, remove from `context.files_changed_this_iteration` only the rolled-back files that no other return with verdict `fixed` or `fixed-differently` still lists, clear `fixer_return.files_changed = []`, set `fixer_return.reply_text` to: `> [quoted relevant sentence]\n\nNot addressing: a proposed fix was attempted and verified against the feedback; verification determined the feedback appears factually incorrect about the current code. Evidence: <verifier's reason>. Not making the change.` |
+| `not-addresses` | Demote to `needs-human`. Roll back the fixer's file changes ("Rollback"). Remove from `context.files_changed_this_iteration` only the rolled-back files that no other return still lists (a rolled-back return's `files_changed` is cleared; a `partial` return keeps its files). Clear `fixer_return.files_changed = []` so invariant S04.4 (union across returns) still holds. Append verifier's reason to `fixer_return.reason`. |
+| `feedback-wrong` | ONLY permitted when `fixer_return.verdict` was `fixed-differently`. If the fixer's verdict was `fixed`, the verifier cannot escalate to this (per the prompt); if it somehow returns `feedback-wrong` anyway, demote to `not-addresses` instead. Action: demote fixer's verdict to `not-addressing`, roll back files, remove from `context.files_changed_this_iteration` only the rolled-back files that no other return still lists (a rolled-back return's `files_changed` is cleared; a `partial` return keeps its files), clear `fixer_return.files_changed = []`, set `fixer_return.reply_text` to: `> [quoted relevant sentence]\n\nNot addressing: a proposed fix was attempted and verified against the feedback; verification determined the feedback appears factually incorrect about the current code. Evidence: <verifier's reason>. Not making the change.` |
 
 ### Overlap re-verify
 
@@ -337,8 +337,8 @@ and `feedback-wrong`), in pr-autopilot's pre-open fix round too; only the
         - Restore F to the base with the lower order of the two.
         - Demote B to needs-human with reason "shared <F> with a
           rolled-back fix"; remove F from B's files_changed and from
-          context.files_changed_this_iteration unless another accepted
-          return lists it.
+          context.files_changed_this_iteration unless another return
+          still lists it (a partial return keeps its files).
         - Log a fixer_reverify event with new_verdict:
           "demoted-overlap".
 
@@ -367,8 +367,8 @@ One `fixer_reverify` event per (survivor, rolled_back) pair.
 After processing all fixer returns:
 - Persist updated `context.agent_returns` (with demoted verdicts).
 - Persist `context.files_changed_this_iteration` (with rolled-back
-  files removed, except those another return with verdict `fixed` or
-  `fixed-differently` still lists).
+  files removed, except those another return still lists: a `partial`
+  return keeps its files, so step 06 commits the diff it left).
 - Persist `context.verifier_judgements` (one entry per verified
   return).
 
