@@ -23,12 +23,13 @@ fallback and read as actionable.
 | `mergewatch-playlist` | Top-level PR comment | starts with `<!-- mergewatch-review -->` | Parse — the summary, see below |
 | `mergewatch-playlist` | Review body | starts with `<!-- mergewatch-review -->` | Parse — re-read the current summary, see below |
 | `copilot-pull-request-reviewer` | Inline review comment | any body | Actionable |
-| `copilot-pull-request-reviewer` | Review body | contains `### Suppressed comments` | Parse — one finding per item, see below |
-| `copilot-pull-request-reviewer` | Review body | no `### Suppressed comments` | Skip — verdict and counts only |
+| `copilot-pull-request-reviewer` | Review body | contains `### Suppressed comments` or `previously missed issue</strong>` or `previously missed issues</strong>` | Parse — one finding per item, see below |
+| `copilot-pull-request-reviewer` | Review body | neither | Skip — verdict and counts only |
 
 Signatures verified against live comments on the last 40 PRs of
-`mindbody/Mindbody.Scheduling` on 2026-09-11, and the Copilot rows
-against `prpande/skills` on 2026-09-16.
+`mindbody/Mindbody.Scheduling` on 2026-09-11, the Copilot rows
+against `prpande/skills` on 2026-09-16, and the previously missed issues
+section against `prpande/skills#46` on 2026-11-11.
 
 ## `mindbody-ado-pipelines` review
 
@@ -108,13 +109,34 @@ The exception is the `### Suppressed comments` section under
 decided not to post inline. Each item is a `**<path>:<line>**` heading, a
 bullet holding the whole finding, and a fenced quote of the lines it
 refers to; that bullet is one actionable finding, and the review carries
-them even when its counts say `Comments generated: 0 new`. Record the
-disposition in `handled_top_level_ids` (in the PR's progress file) under
-`copilot|<path>|<the bullet's first sentence>`, and the review's own id under `parsed`.
-Copilot repeats a finding it still sees in the next review, under a new
-review id and often a moved line, so neither belongs in the key; the
-path and the sentence carry across and keep an answered finding from
-being raised again.
+them even when its counts say `Comments generated: 0 new`.
+
+A newer review body (it opens with `<!-- ccr-overview-v2 -->`) can also
+hold a `<details>` block whose summary is
+`<strong>1 previously missed issue</strong>` or
+`<strong><N> previously missed issues</strong>`: findings in code that
+has not changed since the last review, which Copilot does not post
+inline. Each `<details>` nested inside it is one actionable finding. Its
+`<summary>` holds a severity image (`alt="High severity"`, `Medium` or
+`Low`) and the title; after it come a `` `<path>:<line>` `` line and the
+finding text. The path carries a zero-width space (U+200B) after each
+`/`; strip those before using it, in the key too. The
+`<N> resolved since last review` block and the `<N> open issues` block
+(or the `**No open issues**` line) are not findings: the resolved ones
+are fixed, and the open issues are bullets linking to the review's
+inline comments.
+
+For both kinds, record the disposition in `handled_top_level_ids` (in the
+PR's progress file) under `copilot|<path>|<the bullet's first sentence>`
+for a suppressed comment or `copilot|<path>|<title>` for a previously
+missed issue, and the review's own id under `parsed`. Copilot repeats a
+finding it still sees in the next review under a new review id, often on
+a moved line and with its title or sentence reworded, so an exact key
+misses most repeats. Before raising a finding whose key is not recorded,
+compare it with the `copilot|<same path>|` keys already recorded. When it
+names the same defect as one of them, record its key with that
+disposition and raise nothing. When it is not clearly the same defect,
+raise it.
 
 A comment that matches no row falls through to the library's unknown-bot
 fallback. When a status line changes shape, update the row here rather
