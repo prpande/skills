@@ -109,30 +109,28 @@ The exception is the `### Suppressed comments` section under
 decided not to post inline. Each item is a `**<path>:<line>**` heading, a
 bullet holding the whole finding, and a fenced quote of the lines it
 refers to; that bullet is one actionable finding, and the review carries
-them even when its counts say `Comments generated: 0 new`. Record the
-disposition in `handled_top_level_ids` (in the PR's progress file) under
-`copilot|<path>|<the bullet's first sentence>`, and the review's own id under `parsed`.
-Copilot repeats a finding it still sees in the next review, under a new
-review id and often a moved line, so neither belongs in the key; the
-path and the sentence carry across and keep an answered finding from
-being raised again.
+them even when its counts say `Comments generated: 0 new`.
 
-A review body that opens with `<!-- ccr-overview-v2 -->` can also hold a
-`<details>` block whose summary reads `<N> previously missed issues`:
-findings in code that has not changed since the last review, which
-Copilot does not post inline. Each `<details>` nested inside it is one
-actionable finding. Its `<summary>` holds a severity image
+A newer review body (it opens with `<!-- ccr-overview-v2 -->`) can also
+hold a `<details>` block whose summary reads `<N> previously missed
+issues`: findings in code that has not changed since the last review,
+which Copilot does not post inline. Each `<details>` nested inside it is
+one actionable finding. Its `<summary>` holds a severity image
 (`alt="High severity"`, `alt="Medium severity"`) and the title; after it
 come a `` `<path>:<line>` `` line and the finding text. The path carries a
 zero-width space (U+200B) after each `/`; strip those before using it.
-Ignore the `resolved since last review` block, which lists fixed
-findings, and the open issues line, whose findings are the review's
-inline comments. Record the disposition in `handled_top_level_ids` under
-`copilot|<path>|<title>`, and the review's own id under `parsed`; a
-finding Copilot still sees comes back in the next review under a new id
-and line, with the same path and title. These findings have no thread,
-so the reply is one top-level comment that answers each finding in the
-review's order.
+The `resolved since last review` block and the open issues line are not
+findings; the open issues are the review's inline comments.
+
+For both kinds, record the disposition in `handled_top_level_ids` (in the
+PR's progress file) under `copilot|<path>|<the bullet's first sentence>`
+for a suppressed comment or `copilot|<path>|<title>` for a previously
+missed issue, and the review's own id under `parsed`. Copilot repeats a
+finding it still sees in the next review, under a new review id and often
+a moved line, so neither belongs in the key; the path and the sentence or
+title carry across and keep an answered finding from being raised again.
+These findings have no thread, so the reply is one top-level comment that
+answers each finding not yet handled, in the review's order.
 
 A comment that matches no row falls through to the library's unknown-bot
 fallback. When a status line changes shape, update the row here rather
