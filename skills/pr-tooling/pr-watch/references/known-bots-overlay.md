@@ -130,9 +130,13 @@ For both kinds, record the disposition in `handled_top_level_ids` (in the
 PR's progress file) under `copilot|<path>|<the bullet's first sentence>`
 for a suppressed comment or `copilot|<path>|<title>` for a previously
 missed issue, and the review's own id under `parsed`. Copilot repeats a
-finding it still sees in the next review, under a new review id and often
-a moved line, so neither belongs in the key; the path and the sentence or
-title carry across and keep an answered finding from being raised again.
+finding it still sees in the next review under a new review id, often on
+a moved line and with its title or sentence reworded, so an exact key
+misses most repeats. Before raising a finding whose key is not recorded,
+compare it with the `copilot|<same path>|` keys already recorded. When it
+names the same defect as one of them, record its key with that
+disposition and raise nothing. When it is not clearly the same defect,
+raise it.
 
 A comment that matches no row falls through to the library's unknown-bot
 fallback. When a status line changes shape, update the row here rather
