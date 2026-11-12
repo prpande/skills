@@ -135,12 +135,14 @@ an earlier iteration.
 Who calls it with what:
 - A verifier-ladder rollback (`not-addresses`, `feedback-wrong`) and the
   `ui-deferred` guard: the item's own `files_changed`, against its
-  unit's base. In a cluster unit, a file that an accepted sibling item
-  (`fixed`/`fixed-differently`, verifier `addresses`, or not yet
-  verified) also lists is NOT restored: leave it, set the rejected item
-  to `needs-human` with reason "its edit shares <file> with an accepted
-  fix and was not rolled back". Verify every item of a cluster before
-  rolling any of them back, so "accepted sibling" is known.
+  unit's base. In a cluster unit, a file that a sibling item whose
+  diff stays also lists is NOT restored: a sibling that is
+  `fixed`/`fixed-differently` with verifier `addresses` or not yet
+  verified, or one judged `partial`, which keeps its diff. Leave the
+  file, set the rejected item to `needs-human` with reason "its edit
+  shares <file> with a fix that stays and was not rolled back". Verify
+  every item of a cluster before rolling any of them back, so the
+  siblings whose diff stays are known.
 - `04.5-local-verify.md`'s second-failure rollback: every file in
   that step's file list, against the wave base. One
   base covers the whole wave, so no order between units matters and
@@ -334,7 +336,10 @@ and `feedback-wrong`), in pr-autopilot's pre-open fix round too; only the
    b. Otherwise (the two ran at the same time, or B ran later: an
       overlap the graph did not see): B's edit to F cannot be told
       from A's.
-        - Restore F to the base with the lower order of the two.
+        - Restore F once per rollback, not once per survivor: to
+          the base with the lowest order among A and every
+          survivor that falls under (b) for F, so a later restore
+          cannot bring back an edit an earlier one discarded.
         - Demote B to needs-human with reason "shared <F> with a
           rolled-back fix"; remove F from B's files_changed and from
           context.files_changed_this_iteration unless another return
