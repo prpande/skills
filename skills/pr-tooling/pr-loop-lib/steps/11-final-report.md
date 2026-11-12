@@ -57,6 +57,11 @@ Internal review summary (local, not on PR):
     - Declared:   <n>
     - Open (needs-human): <n>
     - Nits:       <n> recorded only
+    - Agents:     <n> ran, <n> failed (<names of failed packs, not reviewed>)
+    - Context-map checks: <n> yes, <n> no, <n> not answered
+
+  Declared but risky (settled, consequence reported, not fixed): <n>
+  /simplify skipped points reviewed: <n> (<n> fixed, <n> declared, <n> open)
 
   /code-review max (pre-open, not posted):
     - Status:                     <done | skipped>

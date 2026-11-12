@@ -1,7 +1,7 @@
 # Merge rules
 
 Deduplication and severity-escalation rules applied when merging
-findings from multiple sources (pr-autopilot's pre-open lens agent,
+findings from multiple sources (pr-autopilot's pre-open lens agents,
 `/code-review`, and review comments landing in iter 1).
 
 ## Why this file exists
@@ -104,9 +104,13 @@ before escalation.
 
 ## When to invoke the merge
 
-- **Pre-open (pr-autopilot step 03.5)**: the lens agent and
-  `/code-review` run together, and step 03.5 D merges their lists
-  before one fix round. `/code-review` findings carry no `category`, so
+- **Pre-open (pr-autopilot step 03.5)**: the lens agents and
+  `/code-review` run together. Step 02 first folds the lens agents'
+  own lists into one (its "Merged list" rule: same file, lines within 3,
+  and the same lens id or the same category and failure), and step 03.5
+  D then merges that list with `/code-review`'s and with step 01.5's
+  skipped points before one fix round. A merged finding is declared but
+  risky when any of its sources marked it so. `/code-review` findings carry no `category`, so
   two findings are the same only when they name the same file and either
   their `description_hash` values are equal or their lines are within 3
   of each other and both describe the same failure.

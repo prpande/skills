@@ -26,6 +26,7 @@ Required fields are marked as such.
 | `self_login` | string or null | yes after step 01 | Invoking user's login (from `gh api user --jq .login`) |
 | `uncommitted` | array of strings | default `[]` | `git status --porcelain` paths |
 | `spec_candidates` | array of strings | default `[]` | Globbed spec/plan file paths |
+| `effort_docs` | array of strings | default `[]` | Absolute paths of intent docs kept outside the repo (step 01 "Effort docs"). Read as data by steps 01.7, 02 and 03.5; never edited, staged or aligned against. |
 
 ## Pre-review simplify (step 01.5) output
 
@@ -37,6 +38,7 @@ run `/simplify`).
 |---|---|---|---|
 | `simplify_outcome` | enum or null | default `null` | `committed` \| `folded` \| `no-changes` \| `rolled-back` \| `skipped`. Result of the pre-review `/simplify` pass; `null` when the step has not run (e.g. on `pr-followup`, which never runs it). `committed`: cleanup committed separately and `head_sha` advanced. `folded`: edits left in the tree to be committed by step 03.5 A (uncommitted work overlapped). `skipped`: non-claude-code host or empty range. |
 | `simplify_files` | array of strings | default `[]` | Relative paths `/simplify` touched. On the fold path these are also merged into `uncommitted` so step 03.5 A stages them. |
+| `simplify_skipped` | array of objects | default `[]` | Points `/simplify` saw and did not apply because they change behaviour: `{file, line, summary, reason}`. Step 03.5 D turns each into a candidate finding `simplify-N`. |
 
 ## Context map (step 01.7) output
 
@@ -45,7 +47,9 @@ run `/simplify`).
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `context_map_path` | string or null | default `null` | Path to `<repo-root>/.pr-autopilot/branch-<slug>-context-map.md`. `null` when step 01.7 wrote no usable map. Not renamed at PR create. |
-| `context_map_sources` | array of strings | default `[]` | Sources the context mapper read: `workspace-map`, `api-catalog`, `sibling-repos`, `new-relic`. |
+| `context_map_sources` | array of strings | default `[]` | Sources the context mapper read: `workspace-map`, `api-catalog`, `sibling-repos`, `new-relic`, `effort-docs`. |
+| `context_map_checks` | array of objects | default `[]` | Every check the map raises: `{id, text}`, ids `C1`, `C2`, ... as written in the map. |
+| `context_check_answers` | array of objects | default `[]` | The step 02 context agent's answer to each check: `{id, answer: "yes" \| "no" \| "cannot-tell", evidence, reason}`. One per `context_map_checks` id. A `yes` has a finding with that `check_id`. |
 
 ## Lens review (step 02, launched in step 03.5) and spec alignment output
 
@@ -53,7 +57,8 @@ run `/simplify`).
 |---|---|---|---|
 | `what_was_built` | string or null | no | Inferred intent summary, set by step 01.7 |
 | `preflight_minor_findings` | array of objects | default `[]` | Nit findings (`severity: "minor"`, `category: "style"`, no lens id), recorded in the local review summary and never dispatched. Every other Minor finding is dispatched. |
-| `preflight_passes` | object | default `{}` | `{pass2_raw: [...], merged: [...]}`: the lens agent's findings |
+| `preflight_passes` | object | default `{}` | `{pass2_raw: [...], merged: [...]}`. `pass2_raw`: every lens agent's findings in the fixed agent order, each with `id` (`preflight-N`) and `agent`. `merged`: the same list with cross-agent duplicates folded into the lower id, which lists them in `duplicate_ids`. A finding may carry `declared_risk`, `settled_item` and `check_id`. |
+| `lens_agents` | array of objects | default `[]` | The step 02 agents for this run, in dispatch order: `{name, status: "pending" \| "done" \| "failed"}`. `name` is `context`, `pack:<name>`, `backend` or `universal`. |
 | `spec_updates` | array of objects | default `[]` | Spec file edits made by step 03 |
 | `blocked_drifts` | array of objects | default `[]` | Drifts that caused HALT before PR open |
 | `spec_alignment_notes` | array of strings | default `[]` | Human-readable notes for PR body |
@@ -100,9 +105,10 @@ run `/simplify`).
 | `code_review_status` | enum or null | default `null` | `running` \| `done` \| `skipped`. `running` while step 03.5 waits for the background result; step 04 never starts while it is `running`. |
 | `code_review_raw_output` | string | default `""` | Result text of the host's `code-review` skill, parsed by step 03.5. Never posted. |
 | `code_review_dismissed` | array of objects | default `[]` | Candidates `/code-review` refuted or dropped: `{summary, reason}`. Re-checked by step 03.5's fix-round review. |
-| `fix_round_base_sha` | string (hex) or null | no | HEAD before step 03.5's fix commit; the base of the fix-round review diff. |
+| `fix_round_base_sha` | string (hex) or null | no | HEAD before step 03.5's fix commit; the base of the fix-round review diff. Under `--dry-run`, the id of the snapshot tree taken before the fixers ran. |
+| `fix_round_head_tree` | string (hex) or null | default `null` | `--dry-run` only: the snapshot tree taken after the fixers ran; the head of the fix-round review diff. |
 | `declarations` | array of objects | default `[]` | Decisions kept on purpose, written into commit messages (step 03.5) and the PR body (step 04). Each entry: `{kind: "kept-finding" \| "difference" \| "scope", statement, file?, line?, finding_id?, in_commit}`. `statement` is one present-tense sentence. `in_commit` is the SHA of the commit whose message carries it. |
-| `internal_review_findings` | array of objects | default `[]` | Per-finding audit trail for the local review summary. Each entry: `{source: "preflight" \| "code-review" \| "fix-round", severity, file, line?, description, status: "fixed" \| "fixed-differently" \| "nit" \| "declared" \| "needs-human" \| "duplicate" \| "captured-only" \| "feedback-wrong", fixer_feedback_id?, verifier_judgement?}`. Only `nit` findings are left undispatched. `captured-only` and `feedback-wrong` are legacy values: step 03.5 never writes them, and validation accepts them so `/pr-followup` can load and rewrite state files from older skill versions. |
+| `internal_review_findings` | array of objects | default `[]` | Per-finding audit trail for the local review summary. Each entry: `{source: "preflight" \| "code-review" \| "simplify" \| "fix-round", severity, file, line?, description, status: "fixed" \| "fixed-differently" \| "nit" \| "declared" \| "needs-human" \| "duplicate" \| "captured-only" \| "feedback-wrong", fixer_feedback_id?, verifier_judgement?, declared_risk?, settled_item?}`. `nit` findings, and findings with `declared_risk: true` (status `needs-human`, the settled choice stays the author's call), are the only ones left undispatched. `captured-only` and `feedback-wrong` are legacy values: step 03.5 never writes them, and validation accepts them so `/pr-followup` can load and rewrite state files from older skill versions. |
 | `internal_review_summary_path` | string or null | no | Path to the markdown summary file at `<repo-root>/.pr-autopilot/pr-<PR>-review-summary.md` (or `branch-<slug>-review-summary.md` pre-PR-assignment). Set in step 03.5 when the lens agent returns; renamed by state-protocol at PR-create time alongside the other branch-* files. |
 
 ## Nested schemas

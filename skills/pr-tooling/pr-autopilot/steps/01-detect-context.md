@@ -16,6 +16,7 @@ threaded through the entire skill.
 | `base_sha` | `git merge-base $base HEAD` |
 | `uncommitted` | `git status --porcelain` — list of paths with status codes |
 | `spec_candidates[]` | Glob: `docs/superpowers/specs/*.md`, `docs/superpowers/plans/*.md`, `specs/*/spec.md`, `specs/*/plan.md`, `specs/*/tasks.md`, `docs/specs/*.md`, `docs/plans/*.md` |
+| `effort_docs[]` | Intent docs kept outside the repo; see "Effort docs" below |
 | `repo_root` | `git rev-parse --show-toplevel` |
 | `user_iteration_cap` | From the skill's argument (if any) |
 | `session_id` | UUID generated via uuid/uuidgen/fallback (see state-protocol.md) |
@@ -141,3 +142,37 @@ For each candidate spec file:
 - `keyword_overlap = count(branch_keywords & file_keywords)` — compute from
   file title, H1, H2 headings
 - Rank by `(keyword_overlap desc, mtime_days asc)`
+
+## Effort docs
+
+Design, status and decision docs for an effort often live outside the
+repo, in one folder per effort. They state what the change is meant to
+do, so the reviews need them, but they are never edited, staged or
+committed by this skill, and step 03 does not align against them.
+
+1. Resolve the docs root, first that exists:
+   - `$PR_AUTOPILOT_DOCS_ROOT`
+   - a docs folder the workspace map or the repo's `CLAUDE.md` /
+     `AGENTS.md` names for effort docs
+   - `<drive>/src/.docs`, on the repo's drive and then on each other
+     fixed drive (`C:/src/.docs`, `D:/src/.docs`), and `~/src/.docs`
+   - `$WORKSPACE/.docs`, then `$WORKSPACE/../.docs`, with `$WORKSPACE`
+     resolved as in step 01.7 "Locate the sources"
+
+   No root: `effort_docs = []`, log `effort_docs_resolved {root: null}`.
+2. Pick the effort folder. List only the root's direct children. For
+   each, count the branch keywords, the changed file basenames (without
+   extension) and the route or type names the diff adds that appear in
+   the folder name or in any `.md` under it (`git grep --no-index -l -i`
+   scoped to that one folder, or the host's file search; never a search
+   above the root). Take the folder with the most distinct hits. Zero
+   hits everywhere: `effort_docs = []`. A tie: take every tied folder.
+3. Inside the chosen folder, keep each `.md` that names a changed file,
+   a changed type, or a route the diff touches, plus any `README.md`,
+   `status.md` or `design.md` in the same directory as a kept file. At
+   most 12 files, the most hits first.
+4. Store the absolute paths in `context.effort_docs` and log
+   `effort_docs_resolved {root, folder, files}`.
+
+Steps 01.7, 02 and 03.5 pass these paths to their agents as intent
+documents, to read as data.
