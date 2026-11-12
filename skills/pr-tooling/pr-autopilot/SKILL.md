@@ -55,10 +55,12 @@ Flags supported (parse from the raw invocation string):
   except commits, `gh/az pr create`, push, and thread resolve mutations.
   Print what would happen.
 - `--base <sha>` → use this commit as the diff base instead of the merge
-  base, for backtesting on a PR that is already merged. Accepted only
-  together with `--dry-run`, since a real PR's diff is whatever the
-  platform computes; without `--dry-run`, step 01 HALTs. Stored in
-  `context.base_override`.
+  base, for backtesting on a PR that is already merged. It sets
+  `context.base_sha` for every step of the run. Accepted only together
+  with `--dry-run`, since a real PR's diff is whatever the platform
+  computes; without `--dry-run`, step 01 HALTs. Valid only on a branch
+  that has no PR of its own (create one at the merged PR's opening
+  head). Stored in `context.base_override`.
 - `--no-wait` → skip the **first** wait cycle only (useful when bots
   are known to have already posted). Subsequent iterations still honor
   the 5-minute floor, AND the confirmation iteration that step 08 may
@@ -153,11 +155,10 @@ Phase 5 — Report (and optional UI-deferred approval)
   review stage to save cost.
 - Destructive git ops (reset --hard, clean -fd, push --force) are never
   used by this skill.
-- Rollback, in the pre-open fix round and in steps 04 and 04.5, with or
-  without `--dry-run`, follows the one procedure in
-  `pr-loop-lib/steps/04-dispatch-fixers.md` "Rollback": each file is
-  restored to its unit's base and only files a fixer created are deleted,
-  scoped to the current iteration's modified files.
+- Every rollback, in the pre-open fix round and in the comment loop, with
+  or without `--dry-run`, follows the one procedure in
+  `pr-loop-lib/steps/04-dispatch-fixers.md` "Rollback", against the
+  unit's base tree.
 - Never hard-code `--no-paginate` behavior on `gh api` for list
   endpoints. When fetching PR comments, reviews, or issue comments,
   always use `--paginate` (or the equivalent for the platform).

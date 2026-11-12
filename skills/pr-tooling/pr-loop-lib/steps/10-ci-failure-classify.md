@@ -29,6 +29,16 @@ test|spec|unit|integration
 | Pre-existing main-fail | Same check currently red on `origin/<base>` | Surface to user via final report; do NOT loop |
 | Flake | Check was green on a previous run of the same HEAD SHA with no intervening code change; OR test path is listed in a repo-maintained known-flaky file | `gh run rerun <run-id>`; if still red, reclassify as real test failure |
 
+## Fixer dispatch and verify
+
+Every fixer dispatch in this step uses `subagent_type: "pr-fixer"` and
+`model: "sonnet"`, both passed explicitly (`general-purpose` where
+`pr-fixer` is not installed), after recording a unit base per
+`04-dispatch-fixers.md` "Unit base". The fixer does not build or test, so
+after it returns run `04.5-local-verify.md` on the fixer's `files_changed`
+(passed as the file list) before the commit. A second verify failure rolls
+the fix back per that step and the CI failure is reported as not fixed.
+
 ## Log retrieval
 
 GitHub:

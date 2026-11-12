@@ -20,7 +20,7 @@ Required fields are marked as such.
 | `branch` | string | yes | Current branch |
 | `head_sha` | string (hex) | yes | `git rev-parse HEAD` |
 | `base_sha` | string (hex) | yes | `git merge-base $base HEAD`, or `base_override` when set |
-| `base_override` | string or null | default `null` | A base commit passed with `--base <sha>`; when set, step 01 uses it as `base_sha` instead of the merge base. Valid only with `--dry-run` |
+| `base_override` | string or null | default `null` | A base commit passed with `--base <sha>`; when set, step 01 uses it as `base_sha` instead of the merge base. Valid only with `--dry-run`. Set from this invocation's flag on every run; null when `--base` is absent, also when a state file is loaded |
 | `pr_number` | integer or null | no | Set by step 01 if PR exists, else after step 04 |
 | `pr_url` | string or null | no | PR URL, set after create |
 | `template_path` | string or null | no | Repo's PR-template path, if found |
@@ -87,9 +87,11 @@ run `/simplify`).
 | `consecutive_quiescent_iterations` | integer | default `0` | Incremented on each soft-quiescent iteration (`quiescent-zero-actionable` or `quiescent-no-code-change`). Reset to `0` on any non-quiescent iteration outcome. Read by step 08 to decide between routing back to step 01 (counter == 1) or onward to step 09 (counter >= 2). |
 | `last_quiescence_reason` | enum or null | default `null` | The most recent soft-quiescent reason; one of `quiescent-zero-actionable` \| `quiescent-no-code-change`. Set on each soft-quiescent iteration (in lockstep with `consecutive_quiescent_iterations` increment). Cleared (set to `null`) when the counter resets. Carried for the report and for log readability. |
 | `sanity_check_passed` | object | default `{}` | `{ <iteration>: <bool> }` |
-| `verify_excluded_suites` | array of objects | default `[]` | `{suite, reason}` suites step 04.5 did not run locally |
-| `verify_preexisting_failures` | array of strings | default `[]` | Tests that fail without this iteration's fixes |
-| `unit_bases` | object | default `{}` | Dispatch unit id to `{base, pre_fix_files}`, recorded by step 04 "Unit base"; cleared at the start of each step 04 run |
+| `verify_excluded_suites` | array of objects | default `[]` | `{suite, reason}` suites step 04.5 did not count: left out by "Local suites", or failing the same way without the fixes. Reset by step 03.5 B and after step 11 prints them |
+| `verify_preexisting_failures` | array of strings | default `[]` | Tests that fail the same way on the wave base; same reset |
+| `verify_baseline_tree` | string (tree id) or null | default `null` | The snapshot of the fixed tree that step 04.5 holds while it runs the baseline; non-null at step start means a baseline run was interrupted |
+| `verify_tests_ran` | object | default `{}` | `{ <iteration>: <bool> }`, false when step 04.5 built but ran no test |
+| `unit_bases` | object | default `{}` | `feedback_id` to `{base, unit, order}`, recorded by step 04 "Unit base"; `base` is a snapshot tree id; reset to `{}` when step 04 starts |
 
 ## CI gate
 
@@ -105,7 +107,8 @@ run `/simplify`).
 | `loop_exit_reason` | enum or null | no | `quiescent-confirmed` \| `iteration-cap` \| `runaway-detected`. The two old soft-quiescent values (`quiescent-zero-actionable`, `quiescent-no-code-change`) were removed in 2026-05-06; they no longer cause a loop exit on their own — they are recorded on `last_quiescence_reason` (above) on the first quiescent iteration, and the loop continues. Only the second consecutive quiescent iteration writes `loop_exit_reason = quiescent-confirmed` and exits. State files written by older skill versions may contain the removed values; that is expected — schema validation runs at write time, not on every read. |
 | `termination_reason` | enum or null | no | `ci-green` \| `ci-red` \| `ci-skipped` \| `ci-timeout` \| `ci-reentry-cap` \| `ci-pre-existing-failures` \| `iteration-cap` \| `runaway-detected` \| `user-intervention-needed` |
 | `code_review_invoked` | boolean | default `false` | True after pr-autopilot step 03.5 invokes `/code-review`. Its output is kept locally and never posted. |
-| `code_review_invoked_at` | string (ISO-8601) or null | no | When `/code-review` was dispatched |
+| `code_review_invoked_at` | string (ISO-8601) or null | no | When `/code-review` was dispatched; read by step 03.5's wait to bound it |
+| `code_review_invoked_head` | string (hex) or null | default `null` | `head_sha` the running or last `/code-review` was launched on |
 | `code_review_status` | enum or null | default `null` | `running` \| `done` \| `skipped`. `running` while step 03.5 waits for the background result; step 04 never starts while it is `running`. |
 | `code_review_hints_rejected` | boolean | default `false` | True when step 03.5 B's `/code-review` refused the extra text in its args, so it never saw the settled file; step 03.5 D then tests its findings against the settled items itself. Reset to `false` before each launch. |
 | `code_review_raw_output` | string | default `""` | Result text of the host's `code-review` skill, parsed by step 03.5. Never posted. |

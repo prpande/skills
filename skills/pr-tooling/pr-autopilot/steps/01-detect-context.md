@@ -66,7 +66,18 @@ Run each command; halt with the quoted diagnostic on any failure.
 
 ## Base override
 
+`context.base_override` is set from this invocation's `--base` flag on
+every run, and to null when the flag is absent, also when an existing
+state file is loaded; a stored value never carries into a run that did
+not pass the flag.
+
 `--base <sha>` without `--dry-run`: HALT with "--base is accepted only with --dry-run."
+
+`--base` is for a branch with no PR of its own (a new branch created at
+the PR's opening head). When `gh pr view` finds any PR, open or merged,
+for the current branch and `--base` is set, HALT before any review:
+"--base backtests need a branch with no PR; create one at the PR's
+opening head."
 
 When `context.base_override` is set, `base_sha` is that commit. HALT with
 "--base <sha> is not a commit that is an ancestor of HEAD." unless both pass:
@@ -150,8 +161,12 @@ Otherwise treat as unrelated.
 
 For each candidate spec file:
 - `mtime_days` = days between now and the file's last commit time
-  (`git log -1 --format=%ct -- <file>`); for a file git does not track,
-  or with no commit, the filesystem mtime — keep if ≤ 30
+  (`git log -1 --format=%ct -- <file>`), except that a spec with
+  uncommitted changes (`git status --porcelain -- <file>` prints a line)
+  has age 0; for a file git does not track, or with no commit, the
+  filesystem mtime. Age is measured to now; with `context.base_override`
+  set (a backtest of an older change) it is measured to the commit time
+  of `HEAD` (`git log -1 --format=%ct HEAD`). Keep if ≤ 30
 - `keyword_overlap = count(branch_keywords & file_keywords)` — compute from
   file title, H1, H2 headings
 - Rank by `(keyword_overlap desc, mtime_days asc)`
