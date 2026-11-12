@@ -107,7 +107,8 @@ Under "Internal review summary", the Fixed, Declared, Open, Nits,
 Dedup and /simplify counts come from `context.internal_review_findings`,
 grouped by `source` and `status`; "Agents" from `context.lens_agents`;
 "Context-map checks" from `context.context_check_answers`; and
-"Declared but risky" from entries with `declared_risk: true`. A
+"Declared but risky" from entries with `declared_risk: true` whose
+status is not `duplicate`. A
 declared-but-risky finding is counted in that row only, never in
 "Open (needs-human)". A `/code-review` status of `skipped` names its
 reason (host unmapped, or the dry-run hint refused). The full detail (per-finding file:line, description, fixer/verifier

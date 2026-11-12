@@ -74,11 +74,11 @@ This fold is the only one applied to the lens agents' findings of one
 run; the category key under "Deduplication key" is not applied on top.
 
 1. Two lens findings match when they name the same file, their lines
-   are within 3 of each other (or both are null), and they either cite
-   the same lens id, or share a `category` and describe the same
-   failure, or one carries a `check_id` and both describe the same
-   failure, whatever their categories. Never fold on file and line
-   alone: two lenses can hit one line.
+   are within 3 of each other (or both are null), they describe the
+   same failure, and one of these holds: they cite the same lens id,
+   they share a `category`, or one carries a `check_id`. Never fold on
+   file and line alone, or on a shared lens id alone: two lenses can hit
+   one line, and one lens can flag two fields on adjacent lines.
 2. Findings that match directly or through a chain of matches form one
    group, even when two members of the chain are more than 3 lines
    apart. Each group yields one entry in `merged`.
