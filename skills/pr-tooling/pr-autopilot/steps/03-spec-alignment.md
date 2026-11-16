@@ -47,19 +47,25 @@ For each missing-required drift:
 2. If **all three** criteria are met → auto-implement:
    - Dispatch a fixer subagent (loop lib `04-dispatch-fixers.md` mechanics)
      with the spec excerpt as the directive and the target file path.
-   - Before dispatching, set `context.unit_bases` to `{}` and record a
-     unit base per `04-dispatch-fixers.md` "Unit base" (`order` 1), so
+   - Before dispatching, do what `04-dispatch-fixers.md` "Unit base" says
+     when that step starts (Interrupted baseline, then the resets of
+     `context.unit_bases`, `context.agent_clock` and
+     `context.verify_retries_used`) and record a unit base (`order` 1), so
      `04.5-local-verify.md` has a wave base for its baseline and
      rollback.
    - The fixer does not build or test. After it returns, run
      `04.5-local-verify.md` on the fixer's `files_changed`, passed as the
      file list (the step's skip condition reads that list;
      `context.files_changed_this_iteration` is empty here).
-   - If the build/tests pass, the drift is resolved; add the step's
-     final file list (the fixer's `files_changed` plus every file a
-     04.5 retry subagent changed) to `context.uncommitted` and
-     continue.
-   - If they fail twice, fall back to the diagnostic path (next bullet).
+   - If the build/tests pass and 04.5 rolled back none of the fixer's
+     files, the drift is resolved; add the step's final file list (the
+     fixer's `files_changed` plus every file a 04.5 retry subagent
+     changed) to `context.uncommitted` and continue.
+   - If 04.5 rolled back the fixer's unit (whether or not its re-run then
+     passed) or the fixer timed out, fall back to the diagnostic path
+     (next bullet).
+   - If 04.5 kept the fix but recorded `sanity_check_passed[iteration] =
+     false`, fall back to the diagnostic path (next bullet).
 
 3. Otherwise → write a diagnostic block to `stderr`-equivalent
    (structured output back to the user) and exit the skill cleanly:

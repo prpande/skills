@@ -40,7 +40,8 @@ Comments addressed (<total>):
 Verifier judgements (<total>):
   - addresses:        <n>
   - partial:          <n>  (demoted to needs-human)
-  - not-addresses:    <n>  (rolled back, demoted to needs-human)
+  - not-addresses:    <n>  (rolled back, demoted to needs-human;
+                            <k> of them the verifier timed out, `timed_out: true`)
   - feedback-wrong:   <n>  (rolled back, polite decline reply posted)
 
 Local sanity checks:
@@ -48,6 +49,7 @@ Local sanity checks:
   - build only, no test ran: <N>
   - not run locally: <suite: reason, ...>
   - pre-existing failures (fail without our fixes): <test, ...>
+  - flaky (failed, then passed alone): <test (units touching it), ...>
 
 CI status at termination: <green | red | skipped | timeout>
 <per-check table if red or timeout>
@@ -107,14 +109,15 @@ Audit trail:
 ```
 
 Under "Local sanity checks", "not run locally" comes from
-`context.verify_excluded_suites` and "pre-existing failures" from
-`context.verify_preexisting_failures`; print each line only when its
-field is non-empty. The count "iterations with build + tests green"
+`context.verify_excluded_suites`, "pre-existing failures" from
+`context.verify_preexisting_failures` and "flaky" from
+`context.verify_flaky_tests`; print each line only when its field is
+non-empty. The count "iterations with build + tests green"
 counts only iterations where `context.verify_tests_ran[<iteration>]` is
 true; the "build only, no test ran" line counts those where it is false
 and prints only when that count is above zero. After printing, set
-`context.verify_excluded_suites` and `context.verify_preexisting_failures`
-to `[]`, so a later run on the same state file does not print them again.
+`context.verify_excluded_suites`, `context.verify_preexisting_failures`
+and `context.verify_flaky_tests` to `[]`, so a later run on the same state file does not print them again.
 
 Under "Internal review summary", the Fixed, Declared, Open, Nits,
 Dedup and /simplify counts come from `context.internal_review_findings`,
@@ -189,8 +192,9 @@ list is non-empty:
    `ui-deferred` is not a valid return in the override path.
 3. Run `pr-loop-lib/steps/04.5-local-verify.md` then
    `pr-loop-lib/steps/06-commit-push.md` for the resulting diff. After
-   the 04.5 run and before the push, print the "not run locally" and
-   "pre-existing failures" lines again when that run added to them.
+   the 04.5 run and before the push, print the "not run locally",
+   "pre-existing failures" and "flaky" lines again when that run added
+   to them, then clear the three fields.
 4. Re-enter `pr-loop-lib/steps/07-reply-resolve.md` with the scoped
    `agent_returns` from the re-dispatch. Step 07 handles the
    platform-specific reply + resolve logic uniformly: GitHub inline

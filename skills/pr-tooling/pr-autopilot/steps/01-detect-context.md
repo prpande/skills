@@ -129,8 +129,9 @@ re-initializing. Refresh the lock lease. Log a `skill_start` event
 noting `resumed: true`.
 
 On a run that has not opened its PR (`context.pr_number` is empty),
-set `context.verify_excluded_suites` and
-`context.verify_preexisting_failures` to `[]` after the state is
+set `context.verify_excluded_suites`,
+`context.verify_preexisting_failures` and `context.verify_flaky_tests`
+to `[]` after the state is
 loaded and before step 01.5, the first step that can run a test: a
 state file from an earlier run contributes none, and what steps 01.5
 and 03 record in this run reaches step 03.5 and the report.
