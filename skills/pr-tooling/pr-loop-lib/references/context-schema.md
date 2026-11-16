@@ -89,10 +89,12 @@ run `/simplify`).
 | `sanity_check_passed` | object | default `{}` | `{ <iteration>: <bool> }` |
 | `verify_excluded_suites` | array of objects | default `[]` | `{suite, reason}` suites step 04.5 did not count: left out by "Local suites", or failing the same way without the fixes. Reset by pr-autopilot step 01 on a run with no PR yet and after step 11 prints them |
 | `verify_preexisting_failures` | array of objects | default `[]` | `{test, error}`: tests that fail the same way on the wave base, with the error seen there; same reset |
-| `verify_baseline_files` | array of strings | default `[]` | The file list step 04.5 replaced for the baseline held in `verify_baseline_tree`; written and cleared with it |
-| `verify_baseline_tree` | string (tree id) or null | default `null` | The snapshot of the fixed tree that step 04.5 holds while it runs the baseline; non-null at step start means a baseline run was interrupted |
+| `verify_baseline_files` | array of strings | default `[]` | The files step 04.5 replaced for a baseline or halving round held in `verify_baseline_tree`; written and cleared with it |
+| `verify_baseline_tree` | string (tree id) or null | default `null` | The snapshot of the fixed tree that step 04.5 holds while it runs a baseline or halves the suspects; non-null at step start means such a run was interrupted |
+| `verify_retries_used` | object | default `{build: false, test: false}` | Which kinds have had their one step 04.5 retry; reset when that step starts |
+| `verify_flaky_tests` | array of objects | default `[]` | `{test, units}`: tests step 04.5 "Blame" found flaky, with the units whose files hold the test or the file it covers; same reset as `verify_excluded_suites` |
 | `verify_tests_ran` | object | default `{}` | `{ <iteration>: <bool> }`, false when step 04.5 built but ran no test |
-| `unit_bases` | object | default `{}` | `feedback_id` to `{base, unit, order}`, recorded by step 04 "Unit base"; `base` is a snapshot tree id; reset to `{}` when step 04 starts |
+| `unit_bases` | object | default `{}` | `feedback_id` to `{base, unit, order}`, recorded by step 04 "Unit base"; `base` is a snapshot tree id; reset to `{}` when step 04 starts. Step 04.5's retry subagents add `verify-retry-build` and `verify-retry-test` keys |
 
 ## CI gate
 
@@ -169,9 +171,15 @@ violates this.
   "fixer_verdict_after": "fixed | fixed-differently | replied | not-addressing | needs-human",
   "judgement": "addresses | partial | not-addresses | feedback-wrong",
   "reason": "string",
-  "dispatched_at": "ISO-8601 string"
+  "dispatched_at": "ISO-8601 string",
+  "build_rollback": "boolean, optional",
+  "timed_out": "boolean, optional"
 }
 ```
+
+`build_rollback: true` marks a fix step 04.5 rolled back ("Unit
+rollback"). `timed_out: true` marks a verifier that ran past its time
+limit; its `judgement` is then `not-addresses`.
 
 `fixer_verdict_after` does NOT include `ui-deferred`: verification
 only runs when the fixer originally edited files (verdict `fixed` or

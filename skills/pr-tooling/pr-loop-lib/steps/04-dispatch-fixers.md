@@ -67,6 +67,45 @@ running (fewer when the host's cap is lower):
 
 The step ends when the queue is empty and every return is verified.
 
+### Time limits
+
+A fixer gets 10 minutes from its dispatch and a verifier 3 minutes. The
+`04.5-local-verify.md` retry subagent is a fixer and gets 10. Both
+limits are several times the longest seen in full runs (a fixer 86
+seconds, a verifier 15). The `Agent` tool takes no timeout, so the
+orchestrator enforces them. On a host that runs agents in the
+background (Claude Code):
+
+1. Note each dispatch's agent id (also its task id) and the time it was
+   dispatched, in epoch seconds.
+2. While any of this step's agents runs and nothing can be started, do
+   not end the turn. Run
+   `python "<pr-loop-lib>/scripts/agent_wait.py" --wait 240 <id>=<dispatched_at>+<limit_s> ...`
+   for every running agent, in the foreground with a 300000 ms tool
+   timeout. It returns once an agent has finished (its completion
+   notification arrives with the call's result), once one is past its
+   limit, or after 240 seconds, and prints
+   `{"finished": [...], "overdue": [{id, elapsed_s, limit_s}], "running": [...]}`.
+   Handle what arrived, then call it again for the agents still running.
+3. For each overdue agent: `TaskStop` its id and log
+   `timeout {role, unit, feedback_id, limit_s, elapsed_s}`. A return or
+   notification that still arrives from it is ignored.
+   - **Fixer.** Start no other fixer until this unit is rolled back.
+     Once no other fixer of this step is running, its files are those
+     that differ between its unit base and a snapshot taken now ("Unit
+     base" command), less every file another unit dispatched after its
+     base lists or was dispatched for. Run "Unit rollback" on the unit
+     with the reason "timed out after 10 min"; every item of the unit is
+     `needs-human` with that reason.
+   - **Verifier.** The item's judgement is `not-addresses` with the
+     reason "verifier timed out after 3 min", and its
+     `context.verifier_judgements` entry carries `timed_out: true`. The
+     policy ladder applies to that item alone; other items and units go
+     on.
+
+A host that returns each agent before the next call cannot stop one: no
+limit applies there, and `subagent_dispatch` carries no `timeout_s`.
+
 ## Unit base
 
 Immediately before dispatching a unit, record its base: a **snapshot
@@ -109,9 +148,9 @@ unit's change nor lost in a rollback.
 
 One procedure, used by every rollback in this step, in
 `04.5-local-verify.md` and in pr-autopilot's pre-open fix round, with
-or without `--dry-run`. A caller may put its own rollback in place of
-the verifier-ladder one; pr-watch does (its fix path's "Roll back"
-section). The procedure takes a base tree and a list of normalised
+or without `--dry-run`, and in pr-watch's fix path. The procedure takes
+a base tree, or `HEAD` for a caller that dispatched nothing, and a list
+of normalised
 files ("Agent return handling"). For each file:
 
 1. The base holds it (`git cat-file -e <base>:<file>` succeeds):
@@ -143,15 +182,40 @@ Who calls it with what:
   shares <file> with a fix that stays and was not rolled back". Verify
   every item of a cluster before rolling any of them back, so the
   siblings whose diff stays are known.
-- `04.5-local-verify.md`'s second-failure rollback: every file in
-  that step's file list, against the wave base. One
-  base covers the whole wave, so no order between units matters and
-  files only the retry subagent edited are covered.
-- pr-autopilot's pre-open fix round uses the same two, with or without
+- `04.5-local-verify.md` and "Time limits": "Unit rollback" below,
+  which calls this procedure per file.
+- pr-autopilot's pre-open fix round uses all of them, with or without
   `--dry-run`.
 
-When a rolled-back file also holds another unit's edit, see "Overlap
-re-verify".
+When a verifier-ladder rollback restores a file that also holds another
+unit's edit, see "Overlap re-verify".
+
+## Unit rollback
+
+Rolls back whole dispatch units and keeps every other unit's fix. It
+takes a set of unit ids (the `unit` of `context.unit_bases` entries) and
+a reason. A unit's files are the union of `files_changed` over its
+items' returns, or the files "Time limits" finds for a fixer that timed
+out. The `04.5-local-verify.md` retry subagent is a unit of its own
+(its base is recorded like any unit's) with no items.
+
+1. Close the set. A unit outside it that lists a file F, whose `order`
+   is higher than the lowest `order` among the units in the set that
+   list F, joins the set: restoring F to that earlier base removes its
+   edit too. Repeat until no unit joins. A unit with a lower `order`
+   keeps its edit to F, which is in the later unit's base.
+2. For each file F that a unit in the set lists, run "Rollback" for F
+   against the base of the lowest-`order` unit in the set that lists F.
+3. Every item of a unit in the set becomes `needs-human`. Its reason is
+   the one passed in; for a unit that joined in 1 it is "shared <F>
+   with <unit>, rolled back because: <reason>". Clear its
+   `files_changed`, and remove its files from
+   `context.files_changed_this_iteration` and from a caller's own file
+   list. A return of a unit outside the set never lists such a file
+   (1 put that unit in the set). When the caller is
+   `04.5-local-verify.md`, set `build_rollback: true` on the item's
+   `context.verifier_judgements` entry.
+4. Log `unit_rollback {units, joined, files, reason}` and write state.
 
 ## Dispatch mechanics
 
@@ -188,8 +252,9 @@ For each unit:
    tool with `subagent_type: "pr-fixer"` and `model: "sonnet"`, both
    passed explicitly; an omitted model inherits the session's. Where
    the `pr-fixer` agent type is not installed, use
-   `subagent_type: "general-purpose"` with the same model. The `Agent`
-   tool takes no timeout, so none is passed or logged.
+   `subagent_type: "general-purpose"` with the same model. Its time
+   limit is enforced as "Time limits" says, and its `subagent_dispatch`
+   logs `timeout_s: 600`.
 
 A fixer does not build or test (`references/fixer-prompt.md`).
 `04.5-local-verify.md` verifies once, after every unit has returned and
@@ -284,12 +349,12 @@ For each fixer return where `verdict ∈ {fixed, fixed-differently}`:
    - `{{WORKTREE_ROOT}}` → the worktree root
 5. Log a `subagent_dispatch` event with `role: "fixer-verifier"`,
    `model: "haiku"`, prompt first 200 chars, `feedback_id:
-   <fixer_return.feedback_id>`.
+   <fixer_return.feedback_id>`, `timeout_s: 180`.
 6. Dispatch via the Agent tool with `subagent_type: "fix-verifier"` and
    `model: "haiku"`, both passed explicitly
    (`subagent_type: "general-purpose"` with the same model where the
    `fix-verifier` agent type is not installed). It runs under the
-   "Rolling dispatch" cap.
+   "Rolling dispatch" cap and its "Time limits".
 7. Parse the JSON response. Expected shape:
    `{judgement: "addresses|partial|not-addresses|feedback-wrong", reason: "..."}`
 8. Log a `subagent_return` event + a `verifier_judgement` event with

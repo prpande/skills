@@ -147,11 +147,12 @@ Adapted from `pr-autopilot`'s hard rules:
 - Never commit secrets. Secret scan is BLOCKING before every commit.
 - Destructive git ops (reset --hard, clean -fd, push --force) are never
   used by this skill.
-- Rollback (`pr-watch/steps/04-fix-path.md` section 10) uses
-  `git checkout -- <file>` for tracked files and deletes untracked ones,
-  scoped to the current event's modified files only, and must leave
-  `git status --porcelain` empty for those paths. Ignored files are never
-  deleted.
+- Every rollback follows "Rollback" in
+  `pr-loop-lib/steps/04-dispatch-fixers.md`, against the unit base for
+  one item and the wave base (or `HEAD` when nothing was dispatched)
+  for the whole event (`pr-watch/steps/04-fix-path.md` section 10). It
+  is scoped to the current event's modified files only and must leave
+  each of them matching that base. Ignored files are never deleted.
 - Never hard-code `--no-paginate` behavior on `gh api` for list
   endpoints. When fetching PR comments, reviews, or issue comments,
   always use `--paginate` (or the equivalent for the platform).

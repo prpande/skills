@@ -113,8 +113,11 @@ To skip with a reason:
    - 3b. Update `pr-<N>.json`: `head_sha` = the payload `head`;
      `all_comments` and `actionable` = the dispatch set's records;
      `agent_returns`, `verifier_judgements`,
-     `files_changed_this_iteration`, `needs_human_items` = `[]`. Place it
-     the same way.
+     `files_changed_this_iteration`, `needs_human_items`,
+     `verify_preexisting_failures`, `verify_flaky_tests` = `[]`;
+     `unit_bases` = `{}`. Leave `verify_baseline_tree` and
+     `verify_baseline_files` as they are: local verify reads them to undo
+     an interrupted baseline. Place it the same way.
 4. Append a `subagent_dispatch` log event per
    `pr-loop-lib/references/log-format.md`.
 
@@ -147,10 +150,12 @@ Run `pr-loop-lib/steps/04-dispatch-fixers.md` as written, except:
   paths under it. Run no git command, whatever the prompt above says
   about `git -C`; check b uses the PR diff stat above."
 - A `ui-deferred` return is demoted to `needs-human` with its reason.
-- A `partial` or `not-addresses` verifier judgement rolls the fixer's
-  `files_changed` back with section 10, in place of the library's own
-  `git checkout`; `pr-watch` never pushes a partial fix. The attempted
-  change goes into the escalation text.
+- `pr-watch` never pushes a partial fix: a `partial` judgement is
+  handled as `not-addresses`, so its files are rolled back and it does
+  not count as a sibling whose diff stays. The library's "Rollback",
+  its cluster rule and "Overlap re-verify" apply as written, against
+  the item's unit base. The attempted change goes into the escalation
+  text.
 
 Then run `pr-loop-lib/steps/04.5-local-verify.md` as written, unless a
 return carries `suspicious: true`. Local verify builds and runs whatever
@@ -471,18 +476,21 @@ lock.
 ## 10. Roll back
 
 The caller names the files to roll back, as paths relative to
-`<worktree>`.
+`<worktree>`. Every caller here undoes everything the event did to
+them, so the base is the wave base (the `unit_bases` entry with
+`order` 1) when this event dispatched a fixer, and `HEAD` when it
+dispatched none (the formatter): section 1's gate proved the worktree
+clean before either. A single item's rollback inside section 3 uses the
+library's own procedure against its unit base, not this section.
 
-1. For each path, `git -C <worktree> ls-files --error-unmatch -- <path>`.
-   Exit 0: the path is tracked. Any other exit: when
-   `git -C <worktree> check-ignore -q -- <path>` exits non-zero, delete
-   the file; when it exits 0 (an ignored file git cannot restore), leave
-   it and escalate ("needs you, no comment", reason "rollback cannot
-   restore ignored file <path>").
-2. When any path is tracked, `git -C <worktree> checkout -- <tracked paths>`
-   as one command.
-3. `git -C <worktree> status --porcelain -- <the rolled-back paths>` must
-   print nothing. If it prints anything, escalate ("needs you, no
+1. Run "Rollback" of `pr-loop-lib/steps/04-dispatch-fixers.md` for each
+   path against the base, with `{{WORKTREE_ROOT}}` = `<worktree>`. A path
+   it leaves in place (an ignored file, or a tracked file the base does
+   not hold): escalate ("needs you, no comment", reason "rollback cannot
+   restore <path>").
+2. Check every other path: `git -C <worktree> diff --quiet <base> --
+   <path>` exits 0 for a path the base holds, and a path it does not
+   hold no longer exists. If any fails, escalate ("needs you, no
    comment", reason "rollback left changes in the worktree") and go to
    section 9. Changes to other paths are not this rollback's.
 
