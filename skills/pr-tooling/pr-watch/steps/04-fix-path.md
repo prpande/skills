@@ -49,8 +49,13 @@ git -C <worktree> branch --show-current
 - The branch is not this PR's recorded `branch` in `watch.json`: stop
   and escalate ("needs you, no comment", reason "worktree checked out
   a different branch than the PR").
-- `status --porcelain` prints anything: the user is working there. Skip
-  with reason "uncommitted changes in the worktree" and stop.
+- `status --porcelain` prints anything and `verify_baseline_tree` in
+  `pr-<N>.json` is null (or the file is absent): the user is working
+  there. Skip with reason "uncommitted changes in the worktree" and stop.
+  When `verify_baseline_tree` is non-null, an earlier pass was
+  interrupted mid-verify and the dirty tree may be its own: do not skip
+  here; section 2 step 3b recovers it under the lock and then checks the
+  tree again.
 - `HEAD` differs from the payload's `head`:
   - `git -C <worktree> merge-base --is-ancestor HEAD <head>` succeeds
     (local is behind): `git -C <worktree> merge --ff-only <head>` and
@@ -116,7 +121,12 @@ To skip with a reason:
      `pr-loop-lib/steps/04.5-local-verify.md` with `{{WORKTREE_ROOT}}` =
      `<worktree>`, then roll the files it restored back with section 10
      against `HEAD`, so no earlier pass's content stands in the tree.
-     Then update `pr-<N>.json`: `head_sha` = the payload `head`;
+     Only those files are touched; other changes stay. When
+     `git -C <worktree> status --porcelain` then still prints anything,
+     the rest is the user's work: skip with reason "uncommitted changes
+     in the worktree" (section 1), release the lock with section 9, and
+     stop; the marker is cleared on a later pass that finds a clean tree.
+     Otherwise update `pr-<N>.json`: `head_sha` = the payload `head`;
      `all_comments` and `actionable` = the dispatch set's records;
      `agent_returns`, `verifier_judgements`,
      `files_changed_this_iteration`, `needs_human_items`,

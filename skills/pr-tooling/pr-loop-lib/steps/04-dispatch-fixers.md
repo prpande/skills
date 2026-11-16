@@ -138,7 +138,11 @@ background (Claude Code):
      by then, take that snapshot anyway and treat it the same way, and
      add "could not stop the fixer; it may still edit files" to the
      reason of the unit's items, which stay `needs-human`, whether or
-     not a file differs. Go on.
+     not a file differs. The agent may still be writing, so run no
+     `04.5-local-verify.md`, staging or commit in this worktree: set
+     `context.termination_reason` to `user-intervention-needed`, end the
+     loop, and have the final report name the fixer that could not be
+     stopped.
    - **Verifier.** The item's judgement is `not-addresses` with the
      reason "verifier timed out after 3 min", and its
      `context.verifier_judgements` entry carries `timed_out: true`. The
@@ -183,10 +187,15 @@ gets an entry with the same `base`, `unit`, `order`, `dispatched_at` and
 run of the step. On a host with no clocks `dispatched_at` and
 `returned_at` stay `null`. When this step starts, run "Interrupted
 baseline" of `04.5-local-verify.md` first, then roll the files it
-restored back against `HEAD` with "Rollback", as pr-watch does, so no
-earlier run's content is in a unit base. Under `--dry-run` the tree
-holds the user's uncommitted work that `HEAD` lacks: roll nothing back,
-leave those files and log `interrupted_content_kept {files}`. Then set `context.unit_bases` to `{}`,
+restored back with "Rollback" against the interrupted run's wave base
+(the `order` 1 entry of `context.unit_bases`, read before the reset
+below), so no earlier run's content is in a unit base. Never use `HEAD`
+for this: the tree may hold the user's uncommitted work that `HEAD`
+lacks (under `--dry-run`, or in pr-autopilot before its first commit).
+When no wave base is saved, roll nothing back, leave those files, log
+`interrupted_content_kept {files}`, and halt with "an interrupted local
+verify left files no saved base can undo: <files>"; dispatch nothing.
+Otherwise set `context.unit_bases` to `{}`,
 `context.agent_clock` to `{}` and `context.verify_retries_used` to
 `{build: false, test: false}`. The **wave base** is
 the `base` with `order` 1.
@@ -271,9 +280,12 @@ them as its files here.
 2. For each file F that a unit in the set lists, run "Rollback" for F
    against the base of the lowest-`order` unit in the set that lists F.
 3. Every item of a unit in the set whose return is `fixed` or
-   `fixed-differently`, or that has no return (a timed-out fixer),
-   becomes `needs-human` and is added to `context.needs_human_items`
-   as "`needs-human` handling" does. An item whose return is `replied`,
+   `fixed-differently`, or is `needs-human` with a non-empty
+   `files_changed` (a verifier `partial` keeps its diff), or that has no
+   return (a timed-out fixer), becomes `needs-human` and is added to
+   `context.needs_human_items` as "`needs-human` handling" does; a
+   return already `needs-human` keeps its reason and gets the reason
+   below appended. An item whose return is `replied`,
    `not-addressing` or `ui-deferred` lists no file and keeps its return.
    The reason is the one passed in, followed by any "could not undo the
    edit to <file>" that "Rollback" added; for a unit that joined in 1 it
