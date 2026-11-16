@@ -55,11 +55,13 @@ For each missing-required drift:
      `04.5-local-verify.md` on the fixer's `files_changed`, passed as the
      file list (the step's skip condition reads that list;
      `context.files_changed_this_iteration` is empty here).
-   - If the build/tests pass, the drift is resolved; add the step's
-     final file list (the fixer's `files_changed` plus every file a
-     04.5 retry subagent changed) to `context.uncommitted` and
-     continue.
-   - If they fail twice, fall back to the diagnostic path (next bullet).
+   - If the build/tests pass and 04.5 rolled back none of the fixer's
+     files, the drift is resolved; add the step's final file list (the
+     fixer's `files_changed` plus every file a 04.5 retry subagent
+     changed) to `context.uncommitted` and continue.
+   - If 04.5 rolled back the fixer's unit (whether or not its re-run then
+     passed) or the fixer timed out, fall back to the diagnostic path
+     (next bullet).
 
 3. Otherwise → write a diagnostic block to `stderr`-equivalent
    (structured output back to the user) and exit the skill cleanly:

@@ -36,13 +36,15 @@ Every fixer dispatch in this step uses `subagent_type: "pr-fixer"` and
 `pr-fixer` is not installed), after setting `context.unit_bases` to `{}`
 (entries left by the comment loop's last step 04 run are for commits
 already made) and recording a unit base per `04-dispatch-fixers.md`
-"Unit base" with `order` 1. The fixer does not build or test, so after
-it returns run `04.5-local-verify.md` on the fixer's `files_changed`
-(passed as the file list) before the commit, and pass the tests that
-failed in CI as the target tests: 04.5 never sets a target test aside
-as failing before the fix, so a fix that leaves one failing is not
-accepted. A second verify failure rolls the fix back per that step and
-the CI failure is reported as not fixed.
+"Unit base" with `order` 1, and runs under the "Time limits" of
+"Rolling dispatch" in that step. The fixer does not build or test, so
+after it returns run `04.5-local-verify.md` on the fixer's
+`files_changed` (passed as the file list) before the commit, and pass
+the tests that failed in CI as the target tests: 04.5 never sets a
+target test aside as failing before the fix, so a fix that leaves one
+failing is not accepted. When 04.5 rolled back the fixer's unit, or the
+fixer timed out, or a target test still fails, the CI failure is
+reported as not fixed.
 
 ## Log retrieval
 

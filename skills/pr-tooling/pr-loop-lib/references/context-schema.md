@@ -91,10 +91,10 @@ run `/simplify`).
 | `verify_preexisting_failures` | array of objects | default `[]` | `{test, error}`: tests that fail the same way on the wave base, with the error seen there; same reset |
 | `verify_baseline_files` | array of strings | default `[]` | The files step 04.5 replaced for a baseline or halving round held in `verify_baseline_tree`; written and cleared with it |
 | `verify_baseline_tree` | string (tree id) or null | default `null` | The snapshot of the fixed tree that step 04.5 holds while it runs a baseline or halves the suspects; non-null at step start means such a run was interrupted |
-| `verify_retries_used` | object | default `{build: false, test: false}` | Which kinds have had their one step 04.5 retry; reset when that step starts |
+| `verify_retries_used` | object | default `{build: false, test: false}` | Which kinds have had their one step 04.5 retry; kept across a resume of that step, reset when it ends |
 | `verify_flaky_tests` | array of objects | default `[]` | `{test, units}`: tests step 04.5 "Blame" found flaky, with the units whose files hold the test or the file it covers; same reset as `verify_excluded_suites` |
 | `verify_tests_ran` | object | default `{}` | `{ <iteration>: <bool> }`, false when step 04.5 built but ran no test |
-| `unit_bases` | object | default `{}` | `feedback_id` to `{base, unit, order}`, recorded by step 04 "Unit base"; `base` is a snapshot tree id; reset to `{}` when step 04 starts. Step 04.5's retry subagents add `verify-retry-build` and `verify-retry-test` keys |
+| `unit_bases` | object | default `{}` | `feedback_id` to `{base, unit, order}`, recorded by step 04 "Unit base"; `base` is a snapshot tree id; reset to `{}` when step 04 starts. Step 04.5's retry subagents add `verify-retry-build` and `verify-retry-test` keys, each with a `files` list once the retry returns |
 
 ## CI gate
 
@@ -177,9 +177,10 @@ violates this.
 }
 ```
 
-`build_rollback: true` marks a fix step 04.5 rolled back ("Unit
-rollback"). `timed_out: true` marks a verifier that ran past its time
-limit; its `judgement` is then `not-addresses`.
+`build_rollback: true` marks a fix a unit rollback discarded ("Unit
+rollback" in step 04, called by step 04 or 04.5). `timed_out: true` marks a verifier that ran past its time
+limit; its `judgement` is then `not-addresses`, and step 11 counts those
+apart from real not-addresses judgements.
 
 `fixer_verdict_after` does NOT include `ui-deferred`: verification
 only runs when the fixer originally edited files (verdict `fixed` or

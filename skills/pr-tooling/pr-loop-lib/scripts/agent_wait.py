@@ -3,26 +3,34 @@
 Usage: python agent_wait.py [--wait SECONDS] [--session ID] [--projects DIR]
        AGENT_ID=DISPATCHED_AT+LIMIT_S ...
 
-Prints one JSON object {"finished": [...], "overdue": [...], "running": [...]}
-and exits 0 as soon as any agent has finished or is over its limit, or once
---wait seconds have passed. Exit 2 on bad arguments.
+Prints one JSON object {"finished": [...], "overdue": [...], "running": [...],
+"no_transcript": [...]} and exits 0 as soon as any agent has finished or is
+over its limit, or once --wait seconds have passed. "no_transcript" lists the
+unfinished agents whose transcript file was never found; their running or
+overdue state then rests on the time limit alone. Exit 2 on bad arguments,
+including a dispatch time more than a minute in the future (milliseconds, say).
 """
 
 import argparse
 import glob
 import json
+import math
 import os
 import sys
 import time
 
 POLL_SECONDS = 5
+FUTURE_TOLERANCE_S = 60
 
 
 def parse_agent(spec):
     try:
         agent_id, rest = spec.split("=", 1)
         dispatched_at, limit_s = rest.split("+", 1)
-        return agent_id.strip(), float(dispatched_at), float(limit_s)
+        dispatched_at, limit_s = float(dispatched_at), float(limit_s)
+        if not (math.isfinite(dispatched_at) and math.isfinite(limit_s)):
+            raise ValueError("non-finite")
+        return agent_id.strip(), dispatched_at, limit_s
     except ValueError:
         raise argparse.ArgumentTypeError(f"expected AGENT_ID=DISPATCHED_AT+LIMIT_S, got {spec!r}")
 
@@ -57,28 +65,33 @@ def is_finished(transcript):
     meta_path = transcript[: -len(".jsonl")] + ".meta.json"
     try:
         with open(meta_path, encoding="utf-8") as f:
-            if json.load(f).get("finished") is True:
-                return True
-    except (OSError, json.JSONDecodeError):
+            meta = json.load(f)
+        if isinstance(meta, dict) and meta.get("finished") is True:
+            return True
+    except (OSError, ValueError):
         pass
     try:
         record = last_record(transcript)
     except OSError:
         return False
-    if not record or record.get("type") != "assistant":
+    if not isinstance(record, dict) or record.get("type") != "assistant":
         return False
-    return (record.get("message") or {}).get("stop_reason") == "end_turn"
+    message = record.get("message")
+    return isinstance(message, dict) and message.get("stop_reason") == "end_turn"
 
 
 def classify(agents, projects_dir, session_id, now, transcripts):
-    result = {"finished": [], "overdue": [], "running": []}
+    result = {"finished": [], "overdue": [], "running": [], "no_transcript": []}
     for agent_id, dispatched_at, limit_s in agents:
         transcript = transcripts.get(agent_id) or find_transcript(projects_dir, session_id, agent_id)
         if transcript:
             transcripts[agent_id] = transcript
         if transcript and is_finished(transcript):
             result["finished"].append(agent_id)
-        elif now - dispatched_at > limit_s:
+            continue
+        if not transcript:
+            result["no_transcript"].append(agent_id)
+        if now - dispatched_at > limit_s:
             result["overdue"].append({"id": agent_id, "elapsed_s": int(now - dispatched_at),
                                       "limit_s": int(limit_s)})
         else:
@@ -95,13 +108,20 @@ def main(argv=None, clock=time.time, sleep=time.sleep):
     args = parser.parse_args(argv)
     if not args.session:
         parser.error("no session id: pass --session or set CLAUDE_CODE_SESSION_ID")
+    if not args.wait >= 0:
+        parser.error("--wait must be a number of seconds, 0 or more")
 
     started = clock()
+    for agent_id, dispatched_at, _ in args.agents:
+        if dispatched_at > started + FUTURE_TOLERANCE_S:
+            parser.error(f"{agent_id}: dispatch time {dispatched_at:.0f} is in the future; pass epoch seconds")
     transcripts = {}
     while True:
         now = clock()
         result = classify(args.agents, args.projects, args.session, now, transcripts)
         if result["finished"] or result["overdue"] or now - started >= args.wait:
+            if result["no_transcript"]:
+                print("no transcript found for: " + ", ".join(result["no_transcript"]), file=sys.stderr)
             print(json.dumps(result))
             return 0
         sleep(POLL_SECONDS)

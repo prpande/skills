@@ -110,14 +110,20 @@ To skip with a reason:
      reason to refresh. Compose it in the scratchpad and place it with
      `state_put.py` (`pr-watch/references/watch-state-schema.md`,
      "Writing"): the Write tool refuses an other-repo worktree.
-   - 3b. Update `pr-<N>.json`: `head_sha` = the payload `head`;
+   - 3b. A non-null `verify_baseline_tree` in `pr-<N>.json` is an earlier
+     pass's interrupted baseline. Before anything is dispatched or a unit
+     base is recorded, run "Interrupted baseline" of
+     `pr-loop-lib/steps/04.5-local-verify.md` with `{{WORKTREE_ROOT}}` =
+     `<worktree>`, then roll the files it restored back with section 10
+     against `HEAD`, so no earlier pass's content stands in the tree.
+     Then update `pr-<N>.json`: `head_sha` = the payload `head`;
      `all_comments` and `actionable` = the dispatch set's records;
      `agent_returns`, `verifier_judgements`,
      `files_changed_this_iteration`, `needs_human_items`,
-     `verify_preexisting_failures`, `verify_flaky_tests` = `[]`;
-     `unit_bases` = `{}`. Leave `verify_baseline_tree` and
-     `verify_baseline_files` as they are: local verify reads them to undo
-     an interrupted baseline. Place it the same way.
+     `verify_excluded_suites`, `verify_preexisting_failures`,
+     `verify_flaky_tests` = `[]`;
+     `unit_bases` = `{}`; `verify_baseline_tree` = `null` and
+     `verify_baseline_files` = `[]`. Place it the same way.
 4. Append a `subagent_dispatch` log event per
    `pr-loop-lib/references/log-format.md`.
 
@@ -155,7 +161,11 @@ Run `pr-loop-lib/steps/04-dispatch-fixers.md` as written, except:
   not count as a sibling whose diff stays. The library's "Rollback",
   its cluster rule and "Overlap re-verify" apply as written, against
   the item's unit base. The attempted change goes into the escalation
-  text.
+  text. A file that a partial item shares with a sibling whose diff
+  stays is not left to the sibling: restore it against the unit base,
+  roll back the sibling's other files the same way, and set the sibling
+  `needs-human` with reason "its edit shares <file> with a partial fix
+  that was rolled back".
 
 Then run `pr-loop-lib/steps/04.5-local-verify.md` as written, unless a
 return carries `suspicious: true`. Local verify builds and runs whatever
@@ -175,6 +185,12 @@ the return's `files_changed`, then section 9.
 
 ## 4. Sort the returns
 
+When local verify recorded `sanity_check_passed[<iteration>] = false`,
+it could not check the build, and no return goes to section 5: roll back
+every surviving `fixed` or `fixed-differently` return's files with
+section 10, set the return `needs-human` with the reasons in
+`needs_human_items`, and sort it as below.
+
 - `fixed`, `fixed-differently` that survived verification: to section 5.
 - `replied`, `not-addressing`: reply only (section 7). If the thread's
   last comment is the user's own and the verdict is `replied` or
@@ -191,14 +207,16 @@ No returns in section 5: go to section 7, then section 9.
 1. `git -C <worktree> add -- <files_changed of the surviving returns>`.
 2. Secret scan the staged diff (`git -C <worktree> diff --cached`) with the rules in
    `pr-loop-lib/references/secret-scan-rules.md`. A hit: unstage
-   (`git -C <worktree> restore --staged -- <files>`), roll the files back with
+   (`git -C <worktree> restore --staged -- <file>`, one file at a time so
+   a path git refuses, such as an ignored file, leaves no other file
+   staged), roll the files back with
    section 10, escalate ("needs you, no comment", reason "secret scan
    hit"), go to section 9.
 
    Under `dry_run`, once the diff is staged and clear of the secret
    scan: write `git -C <worktree> diff --cached` to
    `<scratchpad>/pr-watch-dry-run/<owner>-<repo>-<N>.md`, then
-   `git -C <worktree> restore --staged -- <files>` and roll the files back with
+   unstage the files the same way and roll them back with
    section 10 to leave the worktree as it was.
    Go to section 7 (which writes to the same dry-run file instead of
    posting) and then section 9. Steps 3 to 6 below never run under
@@ -293,7 +311,10 @@ No returns in section 5: go to section 7, then section 9.
 4. Record `last_pushed_head` (`git -C <worktree> rev-parse HEAD`) in the
    progress file, and `last_push_sha` and `last_push_timestamp` in
    `pr-<N>.json` (placed with `state_put.py`).
-5. Post "Pushed <sha7>: <what changed>." in the PR thread.
+5. Post "Pushed <sha7>: <what changed>." in the PR thread. When
+   `verify_preexisting_failures` or `verify_flaky_tests` is not empty,
+   add one sentence naming each test: "<test> fails on the base too" or
+   "<test> is flaky".
 6. Release the push lock when this section or the drain's scan took it:
    one foreground `python` loop, run with a timeout of at least 180000
    ms, reads
@@ -479,8 +500,8 @@ The caller names the files to roll back, as paths relative to
 `<worktree>`. Every caller here undoes everything the event did to
 them, so the base is the wave base (the `unit_bases` entry with
 `order` 1) when this event dispatched a fixer, and `HEAD` when it
-dispatched none (the formatter): section 1's gate proved the worktree
-clean before either. A single item's rollback inside section 3 uses the
+dispatched none (the formatter) or has not yet (section 2 step 3b):
+section 1's gate proved the worktree clean before any of them. A single item's rollback inside section 3 uses the
 library's own procedure against its unit base, not this section.
 
 1. Run "Rollback" of `pr-loop-lib/steps/04-dispatch-fixers.md` for each
@@ -488,9 +509,9 @@ library's own procedure against its unit base, not this section.
    it leaves in place (an ignored file, or a tracked file the base does
    not hold): escalate ("needs you, no comment", reason "rollback cannot
    restore <path>").
-2. Check every other path: `git -C <worktree> diff --quiet <base> --
-   <path>` exits 0 for a path the base holds, and a path it does not
-   hold no longer exists. If any fails, escalate ("needs you, no
+2. Check every other path: `git -C <worktree> status --porcelain --
+   <path>` prints nothing, which also shows a change still staged in the
+   index. If any prints a line, escalate ("needs you, no
    comment", reason "rollback left changes in the worktree") and go to
    section 9. Changes to other paths are not this rollback's.
 

@@ -76,27 +76,42 @@ seconds, a verifier 15). The `Agent` tool takes no timeout, so the
 orchestrator enforces them. On a host that runs agents in the
 background (Claude Code):
 
-1. Note each dispatch's agent id (also its task id) and the time it was
-   dispatched, in epoch seconds.
+1. Right after each dispatch, read the clock with
+   `python -c "import time; print(int(time.time()))"` (UTC epoch seconds,
+   whatever the shell's time zone) and note it with the agent's id (also
+   its task id) in `context`. Read it again for every dispatch; never
+   reuse one reading for a later agent.
 2. While any of this step's agents runs and nothing can be started, do
    not end the turn. Run
-   `python "<pr-loop-lib>/scripts/agent_wait.py" --wait 240 <id>=<dispatched_at>+<limit_s> ...`
+   `python "$HOME/.claude/skills/pr-loop-lib/scripts/agent_wait.py" --wait 170 <id>=<dispatched_at>+<limit_s> ...`
    for every running agent, in the foreground with a 300000 ms tool
-   timeout. It returns once an agent has finished (its completion
-   notification arrives with the call's result), once one is past its
-   limit, or after 240 seconds, and prints
-   `{"finished": [...], "overdue": [{id, elapsed_s, limit_s}], "running": [...]}`.
+   timeout. Keep `--wait` under 180: a longer foreground call is moved
+   to the background by the host and returns no JSON inline. It returns
+   once an agent has finished (its completion notification arrives with
+   the call's result), once one is past its limit, or after 170 seconds,
+   and prints
+   `{"finished": [...], "overdue": [{id, elapsed_s, limit_s}], "running": [...], "no_transcript": [...]}`.
    Handle what arrived, then call it again for the agents still running.
+   An agent in `no_transcript` has no transcript the script could read,
+   so its `running` or `overdue` state rests on the clock alone: treat it
+   as overdue only when `overdue` lists it. The host's completion
+   notification for an agent wins over a later `overdue` from the script:
+   an agent that has notified is finished, never stopped or rolled back
+   for time.
 3. For each overdue agent: `TaskStop` its id and log
-   `timeout {role, unit, feedback_id, limit_s, elapsed_s}`. A return or
-   notification that still arrives from it is ignored.
+   `timeout {role, unit, feedback_id?, limit_s, elapsed_s}`. A denied or
+   failed `TaskStop` does not hold up the rollback or judgement below.
+   A return or notification that still arrives from it is ignored.
    - **Fixer.** Start no other fixer until this unit is rolled back.
      Once no other fixer of this step is running, its files are those
      that differ between its unit base and a snapshot taken now ("Unit
-     base" command), less every file another unit dispatched after its
-     base lists or was dispatched for. Run "Unit rollback" on the unit
-     with the reason "timed out after 10 min"; every item of the unit is
-     `needs-human` with that reason.
+     base" command), less every file any other unit lists in a return
+     or was dispatched for, whatever its order. Run "Unit rollback" on
+     the unit with the reason "timed out after 10 min". Then add to
+     `context.agent_returns` for each item of the unit a return with
+     verdict `needs-human`, that reason, `files_changed` `[]` and a
+     `reply_text` saying the fixer timed out and no change was kept; the
+     item is in `context.needs_human_items`.
    - **Verifier.** The item's judgement is `not-addresses` with the
      reason "verifier timed out after 3 min", and its
      `context.verifier_judgements` entry carries `timed_out: true`. The
@@ -184,6 +199,11 @@ Who calls it with what:
   siblings whose diff stays are known.
 - `04.5-local-verify.md` and "Time limits": "Unit rollback" below,
   which calls this procedure per file.
+- `04.5-local-verify.md` rule 3b: a direct, temporary Rollback of the
+  files it names.
+- pr-watch's fix path, section 10
+  (`skills/pr-tooling/pr-watch/steps/04-fix-path.md`), against the wave
+  base, or `HEAD` when nothing was dispatched.
 - pr-autopilot's pre-open fix round uses all of them, with or without
   `--dry-run`.
 
@@ -197,24 +217,30 @@ takes a set of unit ids (the `unit` of `context.unit_bases` entries) and
 a reason. A unit's files are the union of `files_changed` over its
 items' returns, or the files "Time limits" finds for a fixer that timed
 out. The `04.5-local-verify.md` retry subagent is a unit of its own
-(its base is recorded like any unit's) with no items.
+(its base is recorded like any unit's) with no items; when it returns,
+store its files as `files` on its `context.unit_bases` entry, and read
+them as its files here.
 
-1. Close the set. A unit outside it that lists a file F, whose `order`
-   is higher than the lowest `order` among the units in the set that
-   list F, joins the set: restoring F to that earlier base removes its
-   edit too. Repeat until no unit joins. A unit with a lower `order`
-   keeps its edit to F, which is in the later unit's base.
+1. Close the set. A unit outside it that lists a file F (a retry unit
+   by its `files`) joins the set
+   unless it returned before the lowest-`order` unit in the set that
+   lists F was dispatched: restoring F to that unit's base keeps only
+   the edits that base already holds. Repeat until no unit joins.
 2. For each file F that a unit in the set lists, run "Rollback" for F
    against the base of the lowest-`order` unit in the set that lists F.
-3. Every item of a unit in the set becomes `needs-human`. Its reason is
-   the one passed in; for a unit that joined in 1 it is "shared <F>
-   with <unit>, rolled back because: <reason>". Clear its
-   `files_changed`, and remove its files from
+3. Every item of a unit in the set whose return is `fixed` or
+   `fixed-differently`, or that has no return (a timed-out fixer),
+   becomes `needs-human` and is added to `context.needs_human_items`
+   as "`needs-human` handling" does. An item whose return is `replied`,
+   `not-addressing` or `ui-deferred` lists no file and keeps its return.
+   The reason is the one passed in, followed by any "could not undo the
+   edit to <file>" that "Rollback" added; for a unit that joined in 1 it
+   is "shared <F> with <unit>, rolled back because: <reason>", followed
+   the same way. Clear its `files_changed`, and remove from
    `context.files_changed_this_iteration` and from a caller's own file
-   list. A return of a unit outside the set never lists such a file
-   (1 put that unit in the set). When the caller is
-   `04.5-local-verify.md`, set `build_rollback: true` on the item's
-   `context.verifier_judgements` entry.
+   list only the files no unit outside the set still lists (a retry unit
+   by its `files`). Set `build_rollback: true` on the item's
+   `context.verifier_judgements` entry, when it has one.
 4. Log `unit_rollback {units, joined, files, reason}` and write state.
 
 ## Dispatch mechanics

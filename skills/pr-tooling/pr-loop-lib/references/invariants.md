@@ -97,7 +97,7 @@ equivalent predicates live in `P02.*`.
 |---|---|
 | S045.1 | If `files_changed_this_iteration` is non-empty, `sanity_check_passed[iteration]` is set (true or false) — absence is a bug |
 | S045.2 | No file of a unit step 04.5 rolled back is in `files_changed_this_iteration`, and every file of a unit it kept still is |
-| S045.3 | For every unit step 04.5 rolled back (`unit_rollback` events of this run), each of its items' `verifier_judgements` entries carries `build_rollback: true`, and no entry of a kept unit does. This prevents step 11's final report from presenting a stale `addresses` verifier verdict for a fixer whose changes were discarded by local verify. "Unit rollback" in `04-dispatch-fixers.md` sets it. |
+| S045.3 | For every unit a `unit_rollback` event of this run rolled back (called by step 04 or 04.5), each of its items' `verifier_judgements` entries carries `build_rollback: true`, and no entry of a kept unit does; every item of such a unit that became `needs-human` is in `context.needs_human_items`. This prevents step 11's final report from presenting a stale `addresses` verifier verdict for a fixer whose changes were discarded, or omitting the discarded fix from "Needs your input". "Unit rollback" in `04-dispatch-fixers.md` sets it. |
 
 ### Step 06 — commit-push
 

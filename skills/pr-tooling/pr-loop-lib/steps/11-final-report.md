@@ -40,7 +40,8 @@ Comments addressed (<total>):
 Verifier judgements (<total>):
   - addresses:        <n>
   - partial:          <n>  (demoted to needs-human)
-  - not-addresses:    <n>  (rolled back, demoted to needs-human)
+  - not-addresses:    <n>  (rolled back, demoted to needs-human;
+                            <k> of them the verifier timed out, `timed_out: true`)
   - feedback-wrong:   <n>  (rolled back, polite decline reply posted)
 
 Local sanity checks:
@@ -191,8 +192,9 @@ list is non-empty:
    `ui-deferred` is not a valid return in the override path.
 3. Run `pr-loop-lib/steps/04.5-local-verify.md` then
    `pr-loop-lib/steps/06-commit-push.md` for the resulting diff. After
-   the 04.5 run and before the push, print the "not run locally" and
-   "pre-existing failures" lines again when that run added to them.
+   the 04.5 run and before the push, print the "not run locally",
+   "pre-existing failures" and "flaky" lines again when that run added
+   to them, then clear the three fields.
 4. Re-enter `pr-loop-lib/steps/07-reply-resolve.md` with the scoped
    `agent_returns` from the re-dispatch. Step 07 handles the
    platform-specific reply + resolve logic uniformly: GitHub inline
