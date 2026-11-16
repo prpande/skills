@@ -200,8 +200,12 @@ lacks (under `--dry-run`, or in pr-autopilot before its first commit).
 When "Interrupted baseline" restored files and no wave base is saved,
 roll nothing back, leave those files, log
 `interrupted_content_kept {files}`, and halt with "an interrupted local
-verify left files no saved base can undo: <files>"; dispatch nothing.
-When it restored no files, there is nothing to roll back: continue. Set `context.unit_bases` to `{}`,
+verify left files no saved base can undo: <files>"; dispatch nothing, and
+clear the marker as below, since nothing more can be undone.
+When it restored no files, there is nothing to roll back: continue. Once that rollback has succeeded, or
+nothing was restored, or that halt applies, set `context.verify_baseline_tree` to null and
+`context.verify_baseline_files` to `[]`; until then both stay persisted.
+Set `context.unit_bases` to `{}`,
 `context.agent_clock` to `{}` and `context.verify_retries_used` to
 `{build: false, test: false}`. The **wave base** is
 the `base` with `order` 1.
