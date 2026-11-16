@@ -78,9 +78,13 @@ background (Claude Code):
 
 1. Right after each dispatch, read the clock with
    `python -c "import time; print(int(time.time()))"` (UTC epoch seconds,
-   whatever the shell's time zone) and note it with the agent's id (also
-   its task id) in `context`. Read it again for every dispatch; never
-   reuse one reading for a later agent.
+   whatever the shell's time zone). Read it again for every dispatch;
+   never reuse one reading for a later agent. For a fixer, store it as
+   `dispatched_at` on every `context.unit_bases` entry of its unit; for a
+   verifier, as `context.agent_clock[<agent id>]` (the agent id is also
+   its task id). Read the clock again when a fixer's return is accepted
+   or the fixer is rolled back for time, and store it as `returned_at`
+   on the same entries.
 2. While any of this step's agents runs and nothing can be started, do
    not end the turn. Run
    `python "$HOME/.claude/skills/pr-loop-lib/scripts/agent_wait.py" --wait 170 <id>=<dispatched_at>+<limit_s> ...`
@@ -105,13 +109,29 @@ background (Claude Code):
    - **Fixer.** Start no other fixer until this unit is rolled back.
      Once no other fixer of this step is running, its files are those
      that differ between its unit base and a snapshot taken now ("Unit
-     base" command), less every file any other unit lists in a return
-     or was dispatched for, whatever its order. Run "Unit rollback" on
+     base" command), less every file listed by another unit that ran
+     alongside it: one dispatched after this unit's base was recorded,
+     or one that returned after this unit's `dispatched_at`, in a
+     return or as the files it was dispatched for. A unit that returned
+     before this unit's `dispatched_at` ran apart from it and its files
+     are not subtracted: the unit's base already holds its edits. For
+     the `04.5-local-verify.md` retry subagent nothing is subtracted, as
+     no other fixer runs while it does. Run "Unit rollback" on
      the unit with the reason "timed out after 10 min". Then add to
      `context.agent_returns` for each item of the unit a return with
      verdict `needs-human`, that reason, `files_changed` `[]` and a
      `reply_text` saying the fixer timed out and no change was kept; the
      item is in `context.needs_human_items`.
+
+     When `TaskStop` was denied or failed, the agent may still be
+     running and may write more files. Take a snapshot right after the
+     rollback. Wait for the agent's completion notification before this
+     step ends and before `04.5-local-verify.md` starts. Then take a
+     snapshot and compare it with the one after the rollback: every
+     file that differs is a leftover edit. Run
+     "Rollback" on those files against the unit's base and set the
+     unit's items to `needs-human` with "edited after the rollback" in
+     the reason. A return that arrives from it is still ignored.
    - **Verifier.** The item's judgement is `not-addresses` with the
      reason "verifier timed out after 3 min", and its
      `context.verifier_judgements` entry carries `timed_out: true`. The
@@ -146,12 +166,17 @@ items `needs-human` with reason "could not record a base", and log
 `error {stage: "unit-base"}`. Never fall back to `HEAD`.
 
 Store in `context.unit_bases` one entry per item, keyed by the item's
-`feedback_id`: `{base, unit, order}`. `unit` is the unit's id: the
+`feedback_id`: `{base, unit, order, dispatched_at, returned_at}`. `dispatched_at` and
+`returned_at` are UTC epoch seconds ("Time limits"); `returned_at` is
+`null` until the unit returns. `unit` is the unit's id: the
 item's own `feedback_id` for a single item, and for a cluster
 `cluster-<feedback_id of its first item>`; every member of a cluster
-gets an entry with the same `base`, `unit` and `order`. `order` is the
-1-based dispatch sequence number in this run of the step. Set
-`context.unit_bases` to `{}` when this step starts. The **wave base** is
+gets an entry with the same `base`, `unit`, `order`, `dispatched_at` and
+`returned_at`. `order` is the 1-based dispatch sequence number in this
+run of the step. When this step starts, run "Interrupted baseline" of
+`04.5-local-verify.md` first, then set `context.unit_bases` to `{}`,
+`context.agent_clock` to `{}` and `context.verify_retries_used` to
+`{build: false, test: false}`. The **wave base** is
 the `base` with `order` 1.
 
 The base is what the unit's diff and its rollback are measured against,
@@ -223,9 +248,10 @@ them as its files here.
 
 1. Close the set. A unit outside it that lists a file F (a retry unit
    by its `files`) joins the set
-   unless it returned before the lowest-`order` unit in the set that
-   lists F was dispatched: restoring F to that unit's base keeps only
-   the edits that base already holds. Repeat until no unit joins.
+   unless its `returned_at` is earlier than the `dispatched_at` of the
+   lowest-`order` unit in the set that lists F: restoring F to that
+   unit's base keeps only the edits that base already holds. A unit
+   with no `returned_at` joins. Repeat until no unit joins.
 2. For each file F that a unit in the set lists, run "Rollback" for F
    against the base of the lowest-`order` unit in the set that lists F.
 3. Every item of a unit in the set whose return is `fixed` or

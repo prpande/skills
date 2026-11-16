@@ -42,9 +42,10 @@ after it returns run `04.5-local-verify.md` on the fixer's
 `files_changed` (passed as the file list) before the commit, and pass
 the tests that failed in CI as the target tests: 04.5 never sets a
 target test aside as failing before the fix, so a fix that leaves one
-failing is not accepted. When 04.5 rolled back the fixer's unit, or the
-fixer timed out, or a target test still fails, the CI failure is
-reported as not fixed.
+failing is not accepted: 04.5 rolls the fixer's unit back. When 04.5
+rolled back the fixer's unit, or the fixer timed out, or a target test
+still fails, the fix is not committed and the CI failure is reported as
+not fixed.
 
 ## Log retrieval
 

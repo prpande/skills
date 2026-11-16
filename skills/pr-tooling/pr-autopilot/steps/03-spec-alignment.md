@@ -62,6 +62,8 @@ For each missing-required drift:
    - If 04.5 rolled back the fixer's unit (whether or not its re-run then
      passed) or the fixer timed out, fall back to the diagnostic path
      (next bullet).
+   - If 04.5 kept the fix but recorded `sanity_check_passed[iteration] =
+     false`, fall back to the diagnostic path (next bullet).
 
 3. Otherwise → write a diagnostic block to `stderr`-equivalent
    (structured output back to the user) and exit the skill cleanly:

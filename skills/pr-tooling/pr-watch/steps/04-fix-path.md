@@ -187,9 +187,11 @@ the return's `files_changed`, then section 9.
 
 When local verify recorded `sanity_check_passed[<iteration>] = false`,
 it could not check the build, and no return goes to section 5: roll back
-every surviving `fixed` or `fixed-differently` return's files with
-section 10, set the return `needs-human` with the reasons in
-`needs_human_items`, and sort it as below.
+with section 10 every path `git -C <worktree> status --porcelain` and
+`git -C <worktree> ls-files --others --exclude-standard` name, which
+includes the files a 04.5 retry changed that no return lists, set each
+surviving `fixed` or `fixed-differently` return `needs-human` with the
+reasons in `needs_human_items`, and sort it as below.
 
 - `fixed`, `fixed-differently` that survived verification: to section 5.
 - `replied`, `not-addressing`: reply only (section 7). If the thread's
