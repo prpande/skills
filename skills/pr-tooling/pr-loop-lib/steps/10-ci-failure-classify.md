@@ -33,10 +33,12 @@ test|spec|unit|integration
 
 Every fixer dispatch in this step uses `subagent_type: "pr-fixer"` and
 `model: "sonnet"`, both passed explicitly (`general-purpose` where
-`pr-fixer` is not installed), after setting `context.unit_bases` to `{}`
-(entries left by the comment loop's last step 04 run are for commits
-already made) and recording a unit base per `04-dispatch-fixers.md`
-"Unit base" with `order` 1, and runs under the "Time limits" of
+`pr-fixer` is not installed), after doing what `04-dispatch-fixers.md`
+"Unit base" says when that step starts (Interrupted baseline, then the
+resets of `context.unit_bases`, `context.agent_clock` and
+`context.verify_retries_used`; entries left by the comment loop's last
+step 04 run are for commits already made) and recording a unit base
+with `order` 1, and runs under the "Time limits" of
 "Rolling dispatch" in that step. The fixer does not build or test, so
 after it returns run `04.5-local-verify.md` on the fixer's
 `files_changed` (passed as the file list) before the commit, and pass

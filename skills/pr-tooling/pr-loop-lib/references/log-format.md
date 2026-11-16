@@ -87,6 +87,7 @@ Rules:
 | `verify_suites_excluded` | `{suites: [{suite, reason}]}` — step 04.5 left suites out or set failures aside. |
 | `verify_baseline` | `{failing_before, failing_after_baseline, tree}` — step 04.5 ran the failing tests on the wave base. |
 | `verify_flaky` | `{tests: [{test, units}]}` — step 04.5 "Blame" step 1: these failing tests passed when re-run alone; nothing was rolled back for them. |
+| `interrupted_content_kept` | `{files}` — step 04 start under `--dry-run`: files "Interrupted baseline" restored and left in place, since `HEAD` lacks the user's uncommitted work. No step reads it; it is audit trail for diagnosis. |
 | `verify_bisect` | `{round, suspects, cleared, result}` — step 04.5 "Blame" step 4: one halving round; `suspects` and `cleared` are unit ids, `result` is `pass` or `fail`. No step reads it; it is audit trail for diagnosis. |
 | `unit_rollback` | `{units, joined, files, reason}` — step 04 "Unit rollback": the units rolled back, the ones that joined because they shared a file, the files restored, and why. |
 | `timeout` | `{role, unit, feedback_id?, limit_s, elapsed_s}` — step 04 "Time limits": a fixer (`role: "fixer"`, the 04.5 retry included) or verifier (`role: "fixer-verifier"`) ran past its limit and was stopped. `unit` is the dispatch unit's id; for a 04.5 retry, which has no items and no `feedback_id`, it is the `verify-retry-<kind>` key. No step reads it; it is audit trail for diagnosis. |

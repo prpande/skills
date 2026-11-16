@@ -122,7 +122,8 @@ To skip with a reason:
      `files_changed_this_iteration`, `needs_human_items`,
      `verify_excluded_suites`, `verify_preexisting_failures`,
      `verify_flaky_tests` = `[]`;
-     `unit_bases` = `{}`; `verify_baseline_tree` = `null` and
+     `unit_bases` = `{}`; `agent_clock` = `{}`; `verify_retries_used` =
+     `{build: false, test: false}`; `verify_baseline_tree` = `null` and
      `verify_baseline_files` = `[]`. Place it the same way.
 4. Append a `subagent_dispatch` log event per
    `pr-loop-lib/references/log-format.md`.

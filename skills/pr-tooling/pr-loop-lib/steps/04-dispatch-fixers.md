@@ -125,13 +125,20 @@ background (Claude Code):
 
      When `TaskStop` was denied or failed, the agent may still be
      running and may write more files. Take a snapshot right after the
-     rollback. Wait for the agent's completion notification before this
-     step ends and before `04.5-local-verify.md` starts. Then take a
-     snapshot and compare it with the one after the rollback: every
-     file that differs is a leftover edit. Run
+     rollback. Wait for the agent's completion notification, at most
+     one more fixer limit (10 minutes, read the clock again and wait as
+     in 2 with `<id>=<now>+600`), before this step ends and before
+     `04.5-local-verify.md` starts. Then take a snapshot and compare it
+     with the one after the rollback: every file that differs is a
+     leftover edit. Run
      "Rollback" on those files against the unit's base and set the
      unit's items to `needs-human` with "edited after the rollback" in
-     the reason. A return that arrives from it is still ignored.
+     the reason. A return that arrives from it is still ignored; the
+     notification only ends the wait. When the agent has not notified
+     by then, take that snapshot anyway and treat it the same way, and
+     add "could not stop the fixer; it may still edit files" to the
+     reason of the unit's items, which stay `needs-human`, whether or
+     not a file differs. Go on.
    - **Verifier.** The item's judgement is `not-addresses` with the
      reason "verifier timed out after 3 min", and its
      `context.verifier_judgements` entry carries `timed_out: true`. The
@@ -173,8 +180,13 @@ item's own `feedback_id` for a single item, and for a cluster
 `cluster-<feedback_id of its first item>`; every member of a cluster
 gets an entry with the same `base`, `unit`, `order`, `dispatched_at` and
 `returned_at`. `order` is the 1-based dispatch sequence number in this
-run of the step. When this step starts, run "Interrupted baseline" of
-`04.5-local-verify.md` first, then set `context.unit_bases` to `{}`,
+run of the step. On a host with no clocks `dispatched_at` and
+`returned_at` stay `null`. When this step starts, run "Interrupted
+baseline" of `04.5-local-verify.md` first, then roll the files it
+restored back against `HEAD` with "Rollback", as pr-watch does, so no
+earlier run's content is in a unit base. Under `--dry-run` the tree
+holds the user's uncommitted work that `HEAD` lacks: roll nothing back,
+leave those files and log `interrupted_content_kept {files}`. Then set `context.unit_bases` to `{}`,
 `context.agent_clock` to `{}` and `context.verify_retries_used` to
 `{build: false, test: false}`. The **wave base** is
 the `base` with `order` 1.
@@ -251,7 +263,11 @@ them as its files here.
    unless its `returned_at` is earlier than the `dispatched_at` of the
    lowest-`order` unit in the set that lists F: restoring F to that
    unit's base keeps only the edits that base already holds. A unit
-   with no `returned_at` joins. Repeat until no unit joins.
+   with no `returned_at` joins. Where the entries carry no clocks (a
+   host that returns each agent before the next call), a unit ran
+   apart from the others: one of lower `order` than that lowest-`order`
+   unit is exempt, one of higher `order` joins. Repeat until no unit
+   joins.
 2. For each file F that a unit in the set lists, run "Rollback" for F
    against the base of the lowest-`order` unit in the set that lists F.
 3. Every item of a unit in the set whose return is `fixed` or
