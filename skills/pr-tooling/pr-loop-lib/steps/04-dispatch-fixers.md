@@ -111,17 +111,15 @@ background (Claude Code):
    failed `TaskStop` does not hold up the rollback or judgement below.
    A return or notification that still arrives from it is ignored.
    - **Fixer.** Start no other fixer until this unit is rolled back.
-     Once no other fixer of this step is running, its files are those
-     that differ between its unit base and a snapshot taken now ("Unit
-     base" command), less every file listed by another unit that ran
-     alongside it: one dispatched after this unit's base was recorded,
-     or one not in this unit's `returned_before`, in a
-     return or as the files it was dispatched for. A unit in this unit's
-     `returned_before` ran apart from it and its files
-     are not subtracted: the unit's base already holds its edits. For
-     the `04.5-local-verify.md` retry subagent nothing is subtracted, as
-     no other fixer runs while it does. Run "Unit rollback" on
-     the unit with the reason "timed out after 10 min". Then add to
+     Once no other fixer of this step is running, its files are every
+     file that differs between its unit base and a snapshot taken now
+     ("Unit base" command). An edit it made to a file that a unit
+     running alongside it also lists cannot be told from that unit's
+     own, so "Unit rollback" step 1 rolls every such unit back with it;
+     a unit in this unit's `returned_before` ran apart from it and is
+     exempt, since the unit's base already holds its edits. Run "Unit
+     rollback" on the unit with the reason "timed out after 10 min".
+     Then add to
      `context.agent_returns` for each item of the unit a return with
      verdict `needs-human`, that reason, `files_changed` `[]` and a
      `reply_text` saying the fixer timed out and no change was kept; the
