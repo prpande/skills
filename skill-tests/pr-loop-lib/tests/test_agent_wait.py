@@ -64,6 +64,19 @@ class AgentWaitTests(unittest.TestCase):
         _, result, _ = self.run_wait("a1=990+600")
         self.assertEqual(result["finished"], ["a1"])
 
+    def test_only_the_last_record_decides(self):
+        done = {"type": "assistant", "message": {"stop_reason": "end_turn", "content": []}}
+        self.write_agent("a1", [done, {"type": "user"}])
+        _, result, _ = self.run_wait("a1=990+600", wait=6)
+        self.assertEqual(result["running"], ["a1"])
+
+    def test_large_transcript_reads_last_record(self):
+        filler = {"type": "user", "pad": "x" * 1000}
+        done = {"type": "assistant", "message": {"stop_reason": "end_turn", "content": []}}
+        self.write_agent("a1", [filler] * 600 + [done])
+        _, result, _ = self.run_wait("a1=990+600")
+        self.assertEqual(result["finished"], ["a1"])
+
     def test_tool_use_turn_is_still_running(self):
         self.write_agent("a1", [{"type": "assistant", "message": {"stop_reason": "tool_use",
                                                                    "content": [{"type": "tool_use"}]}}])

@@ -254,7 +254,7 @@ For each unit:
    the `pr-fixer` agent type is not installed, use
    `subagent_type: "general-purpose"` with the same model. Its time
    limit is enforced as "Time limits" says, and its `subagent_dispatch`
-   logs `timeout_s: 600`.
+   logs that limit in seconds as `timeout_s`.
 
 A fixer does not build or test (`references/fixer-prompt.md`).
 `04.5-local-verify.md` verifies once, after every unit has returned and
@@ -349,7 +349,8 @@ For each fixer return where `verdict ∈ {fixed, fixed-differently}`:
    - `{{WORKTREE_ROOT}}` → the worktree root
 5. Log a `subagent_dispatch` event with `role: "fixer-verifier"`,
    `model: "haiku"`, prompt first 200 chars, `feedback_id:
-   <fixer_return.feedback_id>`, `timeout_s: 180`.
+   <fixer_return.feedback_id>`, and `timeout_s`, the verifier limit
+   of "Time limits" in seconds.
 6. Dispatch via the Agent tool with `subagent_type: "fix-verifier"` and
    `model: "haiku"`, both passed explicitly
    (`subagent_type: "general-purpose"` with the same model where the

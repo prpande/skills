@@ -34,18 +34,23 @@ def find_transcript(projects_dir, session_id, agent_id):
     return matches[0] if matches else None
 
 
+TAIL_BYTES = 256 * 1024
+
+
 def last_record(path):
-    last = None
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                last = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-    return last
+    with open(path, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        f.seek(max(0, f.tell() - TAIL_BYTES))
+        tail = f.read().decode("utf-8", errors="replace")
+    for line in reversed(tail.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            return json.loads(line)
+        except json.JSONDecodeError:
+            continue
+    return None
 
 
 def is_finished(transcript):
@@ -62,17 +67,15 @@ def is_finished(transcript):
         return False
     if not record or record.get("type") != "assistant":
         return False
-    message = record.get("message") or {}
-    if message.get("stop_reason") != "end_turn":
-        return False
-    content = message.get("content") or []
-    return not any(isinstance(part, dict) and part.get("type") == "tool_use" for part in content)
+    return (record.get("message") or {}).get("stop_reason") == "end_turn"
 
 
-def classify(agents, projects_dir, session_id, now):
+def classify(agents, projects_dir, session_id, now, transcripts):
     result = {"finished": [], "overdue": [], "running": []}
     for agent_id, dispatched_at, limit_s in agents:
-        transcript = find_transcript(projects_dir, session_id, agent_id)
+        transcript = transcripts.get(agent_id) or find_transcript(projects_dir, session_id, agent_id)
+        if transcript:
+            transcripts[agent_id] = transcript
         if transcript and is_finished(transcript):
             result["finished"].append(agent_id)
         elif now - dispatched_at > limit_s:
@@ -94,9 +97,10 @@ def main(argv=None, clock=time.time, sleep=time.sleep):
         parser.error("no session id: pass --session or set CLAUDE_CODE_SESSION_ID")
 
     started = clock()
+    transcripts = {}
     while True:
         now = clock()
-        result = classify(args.agents, args.projects, args.session, now)
+        result = classify(args.agents, args.projects, args.session, now, transcripts)
         if result["finished"] or result["overdue"] or now - started >= args.wait:
             print(json.dumps(result))
             return 0
