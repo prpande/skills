@@ -296,12 +296,19 @@ them as its files here.
    The reason is the one passed in, followed by any "could not undo the
    edit to <file>" that "Rollback" added; for a unit that joined in 1 it
    is "shared <F> with <unit>, rolled back because: <reason>", followed
-   the same way. Clear its `files_changed`, and remove from
+   the same way. Replace its `reply_text` with a note that the attempted
+   fix was discarded, followed by that reason, so no earlier success
+   text is posted. Clear its `files_changed`, and remove from
    `context.files_changed_this_iteration` and from a caller's own file
    list only the files no unit outside the set still lists (a retry unit
    by its `files`). Set `build_rollback: true` on the item's
    `context.verifier_judgements` entry, when it has one.
-4. Log `unit_rollback {units, joined, files, reason}` and write state.
+   A retry unit in the set has no items, so do this for it directly:
+   remove its files from the same lists on the same condition, then set
+   its `files` to `[]`, so a later rollback cannot use it as a unit that
+   lists those files.
+4. Log `unit_rollback {units, joined, files, reason}`, `files` being
+   those step 2 rolled back, and write state.
 
 ## Dispatch mechanics
 
