@@ -89,7 +89,11 @@ background (Claude Code):
    not end the turn. Run
    `python "$HOME/.claude/skills/pr-loop-lib/scripts/agent_wait.py" --wait 170 <id>=<dispatched_at>+<limit_s> ...`
    for every running agent, in the foreground with a 300000 ms tool
-   timeout. Keep `--wait` under 180: a longer foreground call is moved
+   timeout. When `CLAUDE_CODE_SESSION_ID` is unset, add
+   `--session <context.session_id>`: the script exits 2 without a session
+   id, and that generated id matches no host transcript, so every agent
+   lands in `no_transcript` and only completion notifications and the
+   clock apply. Keep `--wait` under 180: a longer foreground call is moved
    to the background by the host and returns no JSON inline. It returns
    once an agent has finished (its completion notification arrives with
    the call's result), once one is past its limit, or after 170 seconds,
@@ -111,9 +115,9 @@ background (Claude Code):
      that differ between its unit base and a snapshot taken now ("Unit
      base" command), less every file listed by another unit that ran
      alongside it: one dispatched after this unit's base was recorded,
-     or one that returned after this unit's `dispatched_at`, in a
-     return or as the files it was dispatched for. A unit that returned
-     before this unit's `dispatched_at` ran apart from it and its files
+     or one not in this unit's `returned_before`, in a
+     return or as the files it was dispatched for. A unit in this unit's
+     `returned_before` ran apart from it and its files
      are not subtracted: the unit's base already holds its edits. For
      the `04.5-local-verify.md` retry subagent nothing is subtracted, as
      no other fixer runs while it does. Run "Unit rollback" on
@@ -177,13 +181,16 @@ items `needs-human` with reason "could not record a base", and log
 `error {stage: "unit-base"}`. Never fall back to `HEAD`.
 
 Store in `context.unit_bases` one entry per item, keyed by the item's
-`feedback_id`: `{base, unit, order, dispatched_at, returned_at}`. `dispatched_at` and
+`feedback_id`: `{base, unit, order, dispatched_at, returned_at, returned_before}`. `dispatched_at` and
 `returned_at` are UTC epoch seconds ("Time limits"); `returned_at` is
-`null` until the unit returns. `unit` is the unit's id: the
+`null` until the unit returns. `returned_before` lists the ids of the
+units whose return had been accepted when this unit's base was recorded;
+it orders units that share a clock reading, and a unit that has not
+returned by then is not in it. `unit` is the unit's id: the
 item's own `feedback_id` for a single item, and for a cluster
 `cluster-<feedback_id of its first item>`; every member of a cluster
-gets an entry with the same `base`, `unit`, `order`, `dispatched_at` and
-`returned_at`. `order` is the 1-based dispatch sequence number in this
+gets an entry with the same `base`, `unit`, `order`, `dispatched_at`,
+`returned_at` and `returned_before`. `order` is the 1-based dispatch sequence number in this
 run of the step. On a host with no clocks `dispatched_at` and
 `returned_at` stay `null`. When this step starts, run "Interrupted
 baseline" of `04.5-local-verify.md` first, then roll the files it
@@ -192,10 +199,11 @@ restored back with "Rollback" against the interrupted run's wave base
 below), so no earlier run's content is in a unit base. Never use `HEAD`
 for this: the tree may hold the user's uncommitted work that `HEAD`
 lacks (under `--dry-run`, or in pr-autopilot before its first commit).
-When no wave base is saved, roll nothing back, leave those files, log
+When "Interrupted baseline" restored files and no wave base is saved,
+roll nothing back, leave those files, log
 `interrupted_content_kept {files}`, and halt with "an interrupted local
 verify left files no saved base can undo: <files>"; dispatch nothing.
-Otherwise set `context.unit_bases` to `{}`,
+When it restored no files, there is nothing to roll back: continue. Set `context.unit_bases` to `{}`,
 `context.agent_clock` to `{}` and `context.verify_retries_used` to
 `{build: false, test: false}`. The **wave base** is
 the `base` with `order` 1.
@@ -269,14 +277,10 @@ them as its files here.
 
 1. Close the set. A unit outside it that lists a file F (a retry unit
    by its `files`) joins the set
-   unless its `returned_at` is earlier than the `dispatched_at` of the
-   lowest-`order` unit in the set that lists F: restoring F to that
-   unit's base keeps only the edits that base already holds. A unit
-   with no `returned_at` joins. Where the entries carry no clocks (a
-   host that returns each agent before the next call), a unit ran
-   apart from the others: one of lower `order` than that lowest-`order`
-   unit is exempt, one of higher `order` joins. Repeat until no unit
-   joins.
+   unless its unit id is in the `returned_before` of the lowest-`order`
+   unit in the set that lists F: restoring F to that unit's base keeps
+   only the edits that base already holds. Any other unit joins, one
+   with no `returned_at` included. Repeat until no unit joins.
 2. For each file F that a unit in the set lists, run "Rollback" for F
    against the base of the lowest-`order` unit in the set that lists F.
 3. Every item of a unit in the set whose return is `fixed` or
