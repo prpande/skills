@@ -69,13 +69,18 @@ explicitly). With neither the register nor the tier installed, only
    `subagent_dispatch`. `/code-review` is already
    running; never wait for it before a dispatch and never cancel it for
    one. A spawn refused by the agent cap (the reason starts `agent cap:`)
-   is not a failure of the agent: wait per "Agent-cap wait" of
+   is not a failure of the agent. While any lens agent is running, put
+   the spawn back at the front of the queue, handle completions and the
+   30-minute deadlines, and try it again when the next agent returns.
+   Only when no lens agent is running, wait per "Agent-cap wait" of
    `pr-loop-lib/steps/04-dispatch-fixers.md`, then make the same spawn
    again, and never do a lens agent's work in this session because of a
    refusal. A refusal that follows a `free` answer counts toward 3
-   attempts, and the third is handled like `gave-up`, `agent_cap_degraded` entry included. On `gave-up`, set the agent's `status` to
-   `failed` and name the agent cap in the "Agents" line. This holds for
-   the context-map re-ask in "Context-map checks" too.
+   attempts, and the third is handled like `gave-up`, `agent_cap_degraded`
+   entry included. On `gave-up`, set the agent's `status` to `failed` and
+   name the agent cap in the "Agents" line. The context-map re-ask in
+   "Context-map checks" waits the same way, but its `gave-up` leaves the
+   `context` agent's `status` as it is: the re-ask returns no answers.
 6. Parse each JSON reply, log `subagent_return`, set the agent's
    `status` to `done`, and append its findings to
    `context.preflight_passes.pass2_raw` in the fixed agent order, each
