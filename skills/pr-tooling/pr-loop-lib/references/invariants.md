@@ -68,7 +68,8 @@ equivalent predicates live in `P02.*`.
 | S02.2 | `context.preflight_passes.merged` is set, and the ids in its `id` and `duplicate_ids` fields are exactly the ids of `pass2_raw`, each once |
 | S02.3 | Every `severity` in `pass2_raw` findings is one of `critical`/`important`/`minor` (lowercase) |
 | S02.4 | No `context.lens_agents[]` entry has status `pending`: each is `done` or `failed` |
-| S02.5 | The ids in `context.context_check_answers` are exactly the ids in `context.context_map_checks`, and every `yes` answer has a `pass2_raw` finding with that `check_id` |
+| S02.5 | The ids in `context.context_check_answers` are exactly the ids in `context.context_map_checks`, and every `yes` answer has a `pass2_raw` finding with that `check_id` or a `flipped_by` naming a `merged` id |
+| S02.6 | Every `no` answer in `context.context_check_answers` has an `evidence` holding two `<file>:<line>` citations, one of a file in the diff |
 
 ### Step 03 — triage
 
@@ -148,6 +149,8 @@ equivalent predicates live in `P02.*`.
 | S35.5 | No `context.internal_review_findings` entry with `declared_risk: true` and a status other than `duplicate` has a `fixer_feedback_id`; each has status `needs-human` or `duplicate` and appears under "Declared but risky" in the review summary. |
 | S35.6 | Every `context.simplify_skipped` entry has a `context.internal_review_findings` entry with `source: "simplify"`. |
 | S35.7 | Every `context.lens_agents[]` entry with status `failed` is named in the review summary's "Agents" line. |
+| S35.8 | The ids in `context.dismissed_checks` are exactly the ids in `context.code_review_dismissed`, each once, and every `wrong` entry has a `context.internal_review_findings` entry whose `dismissed_id` is its id. |
+| S35.9 | Every `context.context_check_answers` entry with `flipped_by` set has answer `yes`, and `flipped_by` names a `context.preflight_passes.merged` id or a `/code-review` finding id (`code-review:finding-<N>`). |
 
 ### Step 04g — self-post guard (pr-autopilot)
 

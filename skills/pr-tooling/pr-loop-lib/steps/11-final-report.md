@@ -63,7 +63,7 @@ Internal review summary (local, not on PR):
     - Open (needs-human): <n>
     - Nits:       <n> recorded only
     - Agents:     <n> ran, <n> failed (<names of failed packs, not reviewed>)
-    - Context-map checks: <n> yes, <n> no, <n> not answered
+    - Context-map checks: <n> yes (<n> flipped), <n> no, <n> not answered
 
   Declared but risky (settled, consequence reported, not fixed): <n>
   /simplify skipped points reviewed: <n> (<n> fixed, <n> declared, <n> open)
@@ -76,6 +76,7 @@ Internal review summary (local, not on PR):
     - Declared:                   <n>
     - Open (needs-human):         <n>
     - Checked and dismissed:      <n> (listed in the summary file)
+    - Dismissed, re-checked:      <n> upheld, <n> wrong, <n> cannot tell, <n> not checked
 
   Fix-round review: <n> rounds, <n> findings, <n> fixed
                     (or "did not run: <context.fix_round_skipped_reason>")
@@ -122,7 +123,9 @@ and `context.verify_flaky_tests` to `[]`, so a later run on the same state file 
 Under "Internal review summary", the Fixed, Declared, Open, Nits,
 Dedup and /simplify counts come from `context.internal_review_findings`,
 grouped by `source` and `status`; "Agents" from `context.lens_agents`;
-"Context-map checks" from `context.context_check_answers`; and
+"Context-map checks" from `context.context_check_answers`, "flipped"
+counting those with `flipped_by` set; "Dismissed, re-checked" from
+`context.dismissed_checks` by `verdict`; and
 "Declared but risky" from entries with `declared_risk: true` whose
 status is not `duplicate`. A
 declared-but-risky finding is counted in that row only, never in
