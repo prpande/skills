@@ -79,6 +79,8 @@ Internal review summary (local, not on PR):
 
   Fix-round review: <n> rounds, <n> findings, <n> fixed
                     (or "did not run: <context.fix_round_skipped_reason>")
+  Degraded by the agent cap: <for each context.agent_cap_degraded entry: what, detail>
+                             (or "no")
   Shipped-text check: <n> claims corrected
   Declarations in commits and PR body: <n>
 
@@ -116,8 +118,8 @@ non-empty. The count "iterations with build + tests green"
 counts only iterations where `context.verify_tests_ran[<iteration>]` is
 true; the "build only, no test ran" line counts those where it is false
 and prints only when that count is above zero. After printing, set
-`context.verify_excluded_suites`, `context.verify_preexisting_failures`
-and `context.verify_flaky_tests` to `[]`, so a later run on the same state file does not print them again.
+`context.verify_excluded_suites`, `context.verify_preexisting_failures`,
+`context.verify_flaky_tests` and `context.agent_cap_degraded` to `[]`, so a later run on the same state file does not print them again.
 
 Under "Internal review summary", the Fixed, Declared, Open, Nits,
 Dedup and /simplify counts come from `context.internal_review_findings`,

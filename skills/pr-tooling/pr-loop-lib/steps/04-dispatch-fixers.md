@@ -58,12 +58,45 @@ running (fewer when the host's cap is lower):
    refusal is never a failed fixer. The host's cap also counts subagents
    that are not this step's (a `/code-review` still running, another
    skill's agents). When a dispatch is refused and no fixer or verifier
-   of this step is running, there is no return to wait for: try that
-   dispatch again at most 3 times, each after any background task of the
-   session reports or on the next turn; after the third refusal record
-   the unit's items `needs-human` with reason "the host refused the
-   dispatch" and go on with the queue. Log `dispatch_refused {unit,
-   attempt}` each time.
+   of this step is running, there is no return to wait for:
+   - **Refused by the agent cap** (the reason starts `agent cap:`; other
+     sessions on the machine hold the slots): wait per "Agent-cap wait"
+     below, then make the same dispatch again. Never do a fixer's or a
+     verifier's work in this session because of a refusal. When the wait
+     reports `gave-up`, record the unit's items `needs-human` with reason
+     "the agent cap held every slot for <waited>" and go on with the
+     queue.
+   - **Any other refusal:** try that dispatch again at most 3 times, each
+     after any background task of the session reports or on the next
+     turn; after the third refusal record the unit's items `needs-human`
+     with reason "the host refused the dispatch" and go on with the
+     queue.
+
+   Log `dispatch_refused {unit, attempt}` each time.
+
+### Agent-cap wait
+
+A machine running the agent-cap mod refuses spawns over its machine or
+session limit, and a session hears nothing when another session's agent
+ends, so the caller waits for a slot:
+
+1. Run
+   `python "$HOME/.claude/skills/pr-loop-lib/scripts/agent_cap_wait.py" --need <n>`
+   in the foreground with a 200000 ms tool timeout, `<n>` the number of
+   dispatches waiting for a slot (default 1). When `CLAUDE_CODE_SESSION_ID`
+   is unset, add `--session <context.session_id>`. The refusal itself
+   names the mod's wait command; running that command instead is the same
+   wait.
+2. It prints one line and exits: `free: ...` (0) once the session can
+   start that many agents, or at once on a machine without the mod;
+   `wait: ...` (10) after at most 170 seconds, ending with the exact
+   command to run next, which keeps counting from the first call;
+   `gave-up: ...` (11) after 30 minutes in all. Run what a `wait` line
+   names until the answer is `free` or `gave-up`.
+3. Log `agent_cap_wait {unit, need, waited_s, outcome}` when it ends. A
+   `gave-up` adds `{what: <unit>, detail: "<what was not dispatched>
+   after <waited> of waiting"}` to `context.agent_cap_degraded`, which
+   step 11 reports.
 
 The step ends when the queue is empty and every return is verified.
 
@@ -79,7 +112,9 @@ background (Claude Code):
 1. Right after each dispatch, read the clock with
    `python -c "import time; print(int(time.time()))"` (UTC epoch seconds,
    whatever the shell's time zone). Read it again for every dispatch;
-   never reuse one reading for a later agent. For a fixer, store it as
+   never reuse one reading for a later agent. A dispatch that waited for
+   a slot ("Agent-cap wait") is read after the host accepts it, so the
+   wait is never charged to the agent's limit. For a fixer, store it as
    `dispatched_at` on every `context.unit_bases` entry of its unit; for a
    verifier, as `context.agent_clock[<agent id>]` (the agent id is also
    its task id). Read the clock again when a fixer's return is accepted
