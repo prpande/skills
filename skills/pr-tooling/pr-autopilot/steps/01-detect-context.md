@@ -134,7 +134,12 @@ set `context.verify_excluded_suites`,
 to `[]` after the state is
 loaded and before step 01.5, the first step that can run a test: a
 state file from an earlier run contributes none, and what steps 01.5
-and 03 record in this run reaches step 03.5 and the report.
+and 03 record in this run reaches step 03.5 and the report. In the same
+place set `context.agent_cap_degraded` to `[]`, unless
+`context.code_review_status` is `"running"` and
+`context.code_review_invoked_head` equals `context.head_sha` (a same-head
+re-run keeps its earlier entries); entries that steps 01.5 to 04 add in
+this run stay until step 11 prints them.
 
 ## Blocking conditions
 

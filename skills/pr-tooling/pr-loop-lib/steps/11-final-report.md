@@ -79,6 +79,8 @@ Internal review summary (local, not on PR):
 
   Fix-round review: <n> rounds, <n> findings, <n> fixed
                     (or "did not run: <context.fix_round_skipped_reason>")
+  Degraded by the agent cap: <for each context.agent_cap_degraded entry: what, detail>
+                             (or "no")
   Shipped-text check: <n> claims corrected
   Declarations in commits and PR body: <n>
 
@@ -116,8 +118,8 @@ non-empty. The count "iterations with build + tests green"
 counts only iterations where `context.verify_tests_ran[<iteration>]` is
 true; the "build only, no test ran" line counts those where it is false
 and prints only when that count is above zero. After printing, set
-`context.verify_excluded_suites`, `context.verify_preexisting_failures`
-and `context.verify_flaky_tests` to `[]`, so a later run on the same state file does not print them again.
+`context.verify_excluded_suites`, `context.verify_preexisting_failures`,
+`context.verify_flaky_tests` and `context.agent_cap_degraded` to `[]`, so a later run on the same state file does not print them again.
 
 Under "Internal review summary", the Fixed, Declared, Open, Nits,
 Dedup and /simplify counts come from `context.internal_review_findings`,
@@ -196,7 +198,9 @@ list is non-empty:
    `pr-loop-lib/steps/06-commit-push.md` for the resulting diff. After
    the 04.5 run and before the push, print the "not run locally",
    "pre-existing failures" and "flaky" lines again when that run added
-   to them, then clear the three fields.
+   to them, and the "Degraded by the agent cap" line when step 04 or that
+   04.5 run added to `context.agent_cap_degraded`, then clear those four
+   fields.
 4. Re-enter `pr-loop-lib/steps/07-reply-resolve.md` with the scoped
    `agent_returns` from the re-dispatch. Step 07 handles the
    platform-specific reply + resolve logic uniformly: GitHub inline

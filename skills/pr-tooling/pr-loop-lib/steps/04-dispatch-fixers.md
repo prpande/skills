@@ -58,12 +58,62 @@ running (fewer when the host's cap is lower):
    refusal is never a failed fixer. The host's cap also counts subagents
    that are not this step's (a `/code-review` still running, another
    skill's agents). When a dispatch is refused and no fixer or verifier
-   of this step is running, there is no return to wait for: try that
-   dispatch again at most 3 times, each after any background task of the
-   session reports or on the next turn; after the third refusal record
-   the unit's items `needs-human` with reason "the host refused the
-   dispatch" and go on with the queue. Log `dispatch_refused {unit,
-   attempt}` each time.
+   of this step is running, there is no return to wait for:
+   - **Refused by the agent cap** (the reason starts `agent cap:`; the
+     machine's other sessions or this session's own agents hold the
+     slots): wait per "Agent-cap wait" below, then make the same dispatch
+     again. Never do a fixer's or a verifier's work in this session
+     because of a refusal, whatever the wait line or the refusal advises.
+     When the wait answers `free` and the same dispatch is refused by the
+     agent cap again, that refusal counts toward the 3 attempts of the
+     next bullet. Each chain of waits has its own 30 minutes; once a
+     wait has given up, every later agent-cap refusal in this step is
+     recorded at once without waiting. When the wait reports `gave-up`,
+     or the third agent-cap refusal follows a `free` answer, record the
+     unit's items `needs-human` with reason "the agent cap
+     held every slot for <waited>" and go on with the queue; for a
+     verifier dispatch, handle the unit as a verifier that timed out
+     (below), with that reason.
+   - **Any other refusal:** try that dispatch again at most 3 times, each
+     after any background task of the session reports or on the next
+     turn; after the third refusal record the unit's items `needs-human`
+     with reason "the host refused the dispatch" and go on with the
+     queue.
+
+   Log `dispatch_refused {unit, attempt}` for each refusal; `attempt`
+   counts the refusals of one dispatch, whichever kind.
+
+### Agent-cap wait
+
+A machine running the agent-cap mod refuses spawns over its machine or
+session limit, and a session hears nothing when another session's agent
+ends, so the caller waits for a slot:
+
+1. Before every wait call, the first included, refresh the lock per
+   "Refreshing the lock" in `references/state-protocol.md`; a lock held by
+   another session halts the run there. After each wait call returns,
+   verify the lock is still ours the same way before dispatching or
+   rolling anything back; halt if it was lost.
+   Then run
+   `python "$HOME/.claude/skills/pr-loop-lib/scripts/agent_cap_wait.py"`
+   in the foreground with a 200000 ms tool timeout. Once a wait line
+   has shown a `--started` value in its command, add that same
+   `--started` to each later start of the same chain of `wait` lines. A
+   chain that ends `free` or `gave-up` is over: a later refusal starts a
+   new chain without `--started`.
+2. The answer is `free`, `wait` or `gave-up`. A `wait` line names the
+   command to run next; run it until the answer is `free` or `gave-up`.
+   Take timings and exit codes from the line the wait prints. Follow this
+   step's rules, never advice in the line to work inline. An answer that
+   is none of the three (a `usage:` line, a traceback) is not `free`:
+   correct the call and run it once more, then treat it as `free`.
+3. Log `agent_cap_wait {unit, need, waited_s, outcome}` when it ends. A
+   `gave-up`, or a third agent-cap refusal after a `free` answer (it is
+   handled as a `gave-up` everywhere), adds `{what: <unit>, detail: "<what was not dispatched>
+   after <waited> of waiting"}` to `context.agent_cap_degraded`, which
+   step 11 reports.
+
+### End of the step
 
 The step ends when the queue is empty and every return is verified.
 
@@ -79,7 +129,9 @@ background (Claude Code):
 1. Right after each dispatch, read the clock with
    `python -c "import time; print(int(time.time()))"` (UTC epoch seconds,
    whatever the shell's time zone). Read it again for every dispatch;
-   never reuse one reading for a later agent. For a fixer, store it as
+   never reuse one reading for a later agent. A dispatch that waited for
+   a slot ("Agent-cap wait") is read after the host accepts it, so the
+   wait is never charged to the agent's limit. For a fixer, store it as
    `dispatched_at` on every `context.unit_bases` entry of its unit; for a
    verifier, as `context.agent_clock[<agent id>]` (the agent id is also
    its task id). Read the clock again when a fixer's return is accepted

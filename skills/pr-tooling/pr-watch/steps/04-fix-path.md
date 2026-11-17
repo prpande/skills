@@ -131,7 +131,7 @@ To skip with a reason:
      `agent_returns`, `verifier_judgements`,
      `files_changed_this_iteration`, `needs_human_items`,
      `verify_excluded_suites`, `verify_preexisting_failures`,
-     `verify_flaky_tests` = `[]`;
+     `verify_flaky_tests`, `agent_cap_degraded` = `[]`;
      `unit_bases` = `{}`; `agent_clock` = `{}`; `verify_retries_used` =
      `{build: false, test: false}`; `verify_baseline_tree` = `null` and
      `verify_baseline_files` = `[]`. Place it the same way.
@@ -498,12 +498,18 @@ lock.
 
 ## 9. Release and return
 
-1. Release the lock: `rm -rf <worktree>/.pr-autopilot/pr-<N>.lock`, and
+1. While both locks are still held, when `pr-<N>.json`
+   `agent_cap_degraded` is not empty, print one line,
+   "Degraded by the agent cap: <for each entry: what, detail>", in the
+   pass's report, then set the field to `[]` and place the file with
+   `state_put.py`, so no entry outlives the pass that made it and a
+   later `pr-followup` run on the same state file does not print it.
+2. Release the lock: `rm -rf <worktree>/.pr-autopilot/pr-<N>.lock`, and
    log `lock_released`.
-2. Release the push lock when this pass took it and section 6 step 6
+3. Release the push lock when this pass took it and section 6 step 6
    has not (`POLL --push-lock release <key> --session-dir <SESSION_DIR>`; it releases only a lock this
    session holds, so it is harmless when none is). Not under `dry_run`.
-3. A launch-repo PR: `EnterWorktree` with `path` = `origin_worktree`
+4. A launch-repo PR: `EnterWorktree` with `path` = `origin_worktree`
    from `watch.json`. An other-repo PR: nothing; the session never
    left.
 
