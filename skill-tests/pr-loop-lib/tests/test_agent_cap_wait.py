@@ -113,6 +113,19 @@ class AgentCapWaitTests(unittest.TestCase):
                 self.assertEqual(code, 0)
                 self.assertIn(f"failed with exit 1 {expected}", out)
 
+    def test_output_that_is_not_utf8_does_not_break_the_wrapper(self):
+        exe = posix(sys.executable)
+        cases = (
+            ("stderr on a crash", "import sys; sys.stderr.buffer.write(b'\\xff'); sys.exit(1)", 0, "failed with exit 1"),
+            ("stdout on a pass-through code", "import sys; sys.stdout.buffer.write(b'wait: \\xff'); sys.exit(10)", 10, "wait: "),
+        )
+        for name, source, expected_code, expected_out in cases:
+            with self.subTest(name):
+                self.point(f'"{exe}" -c "{source}"')
+                code, out = self.run_main()
+                self.assertEqual(code, expected_code)
+                self.assertIn(expected_out, out)
+
     def test_the_default_state_folder_is_under_the_claude_home(self):
         tail = os.path.join(".claude", "agent-cap")
         self.assertEqual(agent_cap_wait.state_dir({"USERPROFILE": "/up", "HOME": "/h"}), os.path.join("/up", tail))

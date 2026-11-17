@@ -51,7 +51,7 @@ def main(argv=None, env=None):
         print("free: no agent-cap wait command on this machine, so it has no agent cap.")
         return 0
     try:
-        done = subprocess.run(command + list(argv), capture_output=True, text=True, encoding="utf-8", timeout=TIMEOUT_S)
+        done = subprocess.run(command + list(argv), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=TIMEOUT_S)
     except (OSError, subprocess.TimeoutExpired) as e:
         print(f"free: the agent-cap wait command could not run ({e}); {AS_IF_FREE}")
         return 0

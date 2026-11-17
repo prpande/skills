@@ -89,7 +89,12 @@ A machine running the agent-cap mod refuses spawns over its machine or
 session limit, and a session hears nothing when another session's agent
 ends, so the caller waits for a slot:
 
-1. Run
+1. Before every wait call, the first included, refresh the lock per
+   "Refreshing the lock" in `references/state-protocol.md`; a lock held by
+   another session halts the run there. After each wait call returns,
+   verify the lock is still ours the same way before dispatching or
+   rolling anything back; halt if it was lost.
+   Then run
    `python "$HOME/.claude/skills/pr-loop-lib/scripts/agent_cap_wait.py"`
    in the foreground with a 200000 ms tool timeout. Once a wait line
    has shown a `--started` value in its command, add that same
