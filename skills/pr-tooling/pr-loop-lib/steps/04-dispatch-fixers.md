@@ -66,8 +66,8 @@ running (fewer when the host's cap is lower):
      because of a refusal, whatever the wait line or the refusal advises.
      When the wait answers `free` and the same dispatch is refused by the
      agent cap again, that refusal counts toward the 3 attempts of the
-     next bullet. The 30 minutes are one budget for the whole step: once
-     a wait has given up, every later agent-cap refusal in this step is
+     next bullet. Each chain of waits has its own 30 minutes; once a
+     wait has given up, every later agent-cap refusal in this step is
      recorded at once without waiting. When the wait reports `gave-up`,
      record the unit's items `needs-human` with reason "the agent cap
      held every slot for <waited>" and go on with the queue; for a
@@ -92,7 +92,9 @@ ends, so the caller waits for a slot:
    `python "$HOME/.claude/skills/pr-loop-lib/scripts/agent_cap_wait.py"`
    in the foreground with a 200000 ms tool timeout. Once a wait line
    has shown a `--started` value in its command, add that same
-   `--started` to every later start of this wait in this step.
+   `--started` to each later start of the same chain of `wait` lines. A
+   chain that ends `free` or `gave-up` is over: a later refusal starts a
+   new chain without `--started`.
 2. The answer is `free`, `wait` or `gave-up`. A `wait` line names the
    command to run next; run it until the answer is `free` or `gave-up`.
    Take timings and exit codes from the line the wait prints. Follow this

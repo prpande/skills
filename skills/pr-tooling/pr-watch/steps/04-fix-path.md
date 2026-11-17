@@ -503,7 +503,12 @@ lock.
 2. Release the push lock when this pass took it and section 6 step 6
    has not (`POLL --push-lock release <key> --session-dir <SESSION_DIR>`; it releases only a lock this
    session holds, so it is harmless when none is). Not under `dry_run`.
-3. A launch-repo PR: `EnterWorktree` with `path` = `origin_worktree`
+3. When `pr-<N>.json` `agent_cap_degraded` is not empty, print one line,
+   "Degraded by the agent cap: <for each entry: what, detail>", in the
+   pass's report, then set the field to `[]` and place the file with
+   `state_put.py`, so no entry outlives the pass that made it and a
+   later `pr-followup` run on the same state file does not print it.
+4. A launch-repo PR: `EnterWorktree` with `path` = `origin_worktree`
    from `watch.json`. An other-repo PR: nothing; the session never
    left.
 
