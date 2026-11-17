@@ -68,7 +68,13 @@ explicitly). With neither the register nor the tier installed, only
    "returns nothing usable" (Failure mode); log `timeout_s: 1800` in its
    `subagent_dispatch`. `/code-review` is already
    running; never wait for it before a dispatch and never cancel it for
-   one.
+   one. A spawn refused by the agent cap (the reason starts `agent cap:`)
+   is not a failure of the agent: wait per "Agent-cap wait" of
+   `pr-loop-lib/steps/04-dispatch-fixers.md`, then make the same spawn
+   again, and never do a lens agent's work in this session because of a
+   refusal. When the wait reports `gave-up`, set the agent's `status` to
+   `failed` and name the agent cap in the "Agents" line. This holds for
+   the context-map re-ask in "Context-map checks" too.
 6. Parse each JSON reply, log `subagent_return`, set the agent's
    `status` to `done`, and append its findings to
    `context.preflight_passes.pass2_raw` in the fixed agent order, each
@@ -480,7 +486,8 @@ part of the same rename batch as state/log/lock. Update
 ## Failure mode
 
 If an agent errors, is stopped, or returns nothing usable (no reply or
-malformed JSON):
+malformed JSON); a spawn refused by the agent cap is handled in Dispatch
+step 5, not here:
 1. Log an `error` event naming the agent.
 2. Dispatch that agent once more. The other agents' findings stand.
 3. On a second failure set its `status` to `failed`, contribute no

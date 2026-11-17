@@ -1,9 +1,12 @@
 import contextlib
 import io
+import os
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "skills" / "pr-tooling" / "pr-loop-lib" / "scripts"))
@@ -61,7 +64,21 @@ class AgentCapWaitTests(unittest.TestCase):
         for exit_code in (0, 10, 11, 64):
             code, out = self.run_main("--need", "full", "--exit", str(exit_code))
             self.assertEqual(code, exit_code)
-            self.assertEqual(out.strip(), f"args:--need full --exit {exit_code}")
+            self.assertEqual(out, f"args:--need full --exit {exit_code}\n")
+
+    def test_a_pointer_that_cannot_be_used_is_free(self):
+        cases = (("blank", "   \n"), ("unbalanced quote", '"unclosed'))
+        for name, line in cases:
+            with self.subTest(name):
+                self.point(line)
+                code, out = self.run_main("--need", "1")
+                self.assertEqual(code, 0)
+                self.assertTrue(out.startswith("free: no agent-cap wait command"), out)
+        with self.subTest("not utf-8"):
+            (self.state / agent_cap_wait.POINTER).write_bytes(b"\xff\xfe\xfa")
+            code, out = self.run_main("--need", "1")
+            self.assertEqual(code, 0)
+            self.assertTrue(out.startswith("free: no agent-cap wait command"), out)
 
     def test_a_command_that_cannot_start_is_free(self):
         self.point(f'"{posix(self.root / "no-such-node.exe")}" "x.ts"')
@@ -69,15 +86,41 @@ class AgentCapWaitTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("could not run", out)
 
+    def test_a_command_that_hangs_is_free(self):
+        self.point_at_fake()
+        hung = subprocess.TimeoutExpired(cmd="wait", timeout=agent_cap_wait.TIMEOUT_S)
+        with mock.patch.object(agent_cap_wait.subprocess, "run", side_effect=hung):
+            code, out = self.run_main("--need", "1")
+        self.assertEqual(code, 0)
+        self.assertTrue(out.startswith("free: the agent-cap wait command could not run"), out)
+
     def test_a_command_that_crashes_is_free_and_says_why(self):
         self.point_at_fake()
         code, out = self.run_main("--exit", "1")
         self.assertEqual(code, 0)
         self.assertIn("failed with exit 1 (trace)", out)
 
+    def test_a_crash_reason_skips_the_node_banner_and_a_silent_crash_says_no_output(self):
+        exe = posix(sys.executable)
+        cases = (
+            ("banner", "import sys; print('boom', file=sys.stderr); print('Node.js v24.1.0', file=sys.stderr); sys.exit(1)", "(boom)"),
+            ("silent", "import sys; sys.exit(1)", "(no output)"),
+        )
+        for name, source, expected in cases:
+            with self.subTest(name):
+                self.point(f'"{exe}" -c "{source}"')
+                code, out = self.run_main()
+                self.assertEqual(code, 0)
+                self.assertIn(f"failed with exit 1 {expected}", out)
+
     def test_the_default_state_folder_is_under_the_claude_home(self):
-        self.assertEqual(pathlib.Path(agent_cap_wait.state_dir({})).parts[-2:], (".claude", "agent-cap"))
-        self.assertEqual(agent_cap_wait.state_dir({"AGENT_CAP_DIR": "/x/cap"}), "/x/cap")
+        tail = os.path.join(".claude", "agent-cap")
+        self.assertEqual(agent_cap_wait.state_dir({"USERPROFILE": "/up", "HOME": "/h"}), os.path.join("/up", tail))
+        self.assertEqual(agent_cap_wait.state_dir({"HOME": "/h"}), os.path.join("/h", tail))
+        fallback = agent_cap_wait.state_dir({})
+        self.assertTrue(os.path.isabs(fallback), fallback)
+        self.assertTrue(fallback.endswith(tail), fallback)
+        self.assertEqual(agent_cap_wait.state_dir({"AGENT_CAP_DIR": "/x/cap", "USERPROFILE": "/up"}), "/x/cap")
 
 
 if __name__ == "__main__":

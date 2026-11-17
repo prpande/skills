@@ -131,7 +131,7 @@ To skip with a reason:
      `agent_returns`, `verifier_judgements`,
      `files_changed_this_iteration`, `needs_human_items`,
      `verify_excluded_suites`, `verify_preexisting_failures`,
-     `verify_flaky_tests` = `[]`;
+     `verify_flaky_tests`, `agent_cap_degraded` = `[]`;
      `unit_bases` = `{}`; `agent_clock` = `{}`; `verify_retries_used` =
      `{build: false, test: false}`; `verify_baseline_tree` = `null` and
      `verify_baseline_files` = `[]`. Place it the same way.

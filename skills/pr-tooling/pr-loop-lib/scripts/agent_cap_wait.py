@@ -3,7 +3,7 @@
 Usage: python agent_cap_wait.py [--need N|full] [--session ID] [--started MS]
 
 Reads the mod's wait command from wait-command.txt in the agent-cap state
-folder (AGENT_CAP_DIR, else ~/.claude/agent-cap), runs it with these
+folder (AGENT_CAP_DIR, else USERPROFILE, else HOME, else the user home, plus .claude/agent-cap), runs it with these
 arguments, prints its output and exits with its code: 0 "free: ...", 10
 "wait: ..." (still full after at most 170 s; run the command it prints next),
 11 "gave-up: ..." (30 minutes in all), 64 bad arguments. A machine without
@@ -18,21 +18,29 @@ import sys
 
 POINTER = "wait-command.txt"
 PASS_THROUGH_CODES = {0, 10, 11, 64}
-TIMEOUT_S = 200
+TIMEOUT_S = 175
 AS_IF_FREE = "going on as if no slot were taken."
 
 
 def state_dir(env):
-    return env.get("AGENT_CAP_DIR") or os.path.join(os.path.expanduser("~"), ".claude", "agent-cap")
+    if env.get("AGENT_CAP_DIR"):
+        return env["AGENT_CAP_DIR"]
+    home = env.get("USERPROFILE") or env.get("HOME") or os.path.expanduser("~")
+    return os.path.join(home, ".claude", "agent-cap")
 
 
 def wait_command(env):
     try:
         with open(os.path.join(state_dir(env), POINTER), encoding="utf-8") as f:
             line = f.readline().strip()
-    except OSError:
+        return shlex.split(line) if line else None
+    except (OSError, ValueError):
         return None
-    return shlex.split(line) if line else None
+
+
+def failure_reason(done):
+    lines = [x for x in (done.stderr or done.stdout).strip().splitlines() if not x.startswith("Node.js v")]
+    return lines[-1] if lines else "no output"
 
 
 def main(argv=None, env=None):
@@ -48,12 +56,12 @@ def main(argv=None, env=None):
         print(f"free: the agent-cap wait command could not run ({e}); {AS_IF_FREE}")
         return 0
     if done.returncode not in PASS_THROUGH_CODES:
-        lines = (done.stderr or done.stdout).strip().splitlines()
-        print(f"free: the agent-cap wait command failed with exit {done.returncode} ({lines[-1] if lines else 'no output'}); {AS_IF_FREE}")
+        print(f"free: the agent-cap wait command failed with exit {done.returncode} ({failure_reason(done)}); {AS_IF_FREE}")
         return 0
     print(done.stdout.strip())
     return done.returncode
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(errors="replace")
     sys.exit(main())

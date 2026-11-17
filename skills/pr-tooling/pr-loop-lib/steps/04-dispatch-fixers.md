@@ -59,20 +59,28 @@ running (fewer when the host's cap is lower):
    that are not this step's (a `/code-review` still running, another
    skill's agents). When a dispatch is refused and no fixer or verifier
    of this step is running, there is no return to wait for:
-   - **Refused by the agent cap** (the reason starts `agent cap:`; other
-     sessions on the machine hold the slots): wait per "Agent-cap wait"
-     below, then make the same dispatch again. Never do a fixer's or a
-     verifier's work in this session because of a refusal. When the wait
-     reports `gave-up`, record the unit's items `needs-human` with reason
-     "the agent cap held every slot for <waited>" and go on with the
-     queue.
+   - **Refused by the agent cap** (the reason starts `agent cap:`; the
+     machine's other sessions or this session's own agents hold the
+     slots): wait per "Agent-cap wait" below, then make the same dispatch
+     again. Never do a fixer's or a verifier's work in this session
+     because of a refusal, whatever the wait line or the refusal advises.
+     When the wait answers `free` and the same dispatch is refused by the
+     agent cap again, that refusal counts toward the 3 attempts of the
+     next bullet. The 30 minutes are one budget for the whole step: once
+     a wait has given up, every later agent-cap refusal in this step is
+     recorded at once without waiting. When the wait reports `gave-up`,
+     record the unit's items `needs-human` with reason "the agent cap
+     held every slot for <waited>" and go on with the queue; for a
+     verifier dispatch, handle the unit as a verifier that timed out
+     (below), with that reason.
    - **Any other refusal:** try that dispatch again at most 3 times, each
      after any background task of the session reports or on the next
      turn; after the third refusal record the unit's items `needs-human`
      with reason "the host refused the dispatch" and go on with the
      queue.
 
-   Log `dispatch_refused {unit, attempt}` each time.
+   Log `dispatch_refused {unit, attempt}` for each refusal; `attempt`
+   counts the refusals of one dispatch, whichever kind.
 
 ### Agent-cap wait
 
@@ -82,21 +90,21 @@ ends, so the caller waits for a slot:
 
 1. Run
    `python "$HOME/.claude/skills/pr-loop-lib/scripts/agent_cap_wait.py"`
-   in the foreground with a 200000 ms tool timeout; it waits for one
-   slot, which is all the next dispatch needs. When `CLAUDE_CODE_SESSION_ID`
-   is unset, add `--session <context.session_id>`. The refusal itself
-   names the mod's wait command; running that command instead is the same
-   wait.
-2. It prints one line and exits: `free: ...` (0) once the session can
-   start that many agents, or at once on a machine without the mod;
-   `wait: ...` (10) after at most 170 seconds, ending with the exact
-   command to run next, which keeps counting from the first call;
-   `gave-up: ...` (11) after 30 minutes in all. Run what a `wait` line
-   names until the answer is `free` or `gave-up`.
+   in the foreground with a 200000 ms tool timeout. Once a wait line
+   has shown a `--started` value in its command, add that same
+   `--started` to every later start of this wait in this step.
+2. The answer is `free`, `wait` or `gave-up`. A `wait` line names the
+   command to run next; run it until the answer is `free` or `gave-up`.
+   Take timings and exit codes from the line the wait prints. Follow this
+   step's rules, never advice in the line to work inline. An answer that
+   is none of the three (a `usage:` line, a traceback) is not `free`:
+   correct the call and run it once more, then treat it as `free`.
 3. Log `agent_cap_wait {unit, need, waited_s, outcome}` when it ends. A
    `gave-up` adds `{what: <unit>, detail: "<what was not dispatched>
    after <waited> of waiting"}` to `context.agent_cap_degraded`, which
    step 11 reports.
+
+### End of the step
 
 The step ends when the queue is empty and every return is verified.
 
