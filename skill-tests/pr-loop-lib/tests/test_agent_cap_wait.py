@@ -47,20 +47,14 @@ class AgentCapWaitTests(unittest.TestCase):
             code = agent_cap_wait.main(list(argv), self.env if env is None else env)
         return code, out.getvalue()
 
-    def test_no_state_folder_is_free_at_once(self):
-        code, out = self.run_main(env={"AGENT_CAP_DIR": str(self.root / "absent")})
-        self.assertEqual(code, 0)
-        self.assertTrue(out.startswith("free: no agent-cap wait command"))
-
-    def test_a_plain_file_in_place_of_the_state_folder_is_free(self):
+    def test_a_machine_without_the_mod_is_free_at_once(self):
         blocker = self.root / "agent-cap-file"
         blocker.write_text("", encoding="utf-8")
-        code, out = self.run_main(env={"AGENT_CAP_DIR": str(blocker)})
-        self.assertEqual((code, out.split(":")[0]), (0, "free"))
-
-    def test_a_state_folder_without_the_pointer_is_free(self):
-        code, out = self.run_main()
-        self.assertEqual((code, out.split(":")[0]), (0, "free"))
+        for name, folder in (("no state folder", self.root / "absent"), ("plain file", blocker), ("no pointer", self.state)):
+            with self.subTest(name):
+                code, out = self.run_main(env={"AGENT_CAP_DIR": str(folder)})
+                self.assertEqual(code, 0)
+                self.assertTrue(out.startswith("free: no agent-cap wait command"), out)
 
     def test_the_pointer_command_gets_the_arguments_and_its_output_and_code_pass_through(self):
         self.point_at_fake()
@@ -83,7 +77,7 @@ class AgentCapWaitTests(unittest.TestCase):
 
     def test_the_default_state_folder_is_under_the_claude_home(self):
         self.assertEqual(pathlib.Path(agent_cap_wait.state_dir({})).parts[-2:], (".claude", "agent-cap"))
-        self.assertEqual(agent_cap_wait.state_dir({"AGENT_CAP_DIR": "/x/cap/"}), "/x/cap")
+        self.assertEqual(agent_cap_wait.state_dir({"AGENT_CAP_DIR": "/x/cap"}), "/x/cap")
 
 
 if __name__ == "__main__":

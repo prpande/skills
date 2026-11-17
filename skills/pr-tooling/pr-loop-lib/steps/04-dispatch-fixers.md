@@ -81,9 +81,9 @@ session limit, and a session hears nothing when another session's agent
 ends, so the caller waits for a slot:
 
 1. Run
-   `python "$HOME/.claude/skills/pr-loop-lib/scripts/agent_cap_wait.py" --need <n>`
-   in the foreground with a 200000 ms tool timeout, `<n>` the number of
-   dispatches waiting for a slot (default 1). When `CLAUDE_CODE_SESSION_ID`
+   `python "$HOME/.claude/skills/pr-loop-lib/scripts/agent_cap_wait.py"`
+   in the foreground with a 200000 ms tool timeout; it waits for one
+   slot, which is all the next dispatch needs. When `CLAUDE_CODE_SESSION_ID`
    is unset, add `--session <context.session_id>`. The refusal itself
    names the mod's wait command; running that command instead is the same
    wait.

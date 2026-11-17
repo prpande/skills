@@ -19,12 +19,11 @@ import sys
 POINTER = "wait-command.txt"
 PASS_THROUGH_CODES = {0, 10, 11, 64}
 TIMEOUT_S = 200
+AS_IF_FREE = "going on as if no slot were taken."
 
 
 def state_dir(env):
-    if env.get("AGENT_CAP_DIR"):
-        return env["AGENT_CAP_DIR"].rstrip("\\/")
-    return os.path.join(os.path.expanduser("~"), ".claude", "agent-cap")
+    return env.get("AGENT_CAP_DIR") or os.path.join(os.path.expanduser("~"), ".claude", "agent-cap")
 
 
 def wait_command(env):
@@ -36,7 +35,7 @@ def wait_command(env):
     return shlex.split(line) if line else None
 
 
-def main(argv=None, env=None, run=subprocess.run):
+def main(argv=None, env=None):
     argv = sys.argv[1:] if argv is None else argv
     env = os.environ if env is None else env
     command = wait_command(env)
@@ -44,13 +43,13 @@ def main(argv=None, env=None, run=subprocess.run):
         print("free: no agent-cap wait command on this machine, so it has no agent cap.")
         return 0
     try:
-        done = run(command + list(argv), capture_output=True, text=True, encoding="utf-8", timeout=TIMEOUT_S)
+        done = subprocess.run(command + list(argv), capture_output=True, text=True, encoding="utf-8", timeout=TIMEOUT_S)
     except (OSError, subprocess.TimeoutExpired) as e:
-        print(f"free: the agent-cap wait command could not run ({e}); going on as if no slot were taken.")
+        print(f"free: the agent-cap wait command could not run ({e}); {AS_IF_FREE}")
         return 0
     if done.returncode not in PASS_THROUGH_CODES:
-        detail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no output"]
-        print(f"free: the agent-cap wait command failed with exit {done.returncode} ({detail[0]}); going on as if no slot were taken.")
+        lines = (done.stderr or done.stdout).strip().splitlines()
+        print(f"free: the agent-cap wait command failed with exit {done.returncode} ({lines[-1] if lines else 'no output'}); {AS_IF_FREE}")
         return 0
     print(done.stdout.strip())
     return done.returncode
