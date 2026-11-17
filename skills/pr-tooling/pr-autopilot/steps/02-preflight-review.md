@@ -213,7 +213,10 @@ the answers are counted, not trusted:
 2. Store the answers in `context.context_check_answers[]` as
    `{id, answer, evidence, reason, flipped_by, settled_item}`,
    `flipped_by` null until "Check flips" sets it. `settled_item` is the
-   settled item a `no` names in its `reason`, null for any other answer.
+   settled item a `no` names in its `reason`, set only when item 1 found
+   that the item is in the settled decisions file and covers the point,
+   or item 3 below records it; null for any other answer, including a
+   `no` judged by the citation rule.
 3. Every `yes` must have a finding with that `check_id`. For a `yes`
    without one, add the finding yourself: `severity: "important"`,
    `category: "interface"`, file and line from the diff side of

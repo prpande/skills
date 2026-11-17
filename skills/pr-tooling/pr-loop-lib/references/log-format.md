@@ -84,7 +84,7 @@ Rules:
 | `fixer_reverify` | `{survivor_id, rolled_back_id, overlap_files, new_verdict}` — emitted by step 04's policy ladder after a rollback, for each surviving fixer in another unit whose `files_changed` intersect the rolled-back fixer's `files_changed`. `new_verdict` is `kept-in-base` (the survivor's fix is in the rolled-back unit's base and the restore kept it) or `demoted-overlap` (the two edits cannot be told apart; the survivor was demoted to `needs-human`). No verifier call is made. |
 | `code_review_stale_result` | `{head_sha, path}` — step 03.5 received a `/code-review` result for another head or an older launch and set it aside. |
 | `code_review_halted` | `{reason, head_sha}` — step 03.5 halted on `/code-review` (no result in 4 hours, ended twice with no result, the two-launch limit, or a second unparsed result) after setting `context.code_review_status = "failed"`. The two-launch count restarts after the latest one. |
-| `dispatch_refused` | `{unit, attempt}` — step 04 "Rolling dispatch": the host refused a dispatch while none of this step's fixers or verifiers was running; `attempt` is 1 to 3. |
+| `dispatch_refused` | `{unit, attempt}` — step 04 "Rolling dispatch", or step 03.5 E "Refuted candidates" with `unit` naming the batch: the host refused a dispatch while none of that step's subagents was running; `attempt` is 1 to 3. |
 | `rollback_deleted` | `{feedback_id, file}` — a rollback deleted a file the fixer created. |
 | `verify_suites_excluded` | `{suites: [{suite, reason}]}` — step 04.5 left suites out or set failures aside. |
 | `verify_baseline` | `{failing_before, failing_after_baseline, tree}` — step 04.5 ran the failing tests on the wave base. |
