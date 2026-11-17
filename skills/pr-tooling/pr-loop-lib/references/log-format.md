@@ -73,7 +73,7 @@ Rules:
 | `context_map_unlisted_query` | `{query}` — a "Production signals" bullet quoted a query the nrql state file does not list; the bullet was removed |
 | `effort_docs_resolved` | `{root, folder, files}` — pr-autopilot step 01; `root: null` when no docs root exists |
 | `lens_dedup_hit` | `{kept_id, dropped_id}` — step 02 folded one lens agent's finding into another's |
-| `context_check_flipped` | `{id, finding_id, stage}` — step 02 "Check flips" turned a `no` context-map check into `yes` because finding `finding_id` reports its problem; `stage` is `lens` (step 02) or `code-review` (step 03.5 D1) |
+| `context_check_flipped` | `{id, finding_id}` — step 02 "Check flips" turned a `no` or `cannot-tell` context-map check into `yes` because finding `finding_id` (a merged lens finding, or in step 03.5 D1 a `/code-review` finding or simplify candidate) reports its problem |
 | `dismissed_checks_recorded` | `{upheld, wrong, cannot_tell, not_checked}` — step 03.5 E "Refuted candidates": the count of each verdict over `context.dismissed_checks` |
 | `simplify_skipped_points` | `{count, fallback?}` — step 01.5 stored the behaviour-changing points `/simplify` did not apply |
 | `context_map_skipped` | `{reason}` — pr-autopilot step 01.7 wrote no usable map (`no-sources`, `empty`, `error`, `timeout`) |

@@ -50,7 +50,7 @@ run `/simplify`).
 | `context_map_path` | string or null | default `null` | Path to `<repo-root>/.pr-autopilot/branch-<slug>-context-map.md`. `null` when step 01.7 wrote no usable map. Not renamed at PR create. |
 | `context_map_sources` | array of strings | default `[]` | Sources the context mapper read: `workspace-map`, `api-catalog`, `sibling-repos`, `new-relic`, `effort-docs`. |
 | `context_map_checks` | array of objects | default `[]` | Every check the map raises: `{id, text}`, ids `C1`, `C2`, ... as written in the map. |
-| `context_check_answers` | array of objects | default `[]` | The step 02 context agent's answer to each check: `{id, answer: "yes" \| "no" \| "cannot-tell", evidence, reason, flipped_by}`. One per `context_map_checks` id. A `yes` has a finding with that `check_id`, or `flipped_by` naming the finding whose report turned a `no` into it (step 02 "Check flips"; null otherwise). |
+| `context_check_answers` | array of objects | default `[]` | The step 02 context agent's answer to each check: `{id, answer: "yes" \| "no" \| "cannot-tell", evidence, reason, flipped_by, settled_item}`. One per `context_map_checks` id. A `yes` has a finding with that `check_id`, or `flipped_by` naming the finding whose report turned a `no` or `cannot-tell` into it (step 02 "Check flips"; null otherwise). `settled_item` is the settled-decisions file line that covers a `no` (step 02 "Context-map checks" 2 and 3; null otherwise); step 02 "Check flips" never flips such a `no`. |
 
 ## Lens review (step 02, launched in step 03.5) and spec alignment output
 

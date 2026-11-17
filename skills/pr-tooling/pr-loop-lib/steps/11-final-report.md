@@ -75,8 +75,7 @@ Internal review summary (local, not on PR):
     - Fixed:                      <n>
     - Declared:                   <n>
     - Open (needs-human):         <n>
-    - Checked and dismissed:      <n> (listed in the summary file)
-    - Dismissed, re-checked:      <n> upheld, <n> wrong, <n> cannot tell, <n> not checked
+    - Checked and dismissed:      <n> (<n> upheld, <n> wrong, <n> cannot tell, <n> not checked; listed in the summary file)
 
   Fix-round review: <n> rounds, <n> findings, <n> fixed
                     (or "did not run: <context.fix_round_skipped_reason>")
@@ -124,8 +123,8 @@ Under "Internal review summary", the Fixed, Declared, Open, Nits,
 Dedup and /simplify counts come from `context.internal_review_findings`,
 grouped by `source` and `status`; "Agents" from `context.lens_agents`;
 "Context-map checks" from `context.context_check_answers`, "flipped"
-counting those with `flipped_by` set; "Dismissed, re-checked" from
-`context.dismissed_checks` by `verdict`; and
+counting those with `flipped_by` set; the verdict counts in "Checked
+and dismissed" from `context.dismissed_checks` by `verdict`; and
 "Declared but risky" from entries with `declared_risk: true` whose
 status is not `duplicate`. A
 declared-but-risky finding is counted in that row only, never in
