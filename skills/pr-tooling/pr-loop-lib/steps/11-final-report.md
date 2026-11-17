@@ -198,8 +198,9 @@ list is non-empty:
    `pr-loop-lib/steps/06-commit-push.md` for the resulting diff. After
    the 04.5 run and before the push, print the "not run locally",
    "pre-existing failures" and "flaky" lines again when that run added
-   to them, and the "Degraded by the agent cap" line when step 04 added
-   to `context.agent_cap_degraded`, then clear those four fields.
+   to them, and the "Degraded by the agent cap" line when step 04 or that
+   04.5 run added to `context.agent_cap_degraded`, then clear those four
+   fields.
 4. Re-enter `pr-loop-lib/steps/07-reply-resolve.md` with the scoped
    `agent_returns` from the re-dispatch. Step 07 handles the
    platform-specific reply + resolve logic uniformly: GitHub inline
