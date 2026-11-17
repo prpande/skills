@@ -189,11 +189,16 @@ the answers are counted, not trusted:
 
 1. Compare the id set in `context.context_map_checks` with the ids in
    the `context` agent's `checks`, both ways. Drop answers whose id is
-   not in the map. A `no` is unsupported when its `evidence` lacks two
-   `<file>:<line>` citations, one of a file in the diff and one of
-   another file or line; for an absence check ("does any other file
-   still say X"), a documented search (pattern, scope, "no hits") in
-   place of the second citation supports it. For ids with no answer and
+   not in the map. A `no` whose `reason` names a settled item is
+   supported when that item, read in the settled decisions file, covers
+   the point; it needs no second citation, and the item is its
+   `settled_item`. Any other `no` is unsupported when its `evidence`
+   lacks two `<file>:<line>` citations, one of a file in the diff and
+   one of another file or line; for an absence check ("does any other
+   file still say X"), a documented search (pattern, scope, "no hits")
+   in place of the second citation supports it. A `no` that names a
+   settled item the file does not hold, or one that does not cover the
+   point, is judged by the citation rule. For ids with no answer and
    ids with an unsupported `no`, dispatch the `context` agent once more
    with the same head and only item 4, listing those ids and why each is
    listed; its answers replace the first ones for those ids, and its
@@ -201,7 +206,8 @@ the answers are counted, not trusted:
    `merged` is built. After the re-ask, ids with no answer are recorded
    as `cannot-tell` with reason "not answered", and ids whose answer is
    an unsupported `no`, whichever reply gave it, as `cannot-tell` with
-   reason "no evidence". This dispatch never changes the agent's
+   reason "no evidence"; a settled-item `no` is kept as `no` in either
+   reply. This dispatch never changes the agent's
    `status`: a `context` agent already `failed` stays `failed` and is
    reported as such.
 2. Store the answers in `context.context_check_answers[]` as
