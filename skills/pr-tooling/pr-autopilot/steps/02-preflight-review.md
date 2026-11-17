@@ -73,8 +73,13 @@ explicitly). With neither the register nor the tier installed, only
    `status` to `done`, and append its findings to
    `context.preflight_passes.pass2_raw` in the fixed agent order, each
    tagged `agent: <name>`.
-7. Check the `context` agent's answers ("Context-map checks"), then
-   build `merged` ("Merged list").
+7. Once every agent has returned, `done` or `failed`, run "Context-map
+   checks" in full, whatever the `context` agent's status: a `failed`
+   agent has no answers, so every id is re-asked or recorded
+   `cannot-tell`. The re-ask runs beside `/code-review` alone, so it
+   never counts a sixth agent. Then build `merged` ("Merged list"),
+   then compare the `no` and `cannot-tell` answers with it ("Check
+   flips").
 
 ### Intent documents
 
@@ -158,6 +163,10 @@ And for the `context` agent:
          "reason": "one sentence" }
      ]
    One entry per check id in the map, no id skipped, none invented.
+   A "no" cites a diff-side and a context-side <file>:<line>. For a
+   check that asks whether anything else still says or lacks something,
+   the context side is the search you ran: its pattern, its scope and
+   "no hits".
    "yes" also needs a finding in "findings" with "check_id": "C<n>",
    even when a settled decision covers the point: then apply the settled
    decisions rule to decide between a plain finding, a declared-but-risky
@@ -180,26 +189,48 @@ the answers are counted, not trusted:
 
 1. Compare the id set in `context.context_map_checks` with the ids in
    the `context` agent's `checks`, both ways. Drop answers whose id is
-   not in the map. For ids with no answer, dispatch the `context` agent
-   once more with the same head and only item 4, listing the missing
-   ids; ids still unanswered are recorded as `cannot-tell` with reason
-   "not answered". This dispatch never changes the agent's `status`: a
-   `context` agent already `failed` stays `failed` and is reported as
-   such.
+   not in the map. A `no` whose `reason` names a settled item is
+   supported when that item, read in the settled decisions file, covers
+   the point; it needs no second citation, and the item is its
+   `settled_item`. Any other `no` is unsupported when its `evidence`
+   lacks two `<file>:<line>` citations, one of a file in the diff and
+   one of another file or line; for an absence check ("does any other
+   file still say X"), a documented search (pattern, scope, "no hits")
+   in place of the second citation supports it. A `no` that names a
+   settled item the file does not hold, or one that does not cover the
+   point, is judged by the citation rule. For ids with no answer and
+   ids with an unsupported `no`, dispatch the `context` agent once more
+   with the same head and only item 4, listing those ids and why each is
+   listed; its answers replace the first ones for those ids, and its
+   findings are appended to `pass2_raw` tagged `agent: context`, before
+   `merged` is built. After the re-ask, ids with no answer are recorded
+   as `cannot-tell` with reason "not answered", and ids whose answer is
+   an unsupported `no`, whichever reply gave it, as `cannot-tell` with
+   reason "no evidence"; a settled-item `no` is kept as `no` in either
+   reply. This dispatch never changes the agent's
+   `status`: a `context` agent already `failed` stays `failed` and is
+   reported as such.
 2. Store the answers in `context.context_check_answers[]` as
-   `{id, answer, evidence, reason}`.
+   `{id, answer, evidence, reason, flipped_by, settled_item}`,
+   `flipped_by` null until "Check flips" sets it. `settled_item` is the
+   settled item a `no` names in its `reason`, set only when item 1 found
+   that the item is in the settled decisions file and covers the point,
+   or item 3 below records it; null for any other answer, including a
+   `no` judged by the citation rule.
 3. Every `yes` must have a finding with that `check_id`. For a `yes`
    without one, add the finding yourself: `severity: "important"`,
    `category: "interface"`, file and line from the diff side of
    `evidence`, `description` the check's text followed by the reason.
    First test the point against the settled decisions file as in step
    03.5 D1 ("Settled items"): code that no longer matches the item is a
-   plain finding; one of the three consequence tests holding gives
+   plain finding; a consequence test of the settled decisions rule
+   holding gives
    `declared_risk: true` with that `settled_item`; otherwise record the
-   answer as `no` with the item named in `reason`.
-4. `cannot-tell` answers are listed in the review summary under
-   "## Context checks not answered", with the check text, and counted in
-   the step 11 report. They are a known gap in the review, never a pass.
+   answer as `no` with the item named in `reason` and as `settled_item`.
+4. `cannot-tell` answers still `cannot-tell` after "Check flips" are
+   listed in the review summary under "## Context checks not answered",
+   with the check text, and counted in the step 11 report. They are a
+   known gap in the review, never a pass.
 
 With no context map, skip this section and omit item 4 from the prompt.
 
@@ -339,6 +370,23 @@ mechanically, and survive `ScheduleWakeup` resumes without drift.
 See `pr-loop-lib/steps/03-triage.md#filter-b5` for the receiving-side
 normalization — the two must stay in lock-step.
 
+## Check flips
+
+A check answered `no` while another reviewer reports the problem it
+asks about is a wrong answer, not a disagreement. For each
+`context.context_check_answers` entry with answer `no` or `cannot-tell`, compare the
+check's text and its diff-side evidence with every finding in `merged`
+by substance, as `pr-loop-lib/references/merge-rules.md` "Lens-agent
+fold" judges "the same failure": a finding matches when it describes
+the failure the check's "yes" means, at the check's diff-side line or
+at another site of the same problem. On the first match, in `merged`
+order, set the answer to `yes` and `flipped_by` to the finding's id,
+and log `context_check_flipped {id, finding_id}`. Skip an
+answer with a `settled_item`.
+
+Step 03.5 D1 applies this section again to the `/code-review`
+findings and the simplify candidates.
+
 ## Review-summary artifact
 
 The skill writes a markdown summary of every finding it encountered —
@@ -375,7 +423,7 @@ step 03.5 ends the turn to wait for `/code-review`:
    - Minor: <N>
    - Nit: <N> (recorded only)
    - Agents: <name> <findings>, ... (and any that returned nothing usable)
-   - Context checks: <N> yes, <N> no, <N> not answered
+   - Context checks: <N> yes (<N> flipped), <N> no, <N> not answered
 
    ## Declared but risky
 
@@ -415,8 +463,11 @@ step 03.5 ends the turn to wait for `/code-review`:
    `declared` has a matching `context.declarations[]` entry unless
    `settled_item` is set, where the choice is already declared.
 
-5. Rewrite the summary section with the populated per-finding bullets.
-   Use Primitive C atomic write again.
+5. Rewrite the summary section with the populated per-finding bullets,
+   recompute the "Context checks" row from
+   `context.context_check_answers`, and drop from "Context checks not
+   answered" every id now answered `yes`, so both show the flips step
+   03.5 D1 made. Use Primitive C atomic write again.
 
 ### Rename at PR-create time
 
@@ -442,5 +493,5 @@ malformed JSON):
 
 ## Invariants
 
-After the lens agents' findings are stored, verify `S02.1` to `S02.5`
+After the lens agents' findings are stored, verify `S02.1` to `S02.6`
 of `pr-loop-lib/references/invariants.md`.

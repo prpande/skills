@@ -73,8 +73,12 @@ Settled decisions
          failure is answered as success or as not-found, or is dropped
          with no error recorded;
      (c) drop the caller's own data: a caller stops getting a field or
-         record about themselves that they were served before.
-     Test every settled item against (a), (b) and (c) by reading the code
+         record about themselves that they were served before;
+     (d) let a caller past an access check: a permission, ownership,
+         tenant or feature gate is skipped, or a check that fails or
+         cannot be reached is answered as allowed, also when no error is
+         hidden.
+     Test every settled item against (a) to (d) by reading the code
      it names; the ruling says the choice was made, not that its
      consequence was seen. Report a hit as a finding with
      "declared_risk": true and the item quoted in "settled_item".
@@ -183,11 +187,26 @@ Output format (strict JSON, no prose)
         "category": "security|correctness|reliability|testing|cross-artifact|interface|control-flow|format-escaping|validator|conventions|reuse|style",
         "declared_risk": <true only for a declared-but-risky finding; else omit>,
         "settled_item": "<the settled statement, with declared_risk>",
-        "check_id": "<C<n>, when the finding answers a context-map check>"
+        "check_id": "<C<n>, when the finding answers a context-map check>",
+        "dismissed_id": "<D<n>, when the finding reports a refuted candidate as real>"
+      }
+    ],
+    "dismissed_checks": [
+      {
+        "id": "D<n>",
+        "verdict": "upheld" | "wrong" | "cannot-tell",
+        "evidence": "<file>:<line> you read to decide",
+        "reason": "one sentence"
       }
     ],
     "summary": "one-sentence overall assessment"
   }
+  "dismissed_checks" is only for a review whose intent documents list
+  refuted candidates with D<n> ids: one entry per listed id, none
+  skipped, none invented. "upheld" means the refutation holds at
+  head_sha, "wrong" means the candidate is a real problem and also needs
+  a finding with that "dismissed_id", and "cannot-tell" is only for code
+  you could not open; say which. Otherwise leave "dismissed_checks" out.
 
 Rules
   - Only raise findings you can cite with specific file:line evidence.
@@ -204,7 +223,7 @@ Rules
 If the user wants to tune the adversarial bar (harsher or softer),
 edit the tone sentences at the top and the severity rubric. Keep
 the pass structure intact — it defines the output schema. Keep the
-"Settled decisions" block's three consequence tests: they are what lets
+"Settled decisions" block's four consequence tests: they are what lets
 a ruling stand without hiding what it costs a caller. Pass D's
 content comes from the `deep-review` skill's lens register; edit the
 register there, not here.

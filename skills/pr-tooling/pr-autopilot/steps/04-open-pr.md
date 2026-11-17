@@ -159,7 +159,7 @@ comment posted after it.
 Print:
 ```
 PR opened: <url>
-Pre-open review: <n> findings fixed, <n> declared, <n> open questions, <n> dismissed by /code-review.
+Pre-open review: <n> findings fixed, <n> declared, <n> open questions, <n> dismissed by /code-review (<n> upheld, <n> wrong, <n> cannot tell, <n> not checked).
 Entering comment loop. Next fetch in 5 minutes (loop exits after two consecutive quiescent iterations).
 ```
 
