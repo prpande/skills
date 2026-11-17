@@ -78,7 +78,8 @@ explicitly). With neither the register nor the tier installed, only
    agent has no answers, so every id is re-asked or recorded
    `cannot-tell`. The re-ask runs beside `/code-review` alone, so it
    never counts a sixth agent. Then build `merged` ("Merged list"),
-   then compare the `no` answers with it ("Check flips").
+   then compare the `no` and `cannot-tell` answers with it ("Check
+   flips").
 
 ### Intent documents
 
@@ -217,9 +218,10 @@ the answers are counted, not trusted:
    holding gives
    `declared_risk: true` with that `settled_item`; otherwise record the
    answer as `no` with the item named in `reason` and as `settled_item`.
-4. `cannot-tell` answers are listed in the review summary under
-   "## Context checks not answered", with the check text, and counted in
-   the step 11 report. They are a known gap in the review, never a pass.
+4. `cannot-tell` answers still `cannot-tell` after "Check flips" are
+   listed in the review summary under "## Context checks not answered",
+   with the check text, and counted in the step 11 report. They are a
+   known gap in the review, never a pass.
 
 With no context map, skip this section and omit item 4 from the prompt.
 
@@ -453,9 +455,10 @@ step 03.5 ends the turn to wait for `/code-review`:
    `settled_item` is set, where the choice is already declared.
 
 5. Rewrite the summary section with the populated per-finding bullets,
-   and recompute the "Context checks" row from
-   `context.context_check_answers`, so it counts the flips step 03.5 D1
-   made. Use Primitive C atomic write again.
+   recompute the "Context checks" row from
+   `context.context_check_answers`, and drop from "Context checks not
+   answered" every id now answered `yes`, so both show the flips step
+   03.5 D1 made. Use Primitive C atomic write again.
 
 ### Rename at PR-create time
 
