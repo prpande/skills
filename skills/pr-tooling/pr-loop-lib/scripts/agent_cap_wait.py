@@ -5,7 +5,7 @@ Usage: python agent_cap_wait.py [--need N|full] [--session ID] [--started MS]
 Reads the mod's wait command from wait-command.txt in the agent-cap state
 folder (AGENT_CAP_DIR, else USERPROFILE, else HOME, else the user home, plus .claude/agent-cap), runs it with these
 arguments, prints its output and exits with its code: 0 "free: ...", 10
-"wait: ..." (still full after at most 170 s; run the command it prints next),
+"wait: ..." (still full after at most 160 s; run the command it prints next),
 11 "gave-up: ..." (30 minutes in all), 64 bad arguments. A machine without
 the mod has no state folder or no wait-command.txt: then, and when the
 command cannot run, it prints "free: ..." and exits 0.
