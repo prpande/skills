@@ -73,7 +73,7 @@ explicitly). With neither the register nor the tier installed, only
    `pr-loop-lib/steps/04-dispatch-fixers.md`, then make the same spawn
    again, and never do a lens agent's work in this session because of a
    refusal. A refusal that follows a `free` answer counts toward 3
-   attempts, and the third is handled like `gave-up`. On `gave-up`, set the agent's `status` to
+   attempts, and the third is handled like `gave-up`, `agent_cap_degraded` entry included. On `gave-up`, set the agent's `status` to
    `failed` and name the agent cap in the "Agents" line. This holds for
    the context-map re-ask in "Context-map checks" too.
 6. Parse each JSON reply, log `subagent_return`, set the agent's

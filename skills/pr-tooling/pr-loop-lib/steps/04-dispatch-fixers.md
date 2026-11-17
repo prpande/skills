@@ -69,7 +69,8 @@ running (fewer when the host's cap is lower):
      next bullet. Each chain of waits has its own 30 minutes; once a
      wait has given up, every later agent-cap refusal in this step is
      recorded at once without waiting. When the wait reports `gave-up`,
-     record the unit's items `needs-human` with reason "the agent cap
+     or the third agent-cap refusal follows a `free` answer, record the
+     unit's items `needs-human` with reason "the agent cap
      held every slot for <waited>" and go on with the queue; for a
      verifier dispatch, handle the unit as a verifier that timed out
      (below), with that reason.
@@ -102,7 +103,8 @@ ends, so the caller waits for a slot:
    is none of the three (a `usage:` line, a traceback) is not `free`:
    correct the call and run it once more, then treat it as `free`.
 3. Log `agent_cap_wait {unit, need, waited_s, outcome}` when it ends. A
-   `gave-up` adds `{what: <unit>, detail: "<what was not dispatched>
+   `gave-up`, or a third agent-cap refusal after a `free` answer (it is
+   handled as a `gave-up` everywhere), adds `{what: <unit>, detail: "<what was not dispatched>
    after <waited> of waiting"}` to `context.agent_cap_degraded`, which
    step 11 reports.
 
