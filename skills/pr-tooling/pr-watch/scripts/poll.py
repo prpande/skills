@@ -393,6 +393,8 @@ def tick_query(groups):
         fields = " ".join(
             f"p{int(n)}: pullRequest(number: {int(n)}) {{ number updatedAt headRefOid state "
             f"baseRefName mergeable mergeStateStatus reviewDecision "
+            f"baseRef {{ associatedPullRequests(states: MERGED, first: 1) {{ nodes {{ number url }} }} }} "
+            f"baseRepository {{ defaultBranchRef {{ name }} }} "
             f"commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }} }}"
             for n in numbers)
         aliases[f"r{index}"] = (owner, repo)
@@ -518,6 +520,51 @@ def required_checks(gh, repo_slug, number):
     return json.loads(out or "[]")
 
 
+def default_branch(node):
+    return ((node.get("baseRepository") or {}).get("defaultBranchRef") or {}).get("name")
+
+
+def merged_base_pr(node):
+    nodes = ((node.get("baseRef") or {}).get("associatedPullRequests") or {}).get("nodes") or []
+    return nodes[0] if nodes else None
+
+
+def not_found(exc):
+    return "404" in str(exc) or "Not Found" in str(exc)
+
+
+def default_required_names(gh, repo_slug, default):
+    quoted = urllib.parse.quote(default, safe="")
+    names = set()
+    for args in (
+            ["api", f"repos/{repo_slug}/rules/branches/{quoted}", "--paginate", "--jq",
+             '.[] | select(.type == "required_status_checks") | '
+             '.parameters.required_status_checks[].context'],
+            ["api", f"repos/{repo_slug}/branches/{quoted}/protection/required_status_checks",
+             "--jq", ".contexts[]"]):
+        try:
+            out = gh(args)
+        except GhError as exc:
+            if not_found(exc):
+                continue
+            raise
+        names.update(line for line in (out or "").splitlines() if line)
+    return sorted(names)
+
+
+def stacked_checks(gh, repo_slug, number, default):
+    """(the head's rows for the default branch's required checks, the required names no row has)."""
+    required = default_required_names(gh, repo_slug, default)
+    try:
+        out = gh(["pr", "checks", str(number), "--repo", repo_slug, "--json", CHECK_FIELDS])
+    except GhError as exc:
+        if "no checks reported" not in str(exc):
+            raise
+        out = "[]"
+    rows = [c for c in json.loads(out or "[]") if c.get("name") in required]
+    return rows, sorted(set(required) - {c["name"] for c in rows})
+
+
 def check_platform(link):
     link = link or ""
     match = ACTIONS_LINK.match(link)
@@ -555,13 +602,14 @@ def is_new(prefix, items, stored, known):
     return not (stored or "").startswith(prefix) or not set(items) <= set(known)
 
 
-def evaluate_ci(gh, entry, node, seen, stored, stored_items):
-    """`seen` dedupes (empty on a forced pass); `stored` and `stored_items` are kept when nothing is red."""
+def evaluate_ci(gh, entry, node, seen, stored, stored_items, checks=None):
+    """`seen` dedupes (empty on a forced pass); `stored` and `stored_items` are kept when nothing is red;
+    `checks`, when given, replaces the PR's required checks as the rows to judge."""
     if rollup_state(node) not in FAILED_ROLLUP:
         return Evaluation(None, stored, False, stored_items)
     slug = repo_slug(entry["owner"], entry["repo"])
-    red = sorted((c for c in required_checks(gh, slug, entry["number"])
-                  if c.get("bucket") in RED_BUCKETS), key=check_key)
+    rows = required_checks(gh, slug, entry["number"]) if checks is None else checks
+    red = sorted((c for c in rows if c.get("bucket") in RED_BUCKETS), key=check_key)
     if not red:
         return Evaluation(None, stored, False, stored_items)
     head = node["headRefOid"]
@@ -701,8 +749,10 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
     ci_signature, ci_items = prev.get("last_ci_signature", ""), prev.get("last_ci_items")
     review_pending = prev.get("review_pending", False)
     ci_pending = prev.get("ci_pending", False) if authored else False
-    review_event = ci_event = None
+    review_event = ci_event = unchecked_event = None
     review_failed = ci_failed = False
+    default = default_branch(node)
+    stacked = bool(default) and (node.get("baseRefName") != default or bool(prev.get("stacked")))
     compared = prev.get("compared")
 
     def compare(base, old, new):
@@ -726,15 +776,23 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
             review_failed = True
     if authored and (ci_moved or ci_forced):
         try:
+            checks = missing = None
+            if stacked:
+                checks, missing = stacked_checks(
+                    gh, repo_slug(entry["owner"], entry["repo"]), entry["number"], default)
             ci_event, ci_signature, ci_pending, ci_items = evaluate_ci(
-                gh, entry, node, ci_seen, ci_signature, ci_items)
+                gh, entry, node, ci_seen, ci_signature, ci_items, checks)
+            if missing:
+                unchecked_event = unchecked_ci_event(poller, key, entry, node, default, missing,
+                                                     ci_forced)
         except PR_FAULTS as exc:
             pr_fault(poller, key, exc)
             ci_failed = True
-    events += [e for e in (review_event, ci_event) if e]
+    events += [e for e in (review_event, ci_event, unchecked_event) if e]
     if review_failed:
         if (ci_signature, ci_items) != (prev.get("last_ci_signature", ""), prev.get("last_ci_items")):
             prs[key] = dict(prev, last_ci_signature=ci_signature,
+                            **({"stacked": True} if stacked else {}),
                             **stored_items(last_ci_items=ci_items))
         return
     pending_since = (prev.get("pending_since") or now) if review_pending or ci_pending else None
@@ -746,6 +804,8 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
                  **stored_items(last_items=items, last_ci_items=ci_items)}
     if compared:
         new_entry["compared"] = compared
+    if stacked:
+        new_entry["stacked"] = True
     # Spent independently per branch, so a standing CI-only failure does not
     # keep re-forcing the unchanged review branch too.
     retried_at = retry_spend(retry_after, retry_review, review_failed, prev, "retried_at")
@@ -884,6 +944,36 @@ def check_mergeability(view, poller, key, node, force, events):
                    "base": node.get("baseRefName")})
 
 
+def unchecked_ci_event(poller, key, entry, node, default, missing, forced):
+    """The `ci-unchecked` event for a stacked head whose gated checks never ran, once per head, rollup
+    and missing set until the session records it."""
+    head, rollup = node["headRefOid"], rollup_state(node)
+    if rollup in ("PENDING", "EXPECTED") or f"{head}|ci-unchecked" in (entry.get("ci_handled") or []):
+        return None
+    mark = f"{head}:{rollup}:{','.join(missing)}"
+    marks = poller.setdefault("unchecked", {})
+    if not forced and marks.get(key) == mark:
+        return None
+    marks[key] = mark
+    return {"pr": key, "role": "authored", "kind": "ci-unchecked", "head": head,
+            "base": node.get("baseRefName"), "default": default, "missing": list(missing)}
+
+
+def check_base_merged(view, poller, key, node, events):
+    """Emit `base-merged` once per base branch of an authored PR stacked on a merged PR."""
+    default, base = default_branch(node), node.get("baseRefName")
+    merged = merged_base_pr(node)
+    if view["prs"][key]["role"] != "authored" or not default or base == default or not merged:
+        return
+    marks = poller.setdefault("base_merged", {})
+    if marks.get(key) == base:
+        return
+    marks[key] = base
+    events.append({"pr": key, "role": "authored", "kind": "base-merged", "head": node["headRefOid"],
+                   "base": base, "default": default, "base_pr": merged["number"],
+                   "base_pr_url": merged["url"]})
+
+
 def head_groups(prs, closed):
     groups = {}
     for key in sorted(prs):
@@ -940,9 +1030,11 @@ def tick_once(gh, view, poller, now, force=False, heads=None):
                     continue
                 if node["state"] != "OPEN":
                     poller.get("review", {}).pop(key, None)
-                    poller.get("merge", {}).pop(key, None)
+                    for mark in ("merge", "unchecked", "base_merged"):
+                        poller.get(mark, {}).pop(key, None)
                     continue
                 check_mergeability(view, poller, key, node, force, events)
+                check_base_merged(view, poller, key, node, events)
                 try:
                     check_review_ready(gh, view, poller, key, node, now, force, events)
                 except PR_FAULTS as exc:
@@ -1624,16 +1716,25 @@ def base_conclusion(on_base, workflow, name):
 
 def checks_payload(gh, owner, repo, number):
     slug = repo_slug(owner, repo)
-    base, head = gh(["api", f"repos/{slug}/pulls/{number}",
-                     "--jq", '.base.ref + " " + .head.sha']).split()
+    base, head, *rest = gh(["api", f"repos/{slug}/pulls/{number}", "--jq",
+                            '.base.ref + " " + .head.sha + " " + .base.repo.default_branch']).split()
+    default = rest[0] if rest else None
+    missing = None
+    if default and default != base:
+        rows, missing = stacked_checks(gh, slug, number, default)
+    else:
+        rows = required_checks(gh, slug, number)
     on_base = base_conclusions(gh, slug, base)
     checks = [{"name": c["name"], "state": c.get("state"), "bucket": c.get("bucket"),
                "link": c.get("link"), "workflow": c.get("workflow") or "",
                "completed_at": c.get("completedAt"),
                "on_base": base_conclusion(on_base, c.get("workflow") or "", c["name"]),
                **check_platform(c.get("link"))}
-              for c in required_checks(gh, slug, number)]
-    return {"pr": pr_key(owner, repo, number), "head": head, "base": base, "checks": checks}
+              for c in rows]
+    payload = {"pr": pr_key(owner, repo, number), "head": head, "base": base, "checks": checks}
+    if missing is not None:
+        payload["missing"] = missing
+    return payload
 
 
 class _RefuseRedirect(urllib.request.HTTPRedirectHandler):
