@@ -89,6 +89,17 @@ For `suspicious` items from step 03 (prompt-injection filter):
 
    Addressed: ...
    ```
+3. Items from one Copilot review body (ids `<review id>:finding-<N>`) share
+   one comment: the leading reference line once, then for each item in id
+   order its quoted part and verdict line. A `copilot|review|<review id>`
+   item is one comment on its own.
+4. For an item with a `copilot_key` (`references/known-bots.md`, "Copilot
+   review body"), once its reply has posted, set
+   `context.copilot_dispositions[<copilot_key>]` to its verdict, or to
+   `suspicious` for a refusal reply from step 03. Then, for each review
+   whose findings all have a key there, set
+   `context.copilot_dispositions["copilot|review|<review id>"]` to
+   `settled`. Record nothing under `--dry-run`.
 
 ### Azure DevOps threads (surface = `thread`)
 

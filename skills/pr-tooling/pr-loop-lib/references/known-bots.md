@@ -8,7 +8,8 @@ classifies a comment as actionable or skip-able.
 | Login | Where it posts | Signature (body contains / starts with) | Classification |
 |---|---|---|---|
 | `Copilot` | Inline review comment | Any body with `path` set on the API response | Actionable |
-| `copilot-pull-request-reviewer[bot]` | Review body | `Copilot reviewed N out of N changed files` | Skip — meta/summary; inline comments carry the findings |
+| `copilot-pull-request-reviewer[bot]` | Review body | contains `### Suppressed comments` or `previously missed issue</strong>` or `previously missed issues</strong>` | Parse — one finding per item, see "Copilot review body" below |
+| `copilot-pull-request-reviewer[bot]` | Review body | neither | Skip — verdict, overview and counts; inline comments carry the other findings |
 | `sonarqube[bot]` | Top-level PR comment | `Quality Gate passed` | Skip — status only |
 | `sonarqube[bot]` | Top-level PR comment | `Quality Gate failed` | Actionable — surface listed issues |
 | `sonarqubecloud[bot]` | Top-level PR comment | `Quality Gate passed` | Skip — status only |
@@ -18,6 +19,51 @@ classifies a comment as actionable or skip-able.
 
 The default list is deliberately short. Only bots that are well-known
 across teams ship as defaults.
+
+### Copilot review body
+
+Most Copilot findings are inline comments. Two kinds live only in its
+review body: the items under `### Suppressed comments`, and, in a body
+that opens with `<!-- ccr-overview-v2 -->`, the items of the "previously
+missed issues" block (findings in code that has not changed since its
+last review). Write the body to a file and run:
+
+```
+python "$HOME/.claude/skills/pr-loop-lib/scripts/copilot_review.py" <body-file>
+```
+
+It prints `{"classification", "findings"}`. Each finding becomes one
+actionable item: surface `review`, id `<review id>:finding-<N>` in output
+order, its `path` and `line`, as body the `text` when it begins with
+the `title` and otherwise the `title` followed by the `text`, led by
+`[High] `, `[Medium] ` or `[Low] ` when `severity` is set, and `copilot_key`
+its `key`. The open-issues and resolved-since-last-review blocks are never
+findings. An iteration that records a disposition for one is never
+quiescent in step 08, whatever the verdicts. Exit 2 means the body names one of
+the two sections but the script could not read an item: treat the whole
+body as one actionable item with id `<review id>` and `copilot_key`
+`copilot|review|<review id>`. Exit 64 means the call was wrong (quote a
+body path that holds a space) or the file could not be opened: fix the
+call and run it again; it is neither a skip nor an unreadable body. Pass
+a file, not a pipe: a Windows PowerShell pipe turns non-ASCII characters
+in paths into `?`.
+
+Copilot repeats a finding it still sees in its next review, under a new
+review id and often reworded. Each finding's `key` is
+`copilot|<path>|<title>`. Before raising one, look its key up in
+`context.copilot_dispositions`; when it is not there, compare the finding
+with the recorded keys for the same path, and when it names the same
+defect as one of them, record its key with that verdict and raise
+nothing. When it is not clearly the same defect, raise it.
+
+A review whose `copilot|review|<review id>` is in `context.copilot_dispositions`
+is dropped before its body is written out or parsed. Step 03 records that
+key as `settled` when the script returns no finding or every finding is
+dropped as a repeat; step 07 records it once every finding of the review
+has a key there. Under `--dry-run` nothing is recorded in
+`context.copilot_dispositions`.
+`pr-watch/references/known-bots-overlay.md` keeps the same keys in its
+progress file.
 
 ## Unknown-bot fallback
 

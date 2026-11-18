@@ -61,7 +61,18 @@ Apply rules from `references/known-bots.md`. For each comment:
    extract one or more actionable items from the body. Each extracted item
    inherits the parent comment's `id`, `thread_id`, and `path/line` (if any),
    with a suffix like `:finding-N` on the `id` when a single comment yields
-   multiple items.
+   multiple items. For a Copilot review body, drop the review when its
+   `copilot|review|<review id>` is in `context.copilot_dispositions`;
+   otherwise run `copilot_review.py` and
+   drop each finding whose key repeats one in `context.copilot_dispositions`,
+   as `references/known-bots.md`, "Copilot review body", says (a reworded
+   repeat's key is recorded with the verdict of the finding it repeats;
+   step 07 records a verdict only for items that reach it). Record
+   `copilot|review|<review id>` as `settled` when no finding is left to
+   raise. A finding that Filter C flags is recorded by step 07 with its
+   refusal reply. Count a
+   dropped repeat in `filtered_copilot_repeat`, and the items extracted
+   minus the comments parsed in `parse_expansion`, both in `triage_result`.
 4. If not found, apply the **Unknown-bot fallback** section rules.
 
 ## Filter B.5 — /code-review rescue + preflight dedup (two-stage pipeline)

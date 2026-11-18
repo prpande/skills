@@ -89,7 +89,7 @@ last output line. `--jq` runs once per page, so a reducing filter such as
 ## `copilot-pull-request-reviewer`
 
 GitHub's own reviewer, enabled per repository. The login on both its
-records is the bare `copilot-pull-request-reviewer`; the library's two
+records is the bare `copilot-pull-request-reviewer`; the library's
 Copilot rows are keyed on `Copilot` and on
 `copilot-pull-request-reviewer[bot]`, so they never match here and the
 rows above are the ones that apply.
@@ -104,39 +104,28 @@ and the body then carries only the verdict, an overview, per-file
 summaries and counts: nothing to act on, and a review with no inline
 comments raises no work at all.
 
-The exception is the `### Suppressed comments` section under
-`<summary>Review details</summary>`, which holds the findings Copilot
-decided not to post inline. Each item is a `**<path>:<line>**` heading, a
-bullet holding the whole finding, and a fenced quote of the lines it
-refers to; that bullet is one actionable finding, and the review carries
-them even when its counts say `Comments generated: 0 new`.
+The exceptions are the `### Suppressed comments` section, which holds the
+findings Copilot decided not to post inline (even when its counts say
+`Comments generated: 0 new`), and the "previously missed issues" block of
+a body that opens with `<!-- ccr-overview-v2 -->`, which holds findings
+in code that has not changed since the last review. Read both with
+`python "$HOME/.claude/skills/pr-loop-lib/scripts/copilot_review.py"
+<body-file>`, as `pr-loop-lib/references/known-bots.md` "Copilot review
+body" describes, including its exit-2 rule: the body becomes one
+actionable item keyed by the review's id.
 
-A newer review body (it opens with `<!-- ccr-overview-v2 -->`) can also
-hold a `<details>` block whose summary is
-`<strong>1 previously missed issue</strong>` or
-`<strong><N> previously missed issues</strong>`: findings in code that
-has not changed since the last review, which Copilot does not post
-inline. Each `<details>` nested inside it is one actionable finding. Its
-`<summary>` holds a severity image (`alt="High severity"`, `Medium` or
-`Low`) and the title; after it come a `` `<path>:<line>` `` line and the
-finding text. The path carries a zero-width space (U+200B) after each
-`/`; strip those before using it, in the key too. The
-`<N> resolved since last review` block and the `<N> open issues` block
-(or the `**No open issues**` line) are not findings: the resolved ones
-are fixed, and the open issues are bullets linking to the review's
-inline comments.
-
-For both kinds, record the disposition in `handled_top_level_ids` (in the
-PR's progress file) under `copilot|<path>|<the bullet's first sentence>`
-for a suppressed comment or `copilot|<path>|<title>` for a previously
-missed issue, and the review's own id under `parsed`. Copilot repeats a
-finding it still sees in the next review under a new review id, often on
-a moved line and with its title or sentence reworded, so an exact key
-misses most repeats. Before raising a finding whose key is not recorded,
-compare it with the `copilot|<same path>|` keys already recorded. When it
-names the same defect as one of them, record its key with that
-disposition and raise nothing. When it is not clearly the same defect,
-raise it.
+Answer the findings of one review body in one top-level comment: the
+reference line once, then for each finding in the script's order its
+quoted part and verdict line, as the library's step 07 item 3 describes.
+Once that comment posts, record each finding's disposition in
+`handled_top_level_ids` (in the PR's progress file) under the finding's
+`key`, and the review's own id under `parsed`. A body the Skip row
+classifies is recorded `skipped` under the review's id. Repeats are
+dropped as the library's "Copilot review body" describes, looking keys up
+here in `handled_top_level_ids` instead of `context.copilot_dispositions`.
+A body whose findings were all dropped as repeats posts no comment; record
+its id as `parsed` at once, since the library's `copilot|review|<review id>`
+settlement key is not what `poll.py` looks up.
 
 A comment that matches no row falls through to the library's unknown-bot
 fallback. When a status line changes shape, update the row here rather
