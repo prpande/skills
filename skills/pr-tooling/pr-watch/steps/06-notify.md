@@ -79,6 +79,7 @@ the steps above.
 | CI rerun dropped | `Rerun of <check name> dropped: the PR head moved before it ran.` |
 | CI dispatched | `<base>` is not the default branch, so its gated workflow did not run. Dispatched `<file>` on the head. |
 | CI unchecked | CI unchecked: `<names>` never ran on this head. Not green. |
+| CI unchecked (dispatch failed) | CI unchecked: `<names>` never ran on this head, and dispatching `<file>` failed: <first stderr line>. Not green. |
 | CI pre-existing | `<check name> is red on <base> too; leaving it.` |
 | CI needs you | `Needs you: [<check name>](<link>) is red at <head7> (<reason>).` — then, only when the PR's `ci_log_occurrence` is this check's occurrence key and `pr-watch/steps/07-ci.md` rule 3's destination check passes again over the file now, up to 20 lines from `grep -m 20 -E -e '##\[error\]' -e 'error [A-Z]+[0-9]+' -e 'Failed ' -e 'Test Run Failed'` over it, put through "Quoting someone else's text", in a code block; the session never reads the whole file |
 | review ask | `Review ask drafted in #prpande-outbox for <destination>.` (`pr-watch/steps/08-review-ask.md`; `<destination>` is the channel name, or `no earlier ask found; pick a channel`) |
