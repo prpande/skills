@@ -38,8 +38,8 @@ order, its `path` and `line`, as body the `text` when it begins with
 the `title` and otherwise the `title` followed by the `text`, led by
 `[High] `, `[Medium] ` or `[Low] ` when `severity` is set, and `copilot_key`
 its `key`. The open-issues and resolved-since-last-review blocks are never
-findings. An iteration that raises one is never quiescent in step 08,
-whatever the verdicts. Exit 2 means the body names one of
+findings. An iteration that records a disposition for one is never
+quiescent in step 08, whatever the verdicts. Exit 2 means the body names one of
 the two sections but the script could not read an item: treat the whole
 body as one actionable item with id `<review id>` and `copilot_key`
 `copilot|review|<review id>`. Exit 64 means the call was wrong (quote a

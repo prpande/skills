@@ -1,18 +1,11 @@
 """Pull the findings out of a Copilot code review body.
 
-Prints one JSON object {"classification": "parse" | "skip", "findings": [...]}.
-Each finding is {"kind", "severity", "path", "line", "title", "text", "key"}:
-"kind" is "suppressed" (a `### Suppressed comments` item) or "missed" (an item
-of the "previously missed issues" block), "severity" is "high", "medium",
-"low" or null, and "key" is "copilot|<path>|<title>", the stable identity of a
-finding across reviews. "skip" means the body holds neither section; the
-verdict, overview, open issues and resolved issues are never findings.
-Exit 2 on a body that names one of the two sections but yields fewer findings
-than the section holds: none, an item it could not read, or a count that
-differs from the one in the section heading. Exit 64 on a bad call (wrong
-argument count) or a body file that cannot be opened; no body was read.
-The body may be UTF-8, UTF-8 with a BOM or UTF-16 with a BOM; bytes that are
-none of these decode to U+FFFD.
+Prints {"classification": "parse" | "skip", "findings": [...]}; "skip" means the
+body holds neither a Suppressed comments section nor a previously missed issues block.
+A finding is {"kind": "suppressed" | "missed", "severity": "high" | "medium" | "low" | null,
+"path", "line", "title", "text", "key"}; "key" is "copilot|<path>|<title>".
+Exit 2: a named section yielded fewer findings than it holds. Exit 64: bad call or unopenable body file.
+The body may be UTF-8, UTF-8 with a BOM or UTF-16 with a BOM.
 """
 
 import json
@@ -64,12 +57,7 @@ def _blank(chars, start, end):
 
 
 def _mask(body):
-    """Copy of body, same length, with fenced blocks and inline code blanked out.
-
-    Structure (headings, <details>, item lines) is located on the copy and the
-    text is cut from the original at the same offsets. A fence that is never
-    closed masks nothing.
-    """
+    """Return body at the same length with fenced blocks and inline code blanked."""
     chars = list(body)
     lines = body.split("\n")
     starts = []

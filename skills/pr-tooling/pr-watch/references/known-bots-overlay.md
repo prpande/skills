@@ -114,9 +114,12 @@ in code that has not changed since the last review. Read both with
 body" describes, including its exit-2 rule: the body becomes one
 actionable item keyed by the review's id.
 
-Record each finding's disposition in `handled_top_level_ids` (in the PR's
-progress file) under the finding's `key`, and the review's own id under
-`parsed`. A body the Skip row classifies is recorded `skipped` under the
+Answer the findings of one review body in one top-level comment: the
+reference line once, then for each finding in the script's order its
+quoted part and verdict line, as the library's step 07 item 3 describes.
+Once that comment posts, record each finding's disposition in
+`handled_top_level_ids` (in the PR's progress file) under the finding's
+`key`, and the review's own id under `parsed`. A body the Skip row classifies is recorded `skipped` under the
 review's id. Repeats are dropped as the library's "Copilot review body"
 describes, looking keys up here in `handled_top_level_ids` instead of
 `context.copilot_dispositions`.

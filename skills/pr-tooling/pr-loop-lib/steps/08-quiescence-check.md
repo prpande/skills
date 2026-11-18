@@ -48,10 +48,13 @@ The confirmation iteration always waits — `pr-followup`'s
 2. **No code changed** this iteration: all verdicts are in
    `{replied, not-addressing, needs-human, ui-deferred}`. Re-entering
    the loop cannot progress — another fetch will see the same state.
-   An iteration whose `context.actionable` held a Copilot review-body
-   finding (an item with a `copilot_key`) is never quiescent here,
-   whatever its verdicts: it takes the non-quiescent branch, and the
-   next fetch drops the finding through `context.copilot_dispositions`.
+   An iteration that recorded a `context.copilot_dispositions` entry
+   this iteration (step 07 item 4, for an item with a `copilot_key`) is
+   never quiescent here, whatever its verdicts: it takes the
+   non-quiescent branch, and the next fetch drops the finding through
+   that entry. A Copilot finding whose reply did not post, or any
+   finding under `--dry-run`, records nothing; the next fetch raises it
+   again, so it does not block this path.
    When this path exits AND the iteration's `context.agent_returns`
    contains at least one entry with `verdict == "ui-deferred"`,
    advance `context.last_handled_timestamp = now` (same mechanism as
