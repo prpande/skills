@@ -393,7 +393,7 @@ def tick_query(groups):
         fields = " ".join(
             f"p{int(n)}: pullRequest(number: {int(n)}) {{ number updatedAt headRefOid state "
             f"baseRefName mergeable mergeStateStatus reviewDecision "
-            f"baseRef {{ target {{ oid }} associatedPullRequests(states: MERGED, first: 1) {{ nodes {{ number url headRefOid }} }} }} "
+            f"baseRef {{ target {{ oid }} associatedPullRequests(states: MERGED, first: 1, orderBy: {{field: CREATED_AT, direction: DESC}}) {{ nodes {{ number url headRefOid }} }} }} "
             f"baseRepository {{ defaultBranchRef {{ name }} }} "
             f"commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }} }}"
             for n in numbers)
@@ -531,24 +531,24 @@ def merged_base_pr(node):
     return nodes[0] if nodes and tip and nodes[0].get("headRefOid") == tip else None
 
 
-def not_found(exc):
+def not_found(exc, markers=("404", "Not Found")):
     text = str(exc)
-    return any(marker in text for marker in ("404", "403", "Not Found", "Must have admin rights"))
+    return any(marker in text for marker in markers)
 
 
 def default_required_names(gh, repo_slug, default):
     quoted = urllib.parse.quote(default, safe="")
     names = set()
-    for args in (
-            ["api", f"repos/{repo_slug}/rules/branches/{quoted}", "--paginate", "--jq",
-             '.[] | select(.type == "required_status_checks") | '
-             '.parameters.required_status_checks[].context'],
-            ["api", f"repos/{repo_slug}/branches/{quoted}/protection/required_status_checks",
-             "--jq", ".contexts[]"]):
+    for args, markers in (
+            (["api", f"repos/{repo_slug}/rules/branches/{quoted}", "--paginate", "--jq",
+              '.[] | select(.type == "required_status_checks") | '
+              '.parameters.required_status_checks[].context'], ("404", "Not Found")),
+            (["api", f"repos/{repo_slug}/branches/{quoted}/protection/required_status_checks",
+              "--jq", ".contexts[]"], ("404", "403", "Not Found", "Must have admin rights"))):
         try:
             out = gh(args)
         except GhError as exc:
-            if not_found(exc):
+            if not_found(exc, markers):
                 continue
             raise
         names.update(line for line in (out or "").splitlines() if line)

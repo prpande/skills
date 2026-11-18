@@ -81,8 +81,9 @@ class QueryAndNameTests(unittest.TestCase):
     def test_tick_query_asks_for_default_branch_and_merged_base(self):
         query = poll.tick_query({("o", "r"): [1411]})[0]
         self.assertIn("baseRepository { defaultBranchRef { name } }", query)
-        self.assertIn("baseRef { target { oid } associatedPullRequests(states: MERGED, first: 1) "
-                      "{ nodes { number url headRefOid } } }", query)
+        self.assertIn("baseRef { target { oid } associatedPullRequests(states: MERGED, first: 1, "
+                      "orderBy: {field: CREATED_AT, direction: DESC}) { nodes { number url headRefOid } } }",
+                      query)
 
     def test_default_required_names_unions_ruleset_and_classic(self):
         gh = StackedGh()
@@ -106,6 +107,14 @@ class QueryAndNameTests(unittest.TestCase):
                 raise poll.GhError("gh: Must have admin rights to Repository. (HTTP 403)")
             return gh(args)
         self.assertEqual(poll.default_required_names(forbidden, "o/r", "main"), ["A"])
+
+    def test_forbidden_rules_call_raises(self):
+        def forbidden(args):
+            if "/rules/branches/" in args[1]:
+                raise poll.GhError("gh: Resource protected by SAML enforcement (HTTP 403)")
+            return ""
+        with self.assertRaises(poll.GhError):
+            poll.default_required_names(forbidden, "o/r", "main")
 
     def test_other_errors_raise(self):
         def boom(args):
