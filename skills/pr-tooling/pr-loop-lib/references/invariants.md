@@ -120,8 +120,9 @@ equivalent predicates live in `P02.*`.
 
 | # | Predicate |
 |---|---|
-| S09.1 | Every entry in `ci_results` has `state` ∈ {`green`, `red`, `pending-timeout`} |
+| S09.1 | Every entry in `ci_results` has `state` ∈ {`green`, `red`, `pending-timeout`, `missing`} |
 | S09.2 | If `ci_results` is **non-empty** AND every entry has `state: green`, `termination_reason` is set to `ci-green`. The non-empty qualifier is required because β's step 09 now routes an empty `ci_results` (no CI configured) to `ci-skipped`, not to a vacuously-true `ci-green`. |
+| S09.3 | If any `ci_results` entry has `state: missing` and none has `state: red`, `termination_reason` is set to `ci-unchecked`. |
 
 ### Step 10 — ci-failure-classify
 

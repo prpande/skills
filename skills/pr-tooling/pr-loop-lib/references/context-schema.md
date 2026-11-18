@@ -103,7 +103,8 @@ run `/simplify`).
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `ci_results` | array of objects | default `[]` | Per-check `{name, state, link, raw_state, extra}` |
+| `ci_results` | array of objects | default `[]` | Per-check `{name, state, link, raw_state, extra}`; `state` is `green`, `red`, `pending-timeout` or `missing` (a check the default branch requires that has no run on the head) |
+| `ci_dispatched` | array of strings | default `[]` | `<head_sha>\|<workflow file>` for each gated workflow dispatched; step 09 never repeats one. Kept for the life of the state file |
 | `ci_reentry_count` | integer | default `0` | Max 3 |
 
 ## Termination
@@ -111,7 +112,7 @@ run `/simplify`).
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `loop_exit_reason` | enum or null | no | `quiescent-confirmed` \| `iteration-cap` \| `runaway-detected`. The two old soft-quiescent values (`quiescent-zero-actionable`, `quiescent-no-code-change`) were removed in 2026-05-06; they no longer cause a loop exit on their own — they are recorded on `last_quiescence_reason` (above) on the first quiescent iteration, and the loop continues. Only the second consecutive quiescent iteration writes `loop_exit_reason = quiescent-confirmed` and exits. State files written by older skill versions may contain the removed values; that is expected — schema validation runs at write time, not on every read. |
-| `termination_reason` | enum or null | no | `ci-green` \| `ci-red` \| `ci-skipped` \| `ci-timeout` \| `ci-reentry-cap` \| `ci-pre-existing-failures` \| `iteration-cap` \| `runaway-detected` \| `user-intervention-needed` |
+| `termination_reason` | enum or null | no | `ci-green` \| `ci-red` \| `ci-skipped` \| `ci-unchecked` \| `ci-timeout` \| `ci-reentry-cap` \| `ci-pre-existing-failures` \| `iteration-cap` \| `runaway-detected` \| `user-intervention-needed` |
 | `code_review_invoked` | boolean | default `false` | True after pr-autopilot step 03.5 invokes `/code-review`. Its output is kept locally and never posted. |
 | `code_review_invoked_at` | string (ISO-8601) or null | no | When `/code-review` was dispatched; read by step 03.5's wait to bound it |
 | `code_review_invoked_head` | string (hex) or null | default `null` | `head_sha` the running or last `/code-review` was launched on |

@@ -22,7 +22,7 @@ URL: <link>
 Termination reason:
   <ci-green | ci-red | iteration-cap | ci-reentry-cap | ci-timeout |
    ci-pre-existing-failures | runaway-detected | ci-skipped |
-   user-intervention-needed>
+   ci-unchecked | user-intervention-needed>
 
 Iterations run:   <count> (cap: <user-supplied or default 10>)
 CI re-entries:    <count>/3
@@ -51,8 +51,10 @@ Local sanity checks:
   - pre-existing failures (fail without our fixes): <test, ...>
   - flaky (failed, then passed alone): <test (units touching it), ...>
 
-CI status at termination: <green | red | skipped | timeout>
-<per-check table if red or timeout>
+CI status at termination: <green | red | skipped | timeout | unchecked>
+<per-check table if red, timeout or unchecked; for unchecked, each missing
+ check name and whether a gated-workflow dispatch ran. pr-autopilot adds:
+ Run /pr-followup after the lower rung merges.>
 
 Internal review summary (local, not on PR):
   <repo-root>/.pr-autopilot/pr-<N>-review-summary.md
@@ -275,6 +277,7 @@ message (< 200 chars, no markdown) led by the actionable outcome. Map
 | `iteration-cap` | `PR #<N> stopped — hit the iteration cap` |
 | `runaway-detected` | `PR #<N> stopped — a comment kept re-appearing (runaway)` |
 | `ci-skipped` | `PR #<N> done (no CI configured)` |
+| `ci-unchecked` | `PR #<N> CI unchecked — gated checks never ran` |
 
 Append `· <K> awaiting approval` when `context.ui_deferred_items` is
 non-empty and the approval phase was skipped (non-interactive host).
