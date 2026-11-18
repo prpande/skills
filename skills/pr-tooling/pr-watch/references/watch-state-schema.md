@@ -208,8 +208,8 @@ fixer's `dispatched_at` and `returned_at` in UTC epoch seconds, against
 which the 10-minute fixer limit runs), `agent_clock` (each verifier's
 `dispatched_at`, for the 3-minute verifier limit), `verify_retries_used`,
 `verify_baseline_tree`, `verify_baseline_files`, `verify_excluded_suites`,
-`verify_preexisting_failures`, `verify_flaky_tests` and
-`verify_tests_ran`; `pr-loop-lib/references/context-schema.md` gives
-each one's reset. The lock and log
+`verify_preexisting_failures`, `verify_flaky_tests`,
+`verify_tests_ran`, `sanity_check_passed` and `agent_cap_degraded`;
+`pr-loop-lib/references/context-schema.md` gives each one's shape. The lock and log
 follow `pr-loop-lib/references/state-protocol.md` and
 `pr-loop-lib/references/log-format.md`.

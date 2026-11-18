@@ -89,7 +89,7 @@ last output line. `--jq` runs once per page, so a reducing filter such as
 ## `copilot-pull-request-reviewer`
 
 GitHub's own reviewer, enabled per repository. The login on both its
-records is the bare `copilot-pull-request-reviewer`; the library's two
+records is the bare `copilot-pull-request-reviewer`; the library's
 Copilot rows are keyed on `Copilot` and on
 `copilot-pull-request-reviewer[bot]`, so they never match here and the
 rows above are the ones that apply.
@@ -108,20 +108,18 @@ The exceptions are the `### Suppressed comments` section, which holds the
 findings Copilot decided not to post inline (even when its counts say
 `Comments generated: 0 new`), and the "previously missed issues" block of
 a body that opens with `<!-- ccr-overview-v2 -->`, which holds findings
-in code that has not changed since the last review. Read both with the
-library's parser, as `pr-loop-lib/references/known-bots.md` "Copilot
-review body" describes, including its exit-2 rule.
+in code that has not changed since the last review. Read both with
+`python "$HOME/.claude/skills/pr-loop-lib/scripts/copilot_review.py"
+<body-file>`, as `pr-loop-lib/references/known-bots.md` "Copilot review
+body" describes, including its exit-2 rule: the body becomes one
+actionable item keyed by the review's id.
 
 Record each finding's disposition in `handled_top_level_ids` (in the PR's
 progress file) under the finding's `key`, and the review's own id under
-`parsed`. Copilot repeats a
-finding it still sees in the next review under a new review id, often on
-a moved line and with its title or sentence reworded, so an exact key
-misses most repeats. Before raising a finding whose key is not recorded,
-compare it with the `copilot|<same path>|` keys already recorded. When it
-names the same defect as one of them, record its key with that
-disposition and raise nothing. When it is not clearly the same defect,
-raise it.
+`parsed`. A body the Skip row classifies is recorded `skipped` under the
+review's id. Repeats are dropped as the library's "Copilot review body"
+describes, looking keys up here in `handled_top_level_ids` instead of
+`context.copilot_dispositions`.
 
 A comment that matches no row falls through to the library's unknown-bot
 fallback. When a status line changes shape, update the row here rather

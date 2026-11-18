@@ -34,12 +34,19 @@ python "$HOME/.claude/skills/pr-loop-lib/scripts/copilot_review.py" <body-file>
 
 It prints `{"classification", "findings"}`. Each finding becomes one
 actionable item: surface `review`, id `<review id>:finding-<N>` in output
-order, its `path` and `line`, as body the `title` followed by the
-`text`, and `copilot_key` its `key`. The open-issues and resolved-since-last-review blocks are never
-findings. These items count as actionable in step 08, so an iteration
-that raises one is never quiescent. Exit 2 means the body names one of
+order, its `path` and `line`, as body the `text` when it begins with
+the `title` and otherwise the `title` followed by the `text`, led by
+`[High] `, `[Medium] ` or `[Low] ` when `severity` is set, and `copilot_key`
+its `key`. The open-issues and resolved-since-last-review blocks are never
+findings. An iteration that raises one is never quiescent in step 08,
+whatever the verdicts. Exit 2 means the body names one of
 the two sections but the script could not read an item: treat the whole
-body as one actionable item.
+body as one actionable item with id `<review id>` and `copilot_key`
+`copilot|review|<review id>`. Exit 64 means the call was wrong (quote a
+body path that holds a space) or the file could not be opened: fix the
+call and run it again; it is neither a skip nor an unreadable body. Pass
+a file, not a pipe: a Windows PowerShell pipe turns non-ASCII characters
+in paths into `?`.
 
 Copilot repeats a finding it still sees in its next review, under a new
 review id and often reworded. Each finding's `key` is
@@ -48,6 +55,13 @@ review id and often reworded. Each finding's `key` is
 with the recorded keys for the same path, and when it names the same
 defect as one of them, record its key with that verdict and raise
 nothing. When it is not clearly the same defect, raise it.
+
+A review whose `copilot|review|<review id>` is in `context.copilot_dispositions`
+is dropped before its body is written out or parsed. Step 03 records that
+key as `settled` when the script returns no finding or every finding is
+dropped as a repeat; step 07 records it once every finding of the review
+has a key there. Under `--dry-run` nothing is recorded in
+`context.copilot_dispositions`.
 `pr-watch/references/known-bots-overlay.md` keeps the same keys in its
 progress file.
 
