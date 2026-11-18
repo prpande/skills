@@ -305,7 +305,8 @@ Steps 3 to 6 below say which of section A's steps apply.
 ## J. Base merged
 
 The PR's base branch merged and the PR still targets it. The event
-carries `base`, `default`, `base_pr` and `base_pr_url`.
+carries `base`, `default` and `base_pr` (the merged PR's number). It is
+raised only when the merged lower-rung PR itself targeted the default branch.
 
 1. Post "base merged" (`pr-watch/steps/06-notify.md`) in the PR's thread.
    Under `dry_run`, append the line to the dry-run Slack file instead.

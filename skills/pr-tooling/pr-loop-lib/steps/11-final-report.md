@@ -53,7 +53,7 @@ Local sanity checks:
 
 CI status at termination: <green | red | skipped | timeout | unchecked>
 <per-check table if red, timeout or unchecked; for unchecked, each missing
- check name, each pending-timeout check, and whether a gated-workflow dispatch ran. pr-autopilot adds:
+ check name, each pending-timeout check, and whether a gated-workflow dispatch ran (a failed dispatch is listed under "Needs your input"). pr-autopilot adds:
  Run /pr-followup after the lower rung merges.>
 
 Internal review summary (local, not on PR):
@@ -89,7 +89,8 @@ Internal review summary (local, not on PR):
 Needs your input:
   <for each context.needs_human_items entry, declared-but-risky
    findings included: file:line, quoted feedback sentence, agent's
-   reason>
+   reason. An entry with `feedback_id: "stacked-base"` has no file or
+   feedback: print its `reason` alone.>
 
 UI / design suggestions deferred to you (<total>):
   <for each ui_deferred_items entry: file:line, author, quoted

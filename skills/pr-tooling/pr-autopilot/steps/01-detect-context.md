@@ -8,7 +8,7 @@ threaded through the entire skill.
 | Field | How detected |
 |---|---|
 | `platform` | `git remote get-url origin` substring match: `github.com` → `"github"`; `dev.azure.com` or `visualstudio.com` → `"azdo"`; else `"github"` + warning log |
-| `base` | `gh pr view --json baseRefName` if a PR exists for the current branch (AzDO: `az repos pr list --source-branch <branch> --status active`, `targetRefName` with `refs/heads/` stripped); else `context.base_branch` when set; else `git symbolic-ref refs/remotes/origin/HEAD --short` (strip `origin/`); fallback `"main"` |
+| `base` | `gh pr view --json baseRefName` if a PR exists for the current branch (AzDO: `az repos pr list --source-branch <branch> --status active`, `targetRefName` with `refs/heads/` stripped); else `context.base_branch` when set; else the platform default branch (GitHub: `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`; AzDO: `az repos show --repository <repo> --query defaultBranch -o tsv`, strip `refs/heads/`); when that fails, `git symbolic-ref refs/remotes/origin/HEAD --short` (strip `origin/`); fallback `"main"` |
 | `template_path` | First hit from: `.github/PULL_REQUEST_TEMPLATE.md`, `.github/PULL_REQUEST_TEMPLATE/*.md`, `docs/pull_request_template.md`, `.azuredevops/pull_request_template.md`. If multi-template directory, prompt user to pick |
 | `pr_number` | `gh pr view --json number` (GitHub) or `az repos pr list --source-branch <branch>` (AzDO). Empty on a fresh pr-autopilot run, since preflight check 5 halts on an open PR the run did not open; set when resuming the run that opened it, and under pr-followup |
 | `branch` | `git rev-parse --abbrev-ref HEAD` |
@@ -95,10 +95,9 @@ git merge-base --is-ancestor <sha> HEAD
 
 ## Base branch
 
-`context.base_branch` is set from this invocation's `--base-branch` flag
-on every run, and to null when the flag is absent, also when an existing
-state file is loaded; a stored value never carries into a run that did
-not pass the flag.
+`context.base_branch` is reset per invocation as `base_override` is (see
+"Base override"): set from this invocation's `--base-branch` flag, null
+when the flag is absent.
 
 Each rule below is a HALT before any review or state write. These checks
 run before `base_sha` is computed (the Outputs row's `git fetch` and
@@ -121,7 +120,7 @@ HALT, not a raw git error. With the flag set:
 Every later step diffs, counts and lists files from `base_sha`, so the
 lower rungs are context, never this PR's changes.
 
-Log `base_resolved {base, base_sha, source: "pr" | "flag" | "default"}`.
+Log `base_resolved {base, base_sha, source: "pr" | "flag" | "platform-default" | "origin-head" | "main"}`.
 
 ## Host platform detection
 
@@ -158,6 +157,14 @@ after a `ScheduleWakeup`), LOAD the existing state instead of
 re-initializing. Refresh the lock lease. Log a `skill_start` event
 noting `resumed: true`.
 
+The `base` and `base_sha` resolved in this step always win over the
+loaded state's values. When no PR exists, `--base-branch` is absent,
+`context.base_override` is not set and the loaded state's `base` is not
+the platform default branch (the Outputs `base` row's first fallback),
+HALT with "The last run targeted <base>. Re-invoke with --base-branch
+<base>, or delete .pr-autopilot/branch-<slug>.json to target <default>."
+where `<default>` is that platform default branch.
+
 On a run that has not opened its PR (`context.pr_number` is empty),
 set `context.verify_excluded_suites`,
 `context.verify_preexisting_failures` and `context.verify_flaky_tests`
@@ -170,6 +177,9 @@ place set `context.agent_cap_degraded` to `[]`, unless
 `context.code_review_invoked_head` equals `context.head_sha` (a same-head
 re-run keeps its earlier entries); entries that steps 01.5 to 04 add in
 this run stay until step 11 prints them.
+
+On every run, pr-followup's included, set `context.base_changed_in_run`
+and `context.merged_base_done` to `false` after the state is loaded.
 
 ## Blocking conditions
 

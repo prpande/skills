@@ -82,7 +82,7 @@ run `/simplify`).
 | `agent_returns` | array of objects | default `[]` | Step 04 fixer returns (per AgentReturn schema) |
 | `verifier_judgements` | array of objects | default `[]` | Step 04 verifier outputs, one per verified fixer return |
 | `files_changed_this_iteration` | array of strings | default `[]` | Union of fixer file changes |
-| `needs_human_items` | array of objects | default `[]` | Items flagged for user attention: step 04's `needs-human` returns and step 03.5 D's declared-but-risky findings |
+| `needs_human_items` | array of objects | default `[]` | Items flagged for user attention: step 04's `needs-human` returns and step 03.5 D's declared-but-risky findings, and step 09 "Stacked base" entries `{feedback_id: "stacked-base", reason}` (head mismatch, failed retarget, dirty tree, merge conflict, verify or push failure, failed gate call, failed dispatch) |
 | `ui_deferred_items` | array of objects | default `[]` | Items the fixer judged to be UI / design / copy changes; deferred to end-of-run user approval. Each entry: `{feedback_id, thread_id?, path?, line?, author, body, proposal, reply_text}`. Step 11 prompts the user and may re-enter step 04 scoped to approved items. |
 | `ui_deferred_actionable` | array of objects | default `[]` | Scoped overlay written by step 11 before re-dispatching approved `ui_deferred_items`. During that one step-04 invocation, the dispatcher reads its actionable list from this field in place of `context.actionable`. Never replaces `context.actionable`; the persisted top-level `actionable` is left unchanged. Same shape as the individual items in `context.actionable`. |
 | `consecutive_quiescent_iterations` | integer | default `0` | Incremented on each soft-quiescent iteration (`quiescent-zero-actionable` or `quiescent-no-code-change`). Reset to `0` on any non-quiescent iteration outcome. Read by step 08 to decide between routing back to step 01 (counter == 1) or onward to step 09 (counter >= 2). |
@@ -106,6 +106,8 @@ run `/simplify`).
 | `ci_results` | array of objects | default `[]` | Per-check `{name, state, link, raw_state, extra}`; `state` is `green`, `red`, `pending-timeout` or `missing` (a check the default branch requires that has no run on the head) |
 | `ci_dispatched` | array of strings | default `[]` | `<head_sha>\|<workflow file>` for each gated workflow dispatched; step 09 never repeats one. Kept for the life of the state file |
 | `ci_reentry_count` | integer | default `0` | Max 3 |
+| `base_changed_in_run` | boolean | default `false` | True once step 09 "Live base" or "Merged base" changed `context.base` in this run. Reset to `false` by step 01 at run start; written to state when set |
+| `merged_base_done` | boolean | default `false` | True once step 09 "Merged base" has started in this run, whatever its outcome. Reset to `false` by step 01 at run start; written to state when set |
 
 ## Termination
 
