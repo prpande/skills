@@ -393,7 +393,7 @@ def tick_query(groups):
         fields = " ".join(
             f"p{int(n)}: pullRequest(number: {int(n)}) {{ number updatedAt headRefOid state "
             f"baseRefName mergeable mergeStateStatus reviewDecision "
-            f"baseRef {{ associatedPullRequests(states: MERGED, first: 1) {{ nodes {{ number url }} }} }} "
+            f"baseRef {{ target {{ oid }} associatedPullRequests(states: MERGED, first: 1) {{ nodes {{ number url headRefOid }} }} }} "
             f"baseRepository {{ defaultBranchRef {{ name }} }} "
             f"commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }} }}"
             for n in numbers)
@@ -525,12 +525,15 @@ def default_branch(node):
 
 
 def merged_base_pr(node):
-    nodes = ((node.get("baseRef") or {}).get("associatedPullRequests") or {}).get("nodes") or []
-    return nodes[0] if nodes else None
+    base_ref = node.get("baseRef") or {}
+    nodes = (base_ref.get("associatedPullRequests") or {}).get("nodes") or []
+    tip = (base_ref.get("target") or {}).get("oid")
+    return nodes[0] if nodes and tip and nodes[0].get("headRefOid") == tip else None
 
 
 def not_found(exc):
-    return "404" in str(exc) or "Not Found" in str(exc)
+    text = str(exc)
+    return any(marker in text for marker in ("404", "403", "Not Found", "Must have admin rights"))
 
 
 def default_required_names(gh, repo_slug, default):

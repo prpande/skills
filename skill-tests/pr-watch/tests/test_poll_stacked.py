@@ -20,6 +20,7 @@ class StackedGh(FakeGh):
         self.classic = {}
         self.all_checks = {}
         self.merged_base = {}
+        self.base_tip = "tip1"
 
     def __call__(self, args):
         if args[:1] == ["api"] and "/rules/branches/" in args[1]:
@@ -51,7 +52,9 @@ class StackedGh(FakeGh):
                         continue
                     node["baseRepository"] = {"defaultBranchRef": {"name": self.default}}
                     merged = self.merged_base.get((owner.lower(), name.lower(), node["number"]))
-                    node["baseRef"] = {"associatedPullRequests": {"nodes": [merged] if merged else []}}
+                    merged = merged and {"headRefOid": self.base_tip, **merged}
+                    node["baseRef"] = {"target": {"oid": self.base_tip},
+                                       "associatedPullRequests": {"nodes": [merged] if merged else []}}
             return json.dumps({"data": data})
         return out
 
@@ -78,8 +81,8 @@ class QueryAndNameTests(unittest.TestCase):
     def test_tick_query_asks_for_default_branch_and_merged_base(self):
         query = poll.tick_query({("o", "r"): [1411]})[0]
         self.assertIn("baseRepository { defaultBranchRef { name } }", query)
-        self.assertIn("baseRef { associatedPullRequests(states: MERGED, first: 1) { nodes { number url } } }",
-                      query)
+        self.assertIn("baseRef { target { oid } associatedPullRequests(states: MERGED, first: 1) "
+                      "{ nodes { number url headRefOid } } }", query)
 
     def test_default_required_names_unions_ruleset_and_classic(self):
         gh = StackedGh()
@@ -93,6 +96,16 @@ class QueryAndNameTests(unittest.TestCase):
         gh = StackedGh()
         poll.default_required_names(gh, "o/r", "release/1")
         self.assertTrue(all("release%2F1" in c[1] for c in gh.calls))
+
+    def test_forbidden_protection_call_counts_as_no_names(self):
+        gh = StackedGh()
+        gh.rules["o/r"] = ["A"]
+
+        def forbidden(args):
+            if args[1].endswith("/protection/required_status_checks"):
+                raise poll.GhError("gh: Must have admin rights to Repository. (HTTP 403)")
+            return gh(args)
+        self.assertEqual(poll.default_required_names(forbidden, "o/r", "main"), ["A"])
 
     def test_other_errors_raise(self):
         def boom(args):
@@ -153,6 +166,11 @@ class StackedTickTests(StackedBase):
             "base": "rung-1", "default": "main", "base_pr": 1400,
             "base_pr_url": "https://github.com/o/r/pull/1400"}])
         self.assertEqual(self.tick(), [])
+
+    def test_no_base_merged_when_base_moved_since_merge(self):
+        self.gh.all_checks[pk(1411)] = [check(GATED, "pass")]
+        self.gh.merged_base[pk(1411)] = {"number": 1400, "url": "u", "headRefOid": "old"}
+        self.assertNotIn("base-merged", self.kinds(self.tick()))
 
     def test_no_base_merged_on_default_base(self):
         self.gh.prs[pk(1411)]["baseRefName"] = "main"

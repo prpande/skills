@@ -77,7 +77,7 @@ the steps above.
 | CI rerun queued | `Rerun of <check name> queued behind #<M> while its checks run.` |
 | CI rerun queued (busy) | `Rerun of <check name> queued behind another push in <owner>/<repo>.` |
 | CI rerun dropped | `Rerun of <check name> dropped: the PR head moved before it ran.` |
-| CI dispatched | `<base>` is not the default branch, so its gated workflow did not run. Dispatched `<file>` on the head. |
+| CI dispatched | The default branch's gated workflow did not run on this head. Dispatched `<file>`. |
 | CI unchecked | CI unchecked: `<names>` never ran on this head. Not green. |
 | CI unchecked (dispatch failed) | CI unchecked: `<names>` never ran on this head, and dispatching `<file>` failed: <first stderr line>. Not green. |
 | CI pre-existing | `<check name> is red on <base> too; leaving it.` |

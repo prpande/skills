@@ -13,11 +13,11 @@ Runs at step entry, before the platform collection below. The default branch is 
 
 ### Required checks
 
-Runs when `context.base` is not the default branch, or when the base changed in this run (GitHub retargets a rung to the default branch when the lower rung's branch is deleted on merge, and that does not start a `pull_request` run). Otherwise skip this section.
+Runs when `context.base` is not the default branch, when the base changed in this run, or when the PR's timeline has a `base_ref_changed` event (GitHub only): `gh api repos/<owner>/<repo>/issues/<N>/timeline --paginate --jq '[.[] | select(.event == "base_ref_changed")] | length'` prints a number above 0. GitHub retargets a rung to the default branch when the lower rung's branch is deleted on merge, and that does not start a `pull_request` run. Otherwise skip this section.
 
-The required check names are the default branch's, not the live base's.
+The required check names are the default branch's, not the live base's. `<default>` in the API paths is URL-encoded (`release/1` is `release%2F1`).
 
-- GitHub: the union of the ruleset names and the classic protection names. A 404 from either source means no names from it.
+- GitHub: the union of the ruleset names and the classic protection names. A 403 or 404 from either source means no names from it.
 
   ```bash
   gh api repos/<owner>/<repo>/rules/branches/<default> --paginate \
@@ -28,14 +28,15 @@ The required check names are the default branch's, not the live base's.
   Names match check-run names.
 - Azure DevOps: no dispatch. `az repos policy list --branch <default>`; each enabled Build policy needs a completed run of its pipeline for the PR's source commit. Each without one is missing.
 
-After the collection below and before Routing, every required name with no check on the head is appended to `context.ci_results` as `{name, state: "missing", link: null, raw_state: null, extra: {}}`. No required names: nothing is appended. Routing sees the appended entries, so required names plus an empty collection route to `ci-unchecked`, not `ci-skipped`.
+After the collection below (after the "Merged base" push, once the new head lists a check) and before Routing, every required name with no check on the head is appended to `context.ci_results` as `{name, state: "missing", link: null, raw_state: null, extra: {}}`. No required names: nothing is appended. Routing sees the appended entries, so required names plus an empty collection route to `ci-unchecked`, not `ci-skipped`.
 
 ### Gated workflows
 
 Runs only on GitHub, and only when a required check is missing. Gated workflows are the `.github/workflows/*.yml` and `*.yaml` files at `context.head_sha` where all of these hold:
 
-- `on.pull_request` (or `pull_request_target`) has a `branches` filter that does not match `context.base`, or a `branches-ignore` filter that does.
+- `on.pull_request` (or `pull_request_target`) runs for PRs into the default branch: its `branches` filter matches the default branch, or it has no `branches` filter and its `branches-ignore` does not match it.
 - The file declares `workflow_dispatch`, and every input with `required: true` has a `default`.
+- The head commit has no run of it: `gh run list --workflow <file> --commit <head_sha> --json databaseId --limit 1` prints `[]`.
 
 For each such file whose `<head_sha>|<file>` is not in `context.ci_dispatched`:
 
@@ -50,15 +51,15 @@ A dispatch recorded for this head is never repeated. When nothing is selectable 
 
 ### Merged base (pr-followup only)
 
-Runs when `context.base` is not the default branch and `gh pr list --head <base> --state merged --json number --jq '.[0].number'` prints a number, or when the base changed in this run to the default branch. It runs at most once per run: whatever its outcome, mark it done, and the base-changed memory from "Live base" is cleared.
+Runs when `context.base` is not the default branch and the base is merged, or when the base changed in this run to the default branch. The base is merged when `gh pr list --head <base> --state merged --json number,headRefOid --jq '.[0]'` prints a PR whose `headRefOid` equals `git rev-parse origin/<base>` (after `git fetch origin <base>`); a base branch gone from origin counts as merged only when it is the base changed this run. It runs at most once per run: whatever its outcome, mark it done. The base-changed memory from "Live base" stays, so "Required checks" still runs; the done mark alone prevents a re-run.
 
-Under `--dry-run`, print the retarget, merge and push commands below, perform none of them, and continue with the gate.
+Under `--dry-run`, print the retarget, body edit, merge and push commands below, perform none of them, and continue with the gate.
 
-1. When the PR still targets the merged base, retarget it: `gh pr edit <N> --base <default>` (AzDO: `az repos pr update --id <N> --target-branch <default>`) and log `retargeted`.
+1. When the PR still targets the merged base, retarget it: `gh pr edit <N> --base <default>` (AzDO: `az repos pr update --id <N> --target-branch <default>`) and log `retargeted`, then remove the PR body's first line when it starts with "Stacked on ": `gh pr view <N> --json body --jq .body`, write the rest to a temp file, `gh pr edit <N> --body-file <file>` (AzDO: `az repos pr update --id <N> --description`).
 2. `git fetch origin <default>`. When `origin/<default>` is an ancestor of HEAD, no merge commit is made: update `base` and `base_sha` and continue with the gate; steps 3 to 5 do not apply. Otherwise `git merge --no-edit origin/<default>`. Never rebase, never force-push.
 3. On a conflict, `git merge --abort` and end with `context.termination_reason = "user-intervention-needed"` naming the conflicting paths.
 4. Otherwise run the build and test commands of `pr-loop-lib/steps/04.5-local-verify.md`. On failure, `git reset --keep ORIG_HEAD` to drop the unpushed merge commit from step 2 and end with `user-intervention-needed`; the PR stays retargeted.
-5. On pass, plain `git push`; update `base`, `base_sha`, `head_sha`, `last_push_sha` and `last_push_timestamp`; restart step 09 from the top. The push starts the PR's own CI.
+5. On pass, plain `git push`; update `base`, `base_sha`, `head_sha`, `last_push_sha` and `last_push_timestamp`; restart step 09 from the top. The push starts the PR's own CI. Before collecting checks, poll `gh pr checks <N> --json name` every 15 seconds for up to 5 minutes until at least one check is listed for the new head; when none appears, "Required checks" still marks the required names `missing`.
 
 ## GitHub
 

@@ -53,7 +53,7 @@ Local sanity checks:
 
 CI status at termination: <green | red | skipped | timeout | unchecked>
 <per-check table if red, timeout or unchecked; for unchecked, each missing
- check name and whether a gated-workflow dispatch ran. pr-autopilot adds:
+ check name, each pending-timeout check, and whether a gated-workflow dispatch ran. pr-autopilot adds:
  Run /pr-followup after the lower rung merges.>
 
 Internal review summary (local, not on PR):
