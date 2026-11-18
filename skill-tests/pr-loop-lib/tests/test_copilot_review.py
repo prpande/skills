@@ -235,6 +235,20 @@ class QuotedMarkupInsideFindings(unittest.TestCase):
         code, out, _ = run_cli(quoted)
         self.assertEqual((code, len(json.loads(out)["findings"])), (0, 19))
 
+    def test_closing_details_in_a_tilde_fenced_quote_does_not_end_the_suppressed_section(self):
+        text = body("31-5221330327")
+        opener = text.index("```\n")
+        closer = text.index("```\n", opener + 4)
+        tilde = (text[:opener] + "~~~\n</details>\n" + text[opener + 4:closer]
+                 + "~~~\n" + text[closer + 4:])
+        code, out, _ = run_cli(tilde)
+        self.assertEqual((code, len(json.loads(out)["findings"])), (0, 19))
+
+    def test_backtick_fence_is_not_closed_by_tildes(self):
+        masked = copilot_review._mask("```\n~~~\n</details>\n~~~\n```\nafter\n")
+        self.assertNotIn("details", masked)
+        self.assertIn("after", masked)
+
     def test_details_tags_in_inline_code_do_not_split_missed_items(self):
         text = body("46-5855681494").replace(
             "These triggers omit", "The `</details>` and `<details>` tags are quoted. These triggers omit", 1)

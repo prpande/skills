@@ -119,10 +119,13 @@ reference line once, then for each finding in the script's order its
 quoted part and verdict line, as the library's step 07 item 3 describes.
 Once that comment posts, record each finding's disposition in
 `handled_top_level_ids` (in the PR's progress file) under the finding's
-`key`, and the review's own id under `parsed`. A body the Skip row classifies is recorded `skipped` under the
-review's id. Repeats are dropped as the library's "Copilot review body"
-describes, looking keys up here in `handled_top_level_ids` instead of
-`context.copilot_dispositions`.
+`key`, and the review's own id under `parsed`. A body the Skip row
+classifies is recorded `skipped` under the review's id. Repeats are
+dropped as the library's "Copilot review body" describes, looking keys up
+here in `handled_top_level_ids` instead of `context.copilot_dispositions`.
+A body whose findings were all dropped as repeats posts no comment; record
+its id as `parsed` at once, since the library's `copilot|review|<review id>`
+settlement key is not what `poll.py` looks up.
 
 A comment that matches no row falls through to the library's unknown-bot
 fallback. When a status line changes shape, update the row here rather

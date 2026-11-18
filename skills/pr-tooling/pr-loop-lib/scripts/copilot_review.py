@@ -33,8 +33,8 @@ TAG = re.compile(r"</?(?:picture|source|img|strong|b|em|i|code|a|br|span|sup|sub
 SENTENCE_END = re.compile(r"[.!?](?=\s+[^a-z\s]|\s*$)")
 NOT_A_SENTENCE_END = re.compile(r"(?:^|\s)(?:e\.g|i\.e|vs|cf|\d+)$", re.I)
 BULLET = re.compile(r"^\s*[-*+]\s+")
-FENCE_LINE = re.compile(r"^ {0,3}`{3,}", re.M)
-FENCE_OPEN = re.compile(r"^ {0,3}(`{3,})[^`]*$")
+FENCE_LINE = re.compile(r"^ {0,3}(?:`{3,}|~{3,})", re.M)
+FENCE_OPEN = re.compile(r"^ {0,3}(?:(`{3,})[^`]*|(~{3,}).*)$")
 INLINE_CODE = re.compile(r"`[^`\n]+`")
 
 
@@ -70,7 +70,8 @@ def _mask(body):
         opener = FENCE_OPEN.match(lines[i].rstrip("\r"))
         close = None
         if opener:
-            closer = re.compile(r"^ {0,3}`{%d,}[ \t]*$" % len(opener.group(1)))
+            marker = opener.group(1) or opener.group(2)
+            closer = re.compile(r"^ {0,3}%s{%d,}[ \t]*$" % (re.escape(marker[0]), len(marker)))
             for j in range(i + 1, len(lines)):
                 if closer.match(lines[j].rstrip("\r")):
                     close = j
