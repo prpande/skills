@@ -256,6 +256,35 @@ class QuotedMarkupInsideFindings(unittest.TestCase):
         self.assertEqual(len(findings), 4)
         self.assertIn("`</details>`", findings[0]["text"])
 
+    def test_details_tag_in_a_multiline_code_span_does_not_split_missed_items(self):
+        text = body("46-5855681494").replace(
+            "These triggers omit", "A `multi\n</details> line` span. These triggers omit", 1)
+        code, out, _ = run_cli(text)
+        findings = json.loads(out)["findings"]
+        self.assertEqual((code, len(findings)), (0, 4))
+        self.assertIn("`multi </details> line`", findings[0]["text"])
+
+    def test_details_tag_in_a_code_span_holding_a_shorter_backtick_run_is_masked(self):
+        text = body("46-5855681494").replace(
+            "These triggers omit", "A ``a ` </details>\nb`` span. These triggers omit", 1)
+        code, out, _ = run_cli(text)
+        self.assertEqual((code, len(json.loads(out)["findings"])), (0, 4))
+
+    def test_code_span_masking_keeps_offsets_and_stops_at_a_blank_line(self):
+        text = "a `x\n</details>\n\ny` b ``c ` d\ne`` f"
+        masked = copilot_review._mask(text)
+        self.assertEqual(len(masked), len(text))
+        self.assertIn("</details>", masked)
+        self.assertNotIn("c", masked.replace("</details>", ""))
+
+    def test_prose_between_two_fenced_quotes_is_not_masked_as_a_code_span(self):
+        text = "```\nfirst\n```\n**a/b.md:1**\n* kept title\n```\nsecond\n```\n"
+        masked = copilot_review._mask(text)
+        self.assertEqual(len(masked), len(text))
+        self.assertIn("**a/b.md:1**\n* kept title", masked)
+        self.assertNotIn("first", masked)
+        self.assertNotIn("second", masked)
+
     def test_item_heading_in_a_fenced_quote_is_not_an_item(self):
         text = body("30-5219703484").replace(
             "```\nthe monitor", "```\n**fake/file.md:9**\nthe monitor", 1)
@@ -283,6 +312,28 @@ class PartialReads(unittest.TestCase):
     def test_heading_count_that_differs_from_items_read_exits_two(self):
         text = body("31-5221330327").replace("Suppressed comments (19)", "Suppressed comments (20)")
         self.assertEqual(run_cli(text)[0], 2)
+
+
+class EmptyFindingFields(unittest.TestCase):
+    def test_suppressed_item_with_no_prose_exits_two(self):
+        text = "### Suppressed comments (1)\n\n**a/b.md:3**\n\n```\nquoted\n```\n"
+        code, out, err = run_cli(text)
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("not every finding", err)
+
+    def test_missed_item_with_only_a_severity_image_exits_two(self):
+        text = ('<details><summary><strong>1 previously missed issue</strong></summary>\n'
+                '<details>\n<summary><picture><img alt="Medium severity"></picture></summary>\n\n'
+                '`a/b.md:3`\n\nSome prose.\n</details>\n</details>\n')
+        code, out, _ = run_cli(text)
+        self.assertEqual((code, out), (2, ""))
+
+    def test_missed_item_with_a_title_and_text_is_read(self):
+        text = ('<details><summary><strong>1 previously missed issue</strong></summary>\n'
+                '<details>\n<summary><picture><img alt="Medium severity"></picture> A title</summary>\n\n'
+                '`a/b.md:3`\n\nSome prose.\n</details>\n</details>\n')
+        code, out, _ = run_cli(text)
+        self.assertEqual((code, json.loads(out)["findings"][0]["title"]), (0, "A title"))
 
 
 class SectionMarkupVariants(unittest.TestCase):

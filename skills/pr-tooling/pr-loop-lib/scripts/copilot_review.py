@@ -35,7 +35,8 @@ NOT_A_SENTENCE_END = re.compile(r"(?:^|\s)(?:e\.g|i\.e|vs|cf|\d+)$", re.I)
 BULLET = re.compile(r"^\s*[-*+]\s+")
 FENCE_LINE = re.compile(r"^ {0,3}(?:`{3,}|~{3,})", re.M)
 FENCE_OPEN = re.compile(r"^ {0,3}(?:(`{3,})[^`]*|(~{3,}).*)$")
-INLINE_CODE = re.compile(r"`[^`\n]+`")
+BACKTICK_RUN = re.compile(r"`+")
+BLANK_LINE = re.compile(r"\n[ \t\r]*\n")
 
 
 def _clean_path(path):
@@ -54,6 +55,33 @@ def _blank(chars, start, end):
     for i in range(start, end):
         if chars[i] not in "\r\n":
             chars[i] = " "
+
+
+def _mask_code_spans(text):
+    """Blank code spans: a backtick run closes at the next run of the same length, within one paragraph."""
+    chars = list(text)
+    runs = [(m.start(), m.end()) for m in BACKTICK_RUN.finditer(text)]
+    fence_starts = {m.end() - len(m.group().lstrip(" ")) for m in FENCE_LINE.finditer(text)}
+    i = 0
+    while i < len(runs):
+        start, end = runs[i]
+        width = end - start
+        close = None
+        if start in fence_starts:
+            i += 1
+            continue
+        for j in range(i + 1, len(runs)):
+            if runs[j][0] in fence_starts or BLANK_LINE.search(text, end, runs[j][0]):
+                break
+            if runs[j][1] - runs[j][0] == width:
+                close = j
+                break
+        if close is None:
+            i += 1
+            continue
+        _blank(chars, start, runs[close][1])
+        i = close + 1
+    return "".join(chars)
 
 
 def _mask(body):
@@ -81,7 +109,7 @@ def _mask(body):
             continue
         _blank(chars, starts[i + 1], starts[close])
         i = close + 1
-    return INLINE_CODE.sub(lambda m: re.sub(r"[^\r\n]", " ", m.group(0)), "".join(chars))
+    return _mask_code_spans("".join(chars))
 
 
 def _block_end(masked, start):
@@ -171,7 +199,9 @@ def _scan(body):
     masked = _mask(body)
     suppressed, suppressed_complete = _suppressed(body, masked)
     missed, missed_complete = _missed(body, masked)
-    return suppressed + missed, suppressed_complete and missed_complete
+    findings = suppressed + missed
+    readable = all(f["path"] and f["title"] and f["text"] for f in findings)
+    return findings, suppressed_complete and missed_complete and readable
 
 
 def parse(body):
