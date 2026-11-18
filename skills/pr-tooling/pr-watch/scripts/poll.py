@@ -509,15 +509,20 @@ def rollup_state(node):
     return ((commits[0].get("commit") or {}).get("statusCheckRollup") or {}).get("state")
 
 
-def required_checks(gh, repo_slug, number):
+def pr_check_rows(gh, repo_slug, number, required):
+    args = ["pr", "checks", str(number), "--repo", repo_slug, *(["--required"] if required else []),
+            "--json", CHECK_FIELDS]
     try:
-        out = gh(["pr", "checks", str(number), "--repo", repo_slug, "--required",
-                  "--json", CHECK_FIELDS])
+        out = gh(args)
     except GhError as exc:
         if "no required checks reported" in str(exc) or "no checks reported" in str(exc):
             return []
         raise
     return json.loads(out or "[]")
+
+
+def required_checks(gh, repo_slug, number):
+    return pr_check_rows(gh, repo_slug, number, required=True)
 
 
 def default_branch(node):
@@ -529,11 +534,6 @@ def merged_base_pr(node):
     nodes = (base_ref.get("associatedPullRequests") or {}).get("nodes") or []
     tip = (base_ref.get("target") or {}).get("oid")
     return nodes[0] if nodes and tip and nodes[0].get("headRefOid") == tip else None
-
-
-def not_found(exc, markers=("404", "Not Found")):
-    text = str(exc)
-    return any(marker in text for marker in markers)
 
 
 def default_required_names(gh, repo_slug, default):
@@ -548,7 +548,7 @@ def default_required_names(gh, repo_slug, default):
         try:
             out = gh(args)
         except GhError as exc:
-            if not_found(exc, markers):
+            if any(marker in str(exc) for marker in markers):
                 continue
             raise
         names.update(line for line in (out or "").splitlines() if line)
@@ -558,13 +558,8 @@ def default_required_names(gh, repo_slug, default):
 def stacked_checks(gh, repo_slug, number, default):
     """(the head's rows for the default branch's required checks, the required names no row has)."""
     required = default_required_names(gh, repo_slug, default)
-    try:
-        out = gh(["pr", "checks", str(number), "--repo", repo_slug, "--json", CHECK_FIELDS])
-    except GhError as exc:
-        if "no checks reported" not in str(exc):
-            raise
-        out = "[]"
-    rows = [c for c in json.loads(out or "[]") if c.get("name") in required]
+    rows = [c for c in pr_check_rows(gh, repo_slug, number, required=False)
+            if c.get("name") in required]
     return rows, sorted(set(required) - {c["name"] for c in rows})
 
 
@@ -756,6 +751,7 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
     review_failed = ci_failed = False
     default = default_branch(node)
     stacked = bool(default) and (node.get("baseRefName") != default or bool(prev.get("stacked")))
+    stacked_mark = {"stacked": True} if stacked else {}
     compared = prev.get("compared")
 
     def compare(base, old, new):
@@ -780,7 +776,7 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
     if authored and (ci_moved or ci_forced):
         try:
             checks = missing = None
-            if stacked:
+            if stacked and rollup not in ("PENDING", "EXPECTED"):
                 checks, missing = stacked_checks(
                     gh, repo_slug(entry["owner"], entry["repo"]), entry["number"], default)
             ci_event, ci_signature, ci_pending, ci_items = evaluate_ci(
@@ -795,7 +791,7 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
     if review_failed:
         if (ci_signature, ci_items) != (prev.get("last_ci_signature", ""), prev.get("last_ci_items")):
             prs[key] = dict(prev, last_ci_signature=ci_signature,
-                            **({"stacked": True} if stacked else {}),
+                            **stacked_mark,
                             **stored_items(last_ci_items=ci_items))
         return
     pending_since = (prev.get("pending_since") or now) if review_pending or ci_pending else None
@@ -803,12 +799,10 @@ def tick_pr(gh, view, poller, key, node, now, force, events):
                  "last_signature": signature, "last_rollup": rollup,
                  "last_ci_signature": ci_signature, "review_pending": review_pending,
                  "ci_pending": ci_pending, "pending_since": pending_since,
-                 "progress_sig": progress_sig,
+                 "progress_sig": progress_sig, **stacked_mark,
                  **stored_items(last_items=items, last_ci_items=ci_items)}
     if compared:
         new_entry["compared"] = compared
-    if stacked:
-        new_entry["stacked"] = True
     # Spent independently per branch, so a standing CI-only failure does not
     # keep re-forcing the unchanged review branch too.
     retried_at = retry_spend(retry_after, retry_review, review_failed, prev, "retried_at")
@@ -1032,8 +1026,7 @@ def tick_once(gh, view, poller, now, force=False, heads=None):
                     pr_fault(poller, key, exc)
                     continue
                 if node["state"] != "OPEN":
-                    poller.get("review", {}).pop(key, None)
-                    for mark in ("merge", "unchecked", "base_merged"):
+                    for mark in ("review", "merge", "unchecked", "base_merged"):
                         poller.get(mark, {}).pop(key, None)
                     continue
                 check_mergeability(view, poller, key, node, force, events)
@@ -1721,10 +1714,9 @@ def checks_payload(gh, owner, repo, number):
     slug = repo_slug(owner, repo)
     base, head, *rest = gh(["api", f"repos/{slug}/pulls/{number}", "--jq",
                             '.base.ref + " " + .head.sha + " " + .base.repo.default_branch']).split()
-    default = rest[0] if rest else None
-    missing = None
-    if default and default != base:
-        rows, missing = stacked_checks(gh, slug, number, default)
+    payload = {"pr": pr_key(owner, repo, number), "head": head, "base": base}
+    if rest and rest[0] != base:
+        rows, payload["missing"] = stacked_checks(gh, slug, number, rest[0])
     else:
         rows = required_checks(gh, slug, number)
     on_base = base_conclusions(gh, slug, base)
@@ -1734,9 +1726,7 @@ def checks_payload(gh, owner, repo, number):
                "on_base": base_conclusion(on_base, c.get("workflow") or "", c["name"]),
                **check_platform(c.get("link"))}
               for c in rows]
-    payload = {"pr": pr_key(owner, repo, number), "head": head, "base": base, "checks": checks}
-    if missing is not None:
-        payload["missing"] = missing
+    payload["checks"] = checks
     return payload
 
 

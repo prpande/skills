@@ -1,4 +1,5 @@
 import json
+import re
 import unittest
 
 from fakes import ACTIONS, NOW, FakeGh, pk, poll, pull, rk, watch
@@ -45,8 +46,8 @@ class StackedGh(FakeGh):
         if args[:2] == ["api", "graphql"] and 'repository(owner: "' in args[3]:
             data = json.loads(out)["data"]
             for alias, nodes in data.items():
-                owner, name = [v for k, v in zip(("o", "r"), args[3].split(f"{alias}: repository(owner: \"")[1]
-                                                 .split("\"")[0:3:2])]
+                owner, name = re.search(rf'{alias}: repository\(owner: "([^"]+)", name: "([^"]+)"',
+                                        args[3]).groups()
                 for node in (nodes or {}).values():
                     if node is None:
                         continue

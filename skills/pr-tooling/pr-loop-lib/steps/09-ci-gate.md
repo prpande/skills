@@ -9,7 +9,7 @@ Runs at step entry, before the platform collection below. The default branch is 
 
 ### Live base
 
-`gh pr view <N> --json baseRefName --jq .baseRefName` (AzDO: `az repos pr show --id <N> --query targetRefName -o tsv`, strip `refs/heads/`). When it differs from `context.base`: log `base_changed {from, to}`, set `context.base`, recompute `context.base_sha` as step 01 does (`git fetch origin <base>`, then `git merge-base origin/<base> HEAD`), and remember that the base changed in this run. When the running skill is pr-followup and the base changed, run "Merged base" below; it runs at most once per run, and a restart of step 09 does not run it again. pr-autopilot never runs "Merged base"; it follows the changed base and its report says to run pr-followup.
+`gh pr view <N> --json baseRefName --jq .baseRefName` (AzDO: `az repos pr show --id <N> --query targetRefName -o tsv`, strip `refs/heads/`). When it differs from `context.base`: log `base_changed {from, to}`, set `context.base`, recompute `context.base_sha` as step 01 does (`git fetch origin <base>`, then `git merge-base origin/<base> HEAD`), and remember that the base changed in this run. When the running skill is pr-followup and the base changed, run "Merged base" below. pr-autopilot never runs "Merged base"; it follows the changed base and its report says to run pr-followup.
 
 ### Required checks
 
@@ -51,7 +51,7 @@ A dispatch recorded for this head is never repeated. When nothing is selectable 
 
 ### Merged base (pr-followup only)
 
-Runs when `context.base` is not the default branch and the base is merged, or when the base changed in this run to the default branch. The base is merged when `gh pr list --head <base> --state merged --json number,headRefOid --jq '.[0]'` prints a PR whose `headRefOid` equals `git rev-parse origin/<base>` (after `git fetch origin <base>`). It runs at most once per run: whatever its outcome, mark it done. Merged base does not clear the base-changed memory; its done mark stops a re-run.
+Runs when `context.base` is not the default branch and the base is merged, or when the base changed in this run to the default branch. The base is merged when `gh pr list --head <base> --state merged --json number,headRefOid --jq '.[0]'` prints a PR whose `headRefOid` equals `git rev-parse origin/<base>` (after `git fetch origin <base>`). It runs at most once per run: mark it done whatever its outcome, and a restart of step 09 skips it. It does not clear the base-changed memory.
 
 Under `--dry-run`, print the retarget, body edit, merge and push commands below, perform none of them, and continue with the gate.
 
