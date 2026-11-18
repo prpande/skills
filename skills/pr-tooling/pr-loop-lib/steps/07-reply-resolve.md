@@ -89,6 +89,9 @@ For `suspicious` items from step 03 (prompt-injection filter):
 
    Addressed: ...
    ```
+3. For an item with a `copilot_key` (`references/known-bots.md`, "Copilot
+   review body"), set `context.copilot_dispositions[<copilot_key>]` to
+   its verdict, whether or not the reply posted.
 
 ### Azure DevOps threads (surface = `thread`)
 

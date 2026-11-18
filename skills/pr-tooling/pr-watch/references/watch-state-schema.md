@@ -202,6 +202,14 @@ there. Step 01 creates it with exactly `session_id`, `host_platform`,
 run, and drain, and step 04 adds `all_comments`,
 `actionable`, `agent_returns`, `verifier_judgements`,
 `files_changed_this_iteration`, `needs_human_items`, `last_push_sha`, and
-`last_push_timestamp` as the library steps write them. The lock and log
+`last_push_timestamp` as the library steps write them. The library's
+steps 04 and 04.5 also write `unit_bases` (each unit's base tree, and its
+fixer's `dispatched_at` and `returned_at` in UTC epoch seconds, against
+which the 10-minute fixer limit runs), `agent_clock` (each verifier's
+`dispatched_at`, for the 3-minute verifier limit), `verify_retries_used`,
+`verify_baseline_tree`, `verify_baseline_files`, `verify_excluded_suites`,
+`verify_preexisting_failures`, `verify_flaky_tests` and
+`verify_tests_ran`; `pr-loop-lib/references/context-schema.md` gives
+each one's reset. The lock and log
 follow `pr-loop-lib/references/state-protocol.md` and
 `pr-loop-lib/references/log-format.md`.

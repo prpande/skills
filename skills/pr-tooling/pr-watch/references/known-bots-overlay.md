@@ -104,32 +104,17 @@ and the body then carries only the verdict, an overview, per-file
 summaries and counts: nothing to act on, and a review with no inline
 comments raises no work at all.
 
-The exception is the `### Suppressed comments` section under
-`<summary>Review details</summary>`, which holds the findings Copilot
-decided not to post inline. Each item is a `**<path>:<line>**` heading, a
-bullet holding the whole finding, and a fenced quote of the lines it
-refers to; that bullet is one actionable finding, and the review carries
-them even when its counts say `Comments generated: 0 new`.
+The exceptions are the `### Suppressed comments` section, which holds the
+findings Copilot decided not to post inline (even when its counts say
+`Comments generated: 0 new`), and the "previously missed issues" block of
+a body that opens with `<!-- ccr-overview-v2 -->`, which holds findings
+in code that has not changed since the last review. Read both with the
+library's parser, as `pr-loop-lib/references/known-bots.md` "Copilot
+review body" describes, including its exit-2 rule.
 
-A newer review body (it opens with `<!-- ccr-overview-v2 -->`) can also
-hold a `<details>` block whose summary is
-`<strong>1 previously missed issue</strong>` or
-`<strong><N> previously missed issues</strong>`: findings in code that
-has not changed since the last review, which Copilot does not post
-inline. Each `<details>` nested inside it is one actionable finding. Its
-`<summary>` holds a severity image (`alt="High severity"`, `Medium` or
-`Low`) and the title; after it come a `` `<path>:<line>` `` line and the
-finding text. The path carries a zero-width space (U+200B) after each
-`/`; strip those before using it, in the key too. The
-`<N> resolved since last review` block and the `<N> open issues` block
-(or the `**No open issues**` line) are not findings: the resolved ones
-are fixed, and the open issues are bullets linking to the review's
-inline comments.
-
-For both kinds, record the disposition in `handled_top_level_ids` (in the
-PR's progress file) under `copilot|<path>|<the bullet's first sentence>`
-for a suppressed comment or `copilot|<path>|<title>` for a previously
-missed issue, and the review's own id under `parsed`. Copilot repeats a
+Record each finding's disposition in `handled_top_level_ids` (in the PR's
+progress file) under the finding's `key`, and the review's own id under
+`parsed`. Copilot repeats a
 finding it still sees in the next review under a new review id, often on
 a moved line and with its title or sentence reworded, so an exact key
 misses most repeats. Before raising a finding whose key is not recorded,

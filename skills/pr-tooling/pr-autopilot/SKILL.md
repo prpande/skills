@@ -14,7 +14,7 @@ description: >
   when the user says "publish the PR", "ship with autopilot", "run
   pr-autopilot", "/pr-autopilot", or similar.
 argument-hint: "[iteration-cap]"
-allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, Skill, ScheduleWakeup, AskUserQuestion, PushNotification, SendUserFile
+allowed-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, TaskStop, Skill, ScheduleWakeup, AskUserQuestion, PushNotification, SendUserFile
 ---
 
 # pr-autopilot
@@ -200,6 +200,27 @@ directory is added to `.gitignore` on first use. Schema and protocol:
 - `pr-loop-lib/references/log-format.md` — JSON-lines event schema.
 - `pr-loop-lib/references/invariants.md` — per-step post-condition
   predicates the orchestrator checks.
+
+State a run writes beyond the PR's identity, all in `context-schema.md`:
+
+- Pre-open review (steps 02 and 03.5): `context_check_answers`, each
+  answer with `flipped_by` (the finding that turned a `no` or
+  `cannot-tell` into `yes`) and `settled_item` (the settled item a
+  verified `no` rests on); `code_review_dismissed` with `D<n>` ids, and
+  `dismissed_checks`, the fix-round reviewer's verdict on each.
+- Fix waves (pr-loop-lib steps 04 and 04.5): `unit_bases`, each unit's
+  base tree and its fixer's `dispatched_at` and `returned_at`, and
+  `agent_clock`, each verifier's `dispatched_at`, all in UTC epoch
+  seconds. A fixer gets 10 minutes from dispatch and a verifier 3; an
+  agent past its limit is stopped with `TaskStop` (step 04 "Time
+  limits"). Local verify keeps `verify_retries_used` (one build and one test
+  retry per wave), `verify_baseline_tree` and `verify_baseline_files`
+  while a baseline or halving run is in progress, and
+  `verify_excluded_suites`, `verify_preexisting_failures`,
+  `verify_flaky_tests` and `verify_tests_ran` for the step 11 report.
+- Comment loop (pr-loop-lib step 07): `copilot_dispositions`, the
+  verdict on each finding parsed from a Copilot review body, so a
+  repeat in a later review is not raised again.
 
 Concurrent invocations on the same PR are prevented by the advisory
 lock. If another session is active, pr-autopilot halts at step 01 with

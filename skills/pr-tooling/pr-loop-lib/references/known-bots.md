@@ -8,7 +8,8 @@ classifies a comment as actionable or skip-able.
 | Login | Where it posts | Signature (body contains / starts with) | Classification |
 |---|---|---|---|
 | `Copilot` | Inline review comment | Any body with `path` set on the API response | Actionable |
-| `copilot-pull-request-reviewer[bot]` | Review body | `Copilot reviewed N out of N changed files` | Skip — meta/summary; inline comments carry the findings |
+| `copilot-pull-request-reviewer[bot]` | Review body | contains `### Suppressed comments` or `previously missed issue</strong>` or `previously missed issues</strong>` | Parse — one finding per item, see "Copilot review body" below |
+| `copilot-pull-request-reviewer[bot]` | Review body | neither | Skip — verdict, overview and counts; inline comments carry the other findings |
 | `sonarqube[bot]` | Top-level PR comment | `Quality Gate passed` | Skip — status only |
 | `sonarqube[bot]` | Top-level PR comment | `Quality Gate failed` | Actionable — surface listed issues |
 | `sonarqubecloud[bot]` | Top-level PR comment | `Quality Gate passed` | Skip — status only |
@@ -18,6 +19,37 @@ classifies a comment as actionable or skip-able.
 
 The default list is deliberately short. Only bots that are well-known
 across teams ship as defaults.
+
+### Copilot review body
+
+Most Copilot findings are inline comments. Two kinds live only in its
+review body: the items under `### Suppressed comments`, and, in a body
+that opens with `<!-- ccr-overview-v2 -->`, the items of the "previously
+missed issues" block (findings in code that has not changed since its
+last review). Write the body to a file and run:
+
+```
+python "$HOME/.claude/skills/pr-loop-lib/scripts/copilot_review.py" <body-file>
+```
+
+It prints `{"classification", "findings"}`. Each finding becomes one
+actionable item: surface `review`, id `<review id>:finding-<N>` in output
+order, its `path` and `line`, as body the `title` followed by the
+`text`, and `copilot_key` its `key`. The open-issues and resolved-since-last-review blocks are never
+findings. These items count as actionable in step 08, so an iteration
+that raises one is never quiescent. Exit 2 means the body names one of
+the two sections but the script could not read an item: treat the whole
+body as one actionable item.
+
+Copilot repeats a finding it still sees in its next review, under a new
+review id and often reworded. Each finding's `key` is
+`copilot|<path>|<title>`. Before raising one, look its key up in
+`context.copilot_dispositions`; when it is not there, compare the finding
+with the recorded keys for the same path, and when it names the same
+defect as one of them, record its key with that verdict and raise
+nothing. When it is not clearly the same defect, raise it.
+`pr-watch/references/known-bots-overlay.md` keeps the same keys in its
+progress file.
 
 ## Unknown-bot fallback
 
