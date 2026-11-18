@@ -2206,7 +2206,12 @@ def run_mode(args, gh):
     elif args.tails:
         payload = tails_payload(pr, entry, me, allow, slack=args.slack_replies)
     elif args.review_ready:
-        payload = review_ready_payload(gh, view, entry, pr, time.time())
+        node = (fetch_heads(gh, {(owner, repo): [number]}).get((owner, repo)) or {}).get(f"p{number}")
+        files = DRY_RUN_FILES if view["dry_run"] else LIVE_FILES
+        prev = (read_json(args.session_dir / files.poller, default={}).get("prs") or {}).get(
+            pr_key(owner, repo, number), {})
+        stacked_default = default_branch(node) if node and is_stacked(node, prev) else None
+        payload = review_ready_payload(gh, view, entry, pr, time.time(), stacked_default, {})
     else:
         payload = findings_payload(gh, view, entry, pr)
     print(json.dumps(payload, indent=2))

@@ -178,8 +178,13 @@ place set `context.agent_cap_degraded` to `[]`, unless
 re-run keeps its earlier entries); entries that steps 01.5 to 04 add in
 this run stay until step 11 prints them.
 
-On every run, pr-followup's included, set `context.base_changed_in_run`
-and `context.merged_base_done` to `false` after the state is loaded.
+When the invocation starts a new run, pr-followup's included, set
+`context.base_changed_in_run` and `context.merged_base_done` to `false`
+after the state is loaded. A re-entry after a `ScheduleWakeup` keeps
+both flags as loaded. The invocation is a re-entry when it loaded an
+existing state file whose `termination_reason` is null; in every other
+case it starts a new run. A new run also sets `context.termination_reason`
+to null and writes state, so the re-entries that follow read as re-entries.
 
 ## Blocking conditions
 

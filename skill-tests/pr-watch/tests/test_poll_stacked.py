@@ -1,10 +1,13 @@
+import contextlib
+import io
 import json
 import re
+import tempfile
 import unittest
 
 from unittest import mock
 
-from fakes import NOW, FakeGh, pk, poll, pull, rk, watch
+from fakes import NOW, FakeGh, HomeCase, claim_leases, pk, poll, pull, rk, watch, write_session
 from test_poll_ci import check
 from test_poll_review_ready import handled_view, ready_pr
 
@@ -392,6 +395,26 @@ class ChecksPayloadTests(StackedBase):
     def test_checks_payload_on_default_base_has_no_missing_key(self):
         self.gh.prs[pk(1411)]["baseRefName"] = "main"
         self.assertNotIn("missing", poll.checks_payload(self.gh, "o", "r", 1411))
+
+
+class ReviewReadyCliStackedTests(HomeCase):
+    def test_stacked_pr_with_a_missing_required_check_is_not_ready(self):
+        gh = StackedGh()
+        gh.rules["o/r"] = [GATED]
+        gh.prs[pk(1411)] = ready_pr()
+        gh.prs[pk(1411)]["baseRefName"] = "rung-1"
+        gh.all_checks[pk(1411)] = [check("Wiz", "pass")]
+        view = handled_view()
+        claim_leases(view)
+        with tempfile.TemporaryDirectory() as d:
+            write_session(d, view)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = poll.main(["--review-ready", rk(1411), "--session-dir", d], gh=gh)
+        self.assertEqual(code, 0)
+        payload = json.loads(out.getvalue())
+        self.assertFalse(payload["ready"])
+        self.assertIn("checks-not-green", payload["blockers"])
 
 
 if __name__ == "__main__":

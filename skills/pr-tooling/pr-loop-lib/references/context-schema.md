@@ -106,8 +106,8 @@ run `/simplify`).
 | `ci_results` | array of objects | default `[]` | Per-check `{name, state, link, raw_state, extra}`; `state` is `green`, `red`, `pending-timeout` or `missing` (a check the default branch requires that has no run on the head) |
 | `ci_dispatched` | array of strings | default `[]` | `<head_sha>\|<workflow file>` for each gated workflow dispatched; step 09 never repeats one. Kept for the life of the state file |
 | `ci_reentry_count` | integer | default `0` | Max 3 |
-| `base_changed_in_run` | boolean | default `false` | True once step 09 "Live base" or "Merged base" changed `context.base` in this run. Reset to `false` by step 01 at run start; written to state when set |
-| `merged_base_done` | boolean | default `false` | True once step 09 "Merged base" has started in this run, whatever its outcome. Reset to `false` by step 01 at run start; written to state when set |
+| `base_changed_in_run` | boolean | default `false` | True once step 09 "Live base" or "Merged base" changed `context.base` in this run. Reset to `false` by step 01 when an invocation starts a new run, never on a re-entry after a `ScheduleWakeup`; written to state when set |
+| `merged_base_done` | boolean | default `false` | True once step 09 "Merged base" has started in this run, whatever its outcome. Reset to `false` by step 01 when an invocation starts a new run, never on a re-entry after a `ScheduleWakeup`; written to state when set |
 
 ## Termination
 
