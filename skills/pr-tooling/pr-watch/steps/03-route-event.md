@@ -20,6 +20,10 @@ the Monitor prints, but `idle` (section F) and `reconciled` (the poller sends it
 warn log) cannot arrive for a central watch. A `tick` has no `pr`; `poller-error` and `lease-lost` route as the
 table shows.
 
+For an `authored` PR, `<base>` in every step an event leads to is the live
+`baseRefName` (`gh pr view <N> --repo <owner>/<repo> --json baseRefName`),
+never the value stored at discovery.
+
 1. Parse the notification line as JSON. A line that does not parse is
    not an event; ignore it.
 2. Re-read `watch.json`. An event with a `pr` field (every kind except
@@ -42,6 +46,8 @@ table shows.
 | `review-ready` | `pr-watch/steps/08-review-ask.md` |
 | `conflicting` | section G |
 | `behind-ready` | section H |
+| `ci-unchecked` | `pr-watch/steps/07-ci.md` section 7 |
+| `base-merged` | section J |
 | `slack-reply` | section I |
 | `idle` | section F |
 | `reconciled` | post "The daily check picked up work the event stream missed." in the thread of each listed `armed` PR whose progress file has a `slack_ts` (`pr-watch/steps/06-notify.md`) |
@@ -295,3 +301,14 @@ Steps 3 to 6 below say which of section A's steps apply.
    each reply after its answer was posted. Then delete
    `<SESSION_DIR>/slack-<reply_ts>.json`, so Slack text does not pile up
    on disk.
+
+## J. Base merged
+
+The PR's base branch merged and the PR still targets it. The event
+carries `base`, `default` and `base_pr` (the merged PR's number). It is
+raised only when the merged lower-rung PR itself targeted the default branch.
+
+1. Post "base merged" (`pr-watch/steps/06-notify.md`) in the PR's thread.
+   Under `dry_run`, append the line to the dry-run Slack file instead.
+2. Write nothing else. The watch never retargets, rebases or closes a PR
+   (hard rule); the user retargets it, or runs /pr-followup.

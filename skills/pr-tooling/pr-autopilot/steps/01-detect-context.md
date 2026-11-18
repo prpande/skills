@@ -8,12 +8,12 @@ threaded through the entire skill.
 | Field | How detected |
 |---|---|
 | `platform` | `git remote get-url origin` substring match: `github.com` → `"github"`; `dev.azure.com` or `visualstudio.com` → `"azdo"`; else `"github"` + warning log |
-| `base` | `gh pr view --json baseRefName` if a PR exists for the current branch; else `git symbolic-ref refs/remotes/origin/HEAD --short` (strip `origin/`); fallback `"main"` |
+| `base` | `gh pr view --json baseRefName` if a PR exists for the current branch (AzDO: `az repos pr list --source-branch <branch> --status active`, `targetRefName` with `refs/heads/` stripped); else `context.base_branch` when set; else the platform default branch (GitHub: `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`; AzDO: `az repos show --repository <repo> --query defaultBranch -o tsv`, strip `refs/heads/`); when that fails, `git symbolic-ref refs/remotes/origin/HEAD --short` (strip `origin/`); fallback `"main"` |
 | `template_path` | First hit from: `.github/PULL_REQUEST_TEMPLATE.md`, `.github/PULL_REQUEST_TEMPLATE/*.md`, `docs/pull_request_template.md`, `.azuredevops/pull_request_template.md`. If multi-template directory, prompt user to pick |
 | `pr_number` | `gh pr view --json number` (GitHub) or `az repos pr list --source-branch <branch>` (AzDO). Empty on a fresh pr-autopilot run, since preflight check 5 halts on an open PR the run did not open; set when resuming the run that opened it, and under pr-followup |
 | `branch` | `git rev-parse --abbrev-ref HEAD` |
 | `head_sha` | `git rev-parse HEAD` |
-| `base_sha` | `context.base_override` when set (see "Base override"), else `git merge-base $base HEAD` |
+| `base_sha` | `context.base_override` when set (see "Base override"); else `git fetch origin <base>` then `git merge-base origin/<base> HEAD` |
 | `uncommitted` | `git status --porcelain` — list of paths with status codes |
 | `spec_candidates[]` | Glob: `docs/superpowers/specs/*.md`, `docs/superpowers/plans/*.md`, `specs/*/spec.md`, `specs/*/plan.md`, `specs/*/tasks.md`, `docs/specs/*.md`, `docs/plans/*.md` |
 | `effort_docs[]` | Intent docs kept outside the repo; see "Effort docs" below |
@@ -93,6 +93,35 @@ git rev-parse --verify <sha>^{commit}
 git merge-base --is-ancestor <sha> HEAD
 ```
 
+## Base branch
+
+`context.base_branch` is reset per invocation as `base_override` is (see
+"Base override"): set from this invocation's `--base-branch` flag, null
+when the flag is absent.
+
+Each rule below is a HALT before any review or state write. These checks
+run before `base_sha` is computed (the Outputs row's `git fetch` and
+`git merge-base`), so a missing `origin/<branch>` surfaces as rule 5's
+HALT, not a raw git error. With the flag set:
+
+1. Both `--base` and `--base-branch` given: HALT with "Pass --base or --base-branch, not both."
+2. The value starts with `-` (tested first, so it never reaches a git
+   command), or `git check-ref-format --branch "<branch>"` fails: HALT with "--base-branch <branch> is not a valid branch name."
+3. The value equals `context.branch`: HALT with "--base-branch names this branch itself."
+4. A PR exists for this branch (a resume with a state file) and its
+   `baseRefName` (AzDO: `targetRefName` from `az repos pr list --source-branch <branch> --status active`, with `refs/heads/` stripped before comparing) differs: HALT with "--base-branch <branch> disagrees with PR #<N>'s base <baseRefName>. The PR's base wins: retarget the PR or drop the flag."
+   When it is equal, continue; the PR's base is used.
+5. No PR, and `git fetch origin <branch>` or
+   `git rev-parse --verify origin/<branch>^{commit}` fails: HALT with
+   "origin/<branch> does not exist. Push the lower rung first."
+6. No PR, and `git merge-base --is-ancestor origin/<branch> HEAD`
+   fails: HALT with "origin/<branch> is not an ancestor of HEAD. Merge origin/<branch> into this branch and re-invoke."
+
+Every later step diffs, counts and lists files from `base_sha`, so the
+lower rungs are context, never this PR's changes.
+
+Log `base_resolved {base, base_sha, source: "pr" | "flag" | "platform-default" | "origin-head" | "main"}`.
+
 ## Host platform detection
 
 Populate `context.host_platform` per
@@ -128,6 +157,14 @@ after a `ScheduleWakeup`), LOAD the existing state instead of
 re-initializing. Refresh the lock lease. Log a `skill_start` event
 noting `resumed: true`.
 
+The `base` and `base_sha` resolved in this step always win over the
+loaded state's values. When no PR exists, `--base-branch` is absent,
+`context.base_override` is not set and the loaded state's `base` is not
+the platform default branch (the Outputs `base` row's first fallback),
+HALT with "The last run targeted <base>. Re-invoke with --base-branch
+<base>, or delete .pr-autopilot/branch-<slug>.json to target <default>."
+where `<default>` is that platform default branch.
+
 On a run that has not opened its PR (`context.pr_number` is empty),
 set `context.verify_excluded_suites`,
 `context.verify_preexisting_failures` and `context.verify_flaky_tests`
@@ -140,6 +177,14 @@ place set `context.agent_cap_degraded` to `[]`, unless
 `context.code_review_invoked_head` equals `context.head_sha` (a same-head
 re-run keeps its earlier entries); entries that steps 01.5 to 04 add in
 this run stay until step 11 prints them.
+
+When the invocation starts a new run, pr-followup's included, set
+`context.base_changed_in_run` and `context.merged_base_done` to `false`
+after the state is loaded. A re-entry after a `ScheduleWakeup` keeps
+both flags as loaded. The invocation is a re-entry when it loaded an
+existing state file whose `termination_reason` is null; in every other
+case it starts a new run. A new run also sets `context.termination_reason`
+to null and writes state, so the re-entries that follow read as re-entries.
 
 ## Blocking conditions
 

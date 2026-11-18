@@ -16,11 +16,12 @@ Required fields are marked as such.
 | `host_platform` | enum | yes | `claude-code` \| `codex` \| `gemini` \| `other` |
 | `platform` | enum | yes | `github` \| `azdo` |
 | `repo_root` | string (absolute path) | yes | From `git rev-parse --show-toplevel` |
-| `base` | string | yes | Base branch (e.g., `main`) |
+| `base` | string | yes | PR's base branch, else `--base-branch`, else the default branch (e.g., `main`) |
 | `branch` | string | yes | Current branch |
 | `head_sha` | string (hex) | yes | `git rev-parse HEAD` |
-| `base_sha` | string (hex) | yes | `git merge-base $base HEAD`, or `base_override` when set |
+| `base_sha` | string (hex) | yes | `git merge-base origin/<base> HEAD`, or `base_override` when set |
 | `base_override` | string or null | default `null` | A base commit passed with `--base <sha>`; when set, step 01 uses it as `base_sha` instead of the merge base. Valid only with `--dry-run`. Set from this invocation's flag on every run; null when `--base` is absent, also when a state file is loaded |
+| `base_branch` | string or null | default `null` | A pushed lower-rung branch passed with `--base-branch <branch>`, the base of a stacked PR. Set from this invocation's flag on every run; null when the flag is absent, also when a state file is loaded |
 | `pr_number` | integer or null | no | Set by step 01 if PR exists, else after step 04 |
 | `pr_url` | string or null | no | PR URL, set after create |
 | `template_path` | string or null | no | Repo's PR-template path, if found |
@@ -81,7 +82,7 @@ run `/simplify`).
 | `agent_returns` | array of objects | default `[]` | Step 04 fixer returns (per AgentReturn schema) |
 | `verifier_judgements` | array of objects | default `[]` | Step 04 verifier outputs, one per verified fixer return |
 | `files_changed_this_iteration` | array of strings | default `[]` | Union of fixer file changes |
-| `needs_human_items` | array of objects | default `[]` | Items flagged for user attention: step 04's `needs-human` returns and step 03.5 D's declared-but-risky findings |
+| `needs_human_items` | array of objects | default `[]` | Items flagged for user attention: step 04's `needs-human` returns and step 03.5 D's declared-but-risky findings, and step 09 "Stacked base" entries `{feedback_id: "stacked-base", reason}` (head mismatch, failed retarget, dirty tree, merge conflict, verify or push failure, failed gate call, failed dispatch) |
 | `ui_deferred_items` | array of objects | default `[]` | Items the fixer judged to be UI / design / copy changes; deferred to end-of-run user approval. Each entry: `{feedback_id, thread_id?, path?, line?, author, body, proposal, reply_text}`. Step 11 prompts the user and may re-enter step 04 scoped to approved items. |
 | `ui_deferred_actionable` | array of objects | default `[]` | Scoped overlay written by step 11 before re-dispatching approved `ui_deferred_items`. During that one step-04 invocation, the dispatcher reads its actionable list from this field in place of `context.actionable`. Never replaces `context.actionable`; the persisted top-level `actionable` is left unchanged. Same shape as the individual items in `context.actionable`. |
 | `consecutive_quiescent_iterations` | integer | default `0` | Incremented on each soft-quiescent iteration (`quiescent-zero-actionable` or `quiescent-no-code-change`). Reset to `0` on any non-quiescent iteration outcome. Read by step 08 to decide between routing back to step 01 (counter == 1) or onward to step 09 (counter >= 2). |
@@ -102,15 +103,18 @@ run `/simplify`).
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `ci_results` | array of objects | default `[]` | Per-check `{name, state, link, raw_state, extra}` |
+| `ci_results` | array of objects | default `[]` | Per-check `{name, state, link, raw_state, extra}`; `state` is `green`, `red`, `pending-timeout` or `missing` (a check the default branch requires that has no run on the head) |
+| `ci_dispatched` | array of strings | default `[]` | `<head_sha>\|<workflow file>` for each gated workflow dispatched; step 09 never repeats one. Kept for the life of the state file |
 | `ci_reentry_count` | integer | default `0` | Max 3 |
+| `base_changed_in_run` | boolean | default `false` | True once step 09 "Live base" or "Merged base" changed `context.base` in this run. Reset to `false` by step 01 when an invocation starts a new run, never on a re-entry after a `ScheduleWakeup`; written to state when set |
+| `merged_base_done` | boolean | default `false` | True once step 09 "Merged base" has started in this run, whatever its outcome. Reset to `false` by step 01 when an invocation starts a new run, never on a re-entry after a `ScheduleWakeup`; written to state when set |
 
 ## Termination
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `loop_exit_reason` | enum or null | no | `quiescent-confirmed` \| `iteration-cap` \| `runaway-detected`. The two old soft-quiescent values (`quiescent-zero-actionable`, `quiescent-no-code-change`) were removed in 2026-05-06; they no longer cause a loop exit on their own — they are recorded on `last_quiescence_reason` (above) on the first quiescent iteration, and the loop continues. Only the second consecutive quiescent iteration writes `loop_exit_reason = quiescent-confirmed` and exits. State files written by older skill versions may contain the removed values; that is expected — schema validation runs at write time, not on every read. |
-| `termination_reason` | enum or null | no | `ci-green` \| `ci-red` \| `ci-skipped` \| `ci-timeout` \| `ci-reentry-cap` \| `ci-pre-existing-failures` \| `iteration-cap` \| `runaway-detected` \| `user-intervention-needed` |
+| `termination_reason` | enum or null | no | `ci-green` \| `ci-red` \| `ci-skipped` \| `ci-unchecked` \| `ci-timeout` \| `ci-reentry-cap` \| `ci-pre-existing-failures` \| `iteration-cap` \| `runaway-detected` \| `user-intervention-needed` |
 | `code_review_invoked` | boolean | default `false` | True after pr-autopilot step 03.5 invokes `/code-review`. Its output is kept locally and never posted. |
 | `code_review_invoked_at` | string (ISO-8601) or null | no | When `/code-review` was dispatched; read by step 03.5's wait to bound it |
 | `code_review_invoked_head` | string (hex) or null | default `null` | `head_sha` the running or last `/code-review` was launched on |

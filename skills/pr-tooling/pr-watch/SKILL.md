@@ -105,6 +105,10 @@ arrives as a notification. Its `kind` is one of `pending`, `head-moved`,
 `conflicting` (an `authored` PR no longer merges cleanly into its base),
 `behind-ready` (an `authored` PR is approved, or needs no review, and is
 green but behind a base that requires branches to be up to date),
+`ci-unchecked` (a stacked or retargeted `authored` PR whose default-branch
+gated checks never ran on the head),
+`base-merged` (an `authored` PR whose base branch merged while the PR still
+targets it),
 `slack-reply` (a new reply in the PR's Slack thread, with `thread_ts`,
 `reply_ts`, `human` and `bots`; central watches only),
 `idle` (no PR in the

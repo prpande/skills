@@ -77,6 +77,9 @@ the steps above.
 | CI rerun queued | `Rerun of <check name> queued behind #<M> while its checks run.` |
 | CI rerun queued (busy) | `Rerun of <check name> queued behind another push in <owner>/<repo>.` |
 | CI rerun dropped | `Rerun of <check name> dropped: the PR head moved before it ran.` |
+| CI dispatched | The default branch's gated workflow did not run on this head. Dispatched `<files>`. |
+| CI unchecked | CI unchecked: `<names>` never ran on this head. Not green. |
+| CI unchecked (dispatch failed) | CI unchecked: `<names>` never ran on this head, and dispatching failed for each of `<file>`: <first stderr line>. Not green. |
 | CI pre-existing | `<check name> is red on <base> too; leaving it.` |
 | CI needs you | `Needs you: [<check name>](<link>) is red at <head7> (<reason>).` — then, only when the PR's `ci_log_occurrence` is this check's occurrence key and `pr-watch/steps/07-ci.md` rule 3's destination check passes again over the file now, up to 20 lines from `grep -m 20 -E -e '##\[error\]' -e 'error [A-Z]+[0-9]+' -e 'Failed ' -e 'Test Run Failed'` over it, put through "Quoting someone else's text", in a code block; the session never reads the whole file |
 | review ask | `Review ask drafted in #prpande-outbox for <destination>.` (`pr-watch/steps/08-review-ask.md`; `<destination>` is the channel name, or `no earlier ask found; pick a channel`) |
@@ -86,6 +89,7 @@ the steps above.
 | reconciled | `The daily check picked up work the event stream missed.` |
 | poller error | `The watch poller has failed five ticks in a row: <error>. No events are handled until this is fixed.` in every PR thread whose progress file has a `slack_ts`; `<error>` is the event's `error` |
 | closed | `PR <merged or closed>; no longer watching.` |
+| base merged | `<base>` merged (#<base_pr>) and this PR still targets it. Retarget it to `<default>` (the watch never retargets), or run /pr-followup. |
 | settled | `All your findings on this PR are resolved; no longer watching it.` |
 | stop | `No longer watching.` |
 
