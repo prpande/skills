@@ -61,6 +61,10 @@ Flags supported (parse from the raw invocation string):
   computes; without `--dry-run`, step 01 HALTs. Valid only on a branch
   that has no PR of its own (create one at the merged PR's opening
   head). Stored in `context.base_override`.
+- `--base-branch <branch>` → open this branch's PR against `<branch>`, a
+  pushed lower rung, instead of the default branch. Works with and
+  without `--dry-run`, for a branch with no PR yet. Step 01 HALTs on the
+  cases in its "Base branch" section. Stored in `context.base_branch`.
 - `--no-wait` → skip the **first** wait cycle only (useful when bots
   are known to have already posted). Subsequent iterations still honor
   the 5-minute floor, AND the confirmation iteration that step 08 may
@@ -253,7 +257,8 @@ the corresponding `gh`/`az`/git command. Reviews are not side effects:
 step 03.5 runs `/code-review max`, the lens agents, the fixers and the
 fix-round review under `--dry-run` exactly as in a real run, against
 the working tree (`steps/03.5-pre-open-review.md` "Dry-run"). `--base <sha>`
-sets the diff base for the whole run.
+sets the diff base for the whole run; `--base-branch <branch>` sets the
+PR's base branch and, through the merge base, the diff base.
 
 The directory is scoped to the session ID to prevent concurrent dry-runs
 (on shared CI runners or developer boxes) from overwriting each other's output

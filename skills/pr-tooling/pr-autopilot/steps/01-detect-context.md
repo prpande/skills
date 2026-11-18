@@ -8,12 +8,12 @@ threaded through the entire skill.
 | Field | How detected |
 |---|---|
 | `platform` | `git remote get-url origin` substring match: `github.com` → `"github"`; `dev.azure.com` or `visualstudio.com` → `"azdo"`; else `"github"` + warning log |
-| `base` | `gh pr view --json baseRefName` if a PR exists for the current branch; else `git symbolic-ref refs/remotes/origin/HEAD --short` (strip `origin/`); fallback `"main"` |
+| `base` | `gh pr view --json baseRefName` if a PR exists for the current branch; else `context.base_branch` when set; else `git symbolic-ref refs/remotes/origin/HEAD --short` (strip `origin/`); fallback `"main"` |
 | `template_path` | First hit from: `.github/PULL_REQUEST_TEMPLATE.md`, `.github/PULL_REQUEST_TEMPLATE/*.md`, `docs/pull_request_template.md`, `.azuredevops/pull_request_template.md`. If multi-template directory, prompt user to pick |
 | `pr_number` | `gh pr view --json number` (GitHub) or `az repos pr list --source-branch <branch>` (AzDO). Empty on a fresh pr-autopilot run, since preflight check 5 halts on an open PR the run did not open; set when resuming the run that opened it, and under pr-followup |
 | `branch` | `git rev-parse --abbrev-ref HEAD` |
 | `head_sha` | `git rev-parse HEAD` |
-| `base_sha` | `context.base_override` when set (see "Base override"), else `git merge-base $base HEAD` |
+| `base_sha` | `context.base_override` when set (see "Base override"); else `git fetch origin <base>` then `git merge-base origin/<base> HEAD` |
 | `uncommitted` | `git status --porcelain` — list of paths with status codes |
 | `spec_candidates[]` | Glob: `docs/superpowers/specs/*.md`, `docs/superpowers/plans/*.md`, `specs/*/spec.md`, `specs/*/plan.md`, `specs/*/tasks.md`, `docs/specs/*.md`, `docs/plans/*.md` |
 | `effort_docs[]` | Intent docs kept outside the repo; see "Effort docs" below |
@@ -92,6 +92,34 @@ When `context.base_override` is set, `base_sha` is that commit. HALT with
 git rev-parse --verify <sha>^{commit}
 git merge-base --is-ancestor <sha> HEAD
 ```
+
+## Base branch
+
+`context.base_branch` is set from this invocation's `--base-branch` flag
+on every run, and to null when the flag is absent, also when an existing
+state file is loaded; a stored value never carries into a run that did
+not pass the flag.
+
+Each rule below is a HALT before any review or state write. With the
+flag set:
+
+1. Both `--base` and `--base-branch` given: HALT with "Pass --base or --base-branch, not both."
+2. `git check-ref-format --branch <branch>` fails, or the value starts
+   with `-`: HALT with "--base-branch <branch> is not a valid branch name."
+3. The value equals `context.branch`: HALT with "--base-branch names this branch itself."
+4. A PR exists for this branch (a resume with a state file) and its
+   `baseRefName` differs: HALT with "--base-branch <branch> disagrees with PR #<N>'s base <baseRefName>. The PR's base wins: retarget the PR or drop the flag."
+   When it is equal, continue; the PR's base is used.
+5. No PR, and `git fetch origin <branch>` or
+   `git rev-parse --verify origin/<branch>^{commit}` fails: HALT with
+   "origin/<branch> does not exist. Push the lower rung first."
+6. No PR, and `git merge-base --is-ancestor origin/<branch> HEAD`
+   fails: HALT with "origin/<branch> is not an ancestor of HEAD. Merge origin/<branch> into this branch and re-invoke."
+
+Every later step diffs, counts and lists files from `base_sha`, so the
+lower rungs are context, never this PR's changes.
+
+Log `base_resolved {base, base_sha, source: "pr" | "flag" | "default"}`.
 
 ## Host platform detection
 

@@ -16,11 +16,12 @@ Required fields are marked as such.
 | `host_platform` | enum | yes | `claude-code` \| `codex` \| `gemini` \| `other` |
 | `platform` | enum | yes | `github` \| `azdo` |
 | `repo_root` | string (absolute path) | yes | From `git rev-parse --show-toplevel` |
-| `base` | string | yes | Base branch (e.g., `main`) |
+| `base` | string | yes | PR's base branch, else `--base-branch`, else the default branch (e.g., `main`) |
 | `branch` | string | yes | Current branch |
 | `head_sha` | string (hex) | yes | `git rev-parse HEAD` |
-| `base_sha` | string (hex) | yes | `git merge-base $base HEAD`, or `base_override` when set |
+| `base_sha` | string (hex) | yes | `git merge-base origin/<base> HEAD`, or `base_override` when set |
 | `base_override` | string or null | default `null` | A base commit passed with `--base <sha>`; when set, step 01 uses it as `base_sha` instead of the merge base. Valid only with `--dry-run`. Set from this invocation's flag on every run; null when `--base` is absent, also when a state file is loaded |
+| `base_branch` | string or null | default `null` | A pushed lower-rung branch passed with `--base-branch <branch>`, the base of a stacked PR. Set from this invocation's flag on every run; null when the flag is absent, also when a state file is loaded |
 | `pr_number` | integer or null | no | Set by step 01 if PR exists, else after step 04 |
 | `pr_url` | string or null | no | PR URL, set after create |
 | `template_path` | string or null | no | Repo's PR-template path, if found |

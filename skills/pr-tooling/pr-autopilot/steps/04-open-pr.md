@@ -26,7 +26,8 @@ same fill rules.
 | Section pattern | Fill source |
 |---|---|
 | `## Overview` or `## Summary` | 2-3 sentence inferred "why" from conversation + spec files + commit messages |
-| `## Changes` | Files Changed table (`git diff --stat` + one-line per file) plus bullet summary of material changes |
+| `## Changes` | Files Changed table (`git diff --stat <base_sha>...HEAD` + one-line per file) plus bullet summary of material changes |
+| First line of the body, above the first section (only when `context.base` is not the repo's default branch) | "Stacked on `<base>` (<PR URL>); merge after it." The default branch is `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` (AzDO: `az repos show --repository <repo> --query defaultBranch -o tsv`, strip `refs/heads/`). The PR URL is `gh pr list --head <base> --state open --json url --jq '.[0].url'` (AzDO: `az repos pr list --source-branch <base> --status active`); when `<base>` has no open PR the line is "Stacked on `<base>`; merge after it." |
 | `## Security Impact` | Heuristic classifier (auth/authz, crypto, input validation, new endpoints, DB patterns, logging that could expose data). Append "No security impact." checkbox style or describe the impact |
 | `## Testing` | Test count and type summary from any locally-run suites, plus any spec-referenced test-plan links |
 | `## Related Work` | Auto-linked tickets (`AB#\d+`, `[A-Z]+-\d+`, `#\d+`) + any cross-repo PR URLs found in branch name or commit messages |
@@ -118,6 +119,8 @@ On subsequent invocations (if the branch already has an upstream),
 plain `git push`.
 
 ## 4d — Create PR
+
+`$BASE` is `context.base`: the lower rung on a stacked run, else the default branch.
 
 GitHub:
 ```bash
