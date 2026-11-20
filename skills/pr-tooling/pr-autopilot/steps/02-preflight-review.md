@@ -331,7 +331,10 @@ re-raise what our own review already saw.
   does and why it stays. Step 03.5 writes it into a commit message and
   step 04 into the PR body. When the kept code departs from a legacy
   implementation or a sibling service and the code does not show why,
-  the fixer adds one line at the departure giving the reason.
+  the fixer adds one line at the departure giving the reason. When the
+  reason states a fact without evidence (step 03.5 B's rule), or rests
+  on a "Claims to check:" item, the status is `needs-human`, not
+  `declared`.
 - **Undecided** (final verdict `needs-human`, which includes a verifier
   `partial`, or `ui-deferred`): status `needs-human`; step 04 lists it
   under "Open questions for reviewers" in the PR body.
@@ -499,7 +502,8 @@ step 03.5 ends the turn to wait for `/code-review`:
    `context.context_check_answers`, and drop from "Context checks not
    answered" every id now answered `yes`, so both show the flips step
    03.5 D1 made, and rewrite "## Claims to check" from
-   `context.reopened_settled`. Use Primitive C atomic write again.
+   `context.reopened_settled` and from the `internal_review_findings`
+   entries whose summary or description starts `Premise not shown: `. Use Primitive C atomic write again.
 
 ### Rename at PR-create time
 
