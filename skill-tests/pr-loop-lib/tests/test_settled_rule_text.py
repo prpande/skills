@@ -20,6 +20,13 @@ CLAIMS_HEADER = (
     "unused, report it with a summary that starts \"Premise not shown: \" followed by the "
     "item's opening words, cited like any finding and ranked by what the miss costs."
 )
+HINT_CLAIMS = (
+    " Items under \"Claims to check:\" are not settled: check each stated fact against the code "
+    "and data, and when they contradict it, or an existing helper does the same job and the "
+    "fact is the only reason it went unused, report it with a summary that starts "
+    "\"Premise not shown: \" followed by the item's opening words."
+)
+SETTLED_ONLY = "Drift and declared but risky apply to items under \"Settled:\" only."
 HINT_START = "`. Settled decisions: <path>."
 
 
@@ -45,12 +52,15 @@ class SettledRuleTextTest(unittest.TestCase):
     def test_settled_hint_carries_claims_rule(self):
         hints = [line for line in read(STEP).splitlines() if line.strip().startswith(HINT_START)]
         self.assertEqual(len(hints), 1)
-        self.assertIn("Claims to check", hints[0])
-        self.assertIn("Premise not shown: ", hints[0])
+        self.assertTrue(hints[0].endswith(HINT_CLAIMS + "`"))
+
+    def test_drift_and_risk_apply_to_settled_items_only(self):
+        self.assertIn(SETTLED_ONLY, " ".join(prompt_template().split()))
 
     def test_source_settles_choice_not_facts(self):
         self.assertIn(
-            "A source settles the choice, never the facts its reason states.", read(STEP))
+            "A source settles the choice, never the facts its reason states.",
+            " ".join(read(STEP).split()))
 
     def test_kept_on_purpose_line_has_evidence_tail(self):
         self.assertIn("- <statement> (<file>:<line>) Evidence: <evidence>", read(STEP))

@@ -91,11 +91,11 @@ Settled decisions
   fact that no evidence was shown for. Check the fact against the code
   and data. When they contradict it, or when an existing helper does the
   same job and the fact is the only reason it went unused, report it
-  with a summary that starts "Premise not shown: " followed by the
-  item's opening words, cited like any finding and ranked by what the
-  miss costs. The same holds for a finding of your own whose evidence
-  contradicts the fact behind a settled item: report it with "Premise
-  not shown: ". Severity follows what the miss costs and is never
+  with a "description" that starts "Premise not shown: " followed by
+  the item's opening words, cited like any finding and ranked by what
+  the miss costs. The same holds for a finding of your own whose
+  evidence contradicts the fact behind a settled item: start its
+  "description" with "Premise not shown: ". Severity follows what the miss costs and is never
   lowered because the item was ruled on.
 
 Five ordered passes, merged:
