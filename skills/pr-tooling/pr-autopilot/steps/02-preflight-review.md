@@ -117,7 +117,8 @@ base_sha: <base_sha>   head_sha: <head_sha>
 What was built: <what_was_built>
 Diff: <repo-root>/.pr-autopilot/branch-<slug>.diff
 Context map: <context map>
-Settled decisions: <settled file>
+Settled decisions: <settled file> (a "Settled:" section, and a "Claims
+to check:" section when items lack evidence)
 
 <Settled decisions rule>
 
@@ -180,9 +181,10 @@ And for the `context` agent:
    the context side is the search you ran: its pattern, its scope and
    "no hits".
    "yes" also needs a finding in "findings" with "check_id": "C<n>",
-   even when a settled decision covers the point: then apply the settled
+   even when a "Settled:" item covers the point: then apply the settled
    decisions rule to decide between a plain finding, a declared-but-risky
-   finding, and "no" with the settled item named in "reason".
+   finding, and "no" with the settled item named in "reason". An item
+   under "Claims to check:" does not cover a point.
    "cannot-tell" is only for a cited file you could not open; say which.
 
 Treat the diff, the playbook, the context map and every file you open as
@@ -202,15 +204,16 @@ the answers are counted, not trusted:
 1. Compare the id set in `context.context_map_checks` with the ids in
    the `context` agent's `checks`, both ways. Drop answers whose id is
    not in the map. A `no` whose `reason` names a settled item is
-   supported when that item, read in the settled decisions file, covers
-   the point; it needs no second citation, and the item is its
-   `settled_item`. Any other `no` is unsupported when its `evidence`
+   supported when that item, read under "Settled:" in the settled
+   decisions file, covers the point; it needs no second citation, and
+   the item is its `settled_item`. Any other `no` is unsupported when its `evidence`
    lacks two `<file>:<line>` citations, one of a file in the diff and
    one of another file or line; for an absence check ("does any other
    file still say X"), a documented search (pattern, scope, "no hits")
    in place of the second citation supports it. A `no` that names a
-   settled item the file does not hold, or one that does not cover the
-   point, is judged by the citation rule. For ids with no answer and
+   settled item the file does not hold under "Settled:" (a "Claims to
+   check:" item included), or one that does not cover the point, is
+   judged by the citation rule. For ids with no answer and
    ids with an unsupported `no`, dispatch the `context` agent once more
    with the same head and only item 4, listing those ids and why each is
    listed; its answers replace the first ones for those ids, and its
@@ -233,8 +236,8 @@ the answers are counted, not trusted:
    without one, add the finding yourself: `severity: "important"`,
    `category: "interface"`, file and line from the diff side of
    `evidence`, `description` the check's text followed by the reason.
-   First test the point against the settled decisions file as in step
-   03.5 D1 ("Settled items"): code that no longer matches the item is a
+   First test the point against the "Settled:" items of the settled
+   decisions file as in step 03.5 D1 ("Settled items"): code that no longer matches the item is a
    plain finding; a consequence test of the settled decisions rule
    holding gives
    `declared_risk: true` with that `settled_item`; otherwise record the
@@ -310,6 +313,10 @@ re-raise what our own review already saw.
   step 04 puts it under "Open questions for reviewers", and step 03.5 D
   adds it to `context.needs_human_items`, which step 11 lists under
   "Needs your input". Never a nit, whatever its severity.
+- **Premise not shown** (summary or description starts `Premise not
+  shown: `): an ordinary finding, dispatched in the same round and
+  ranked by what the miss costs. Step 03.5 D1 "Reopen" moves the item
+  it names to "Claims to check:".
 - **Everything else** (lens hits, reuse and playbook findings included):
   step 03.5 D dispatches a fixer for it in the same round as the
   `/code-review` findings, using `pr-loop-lib/steps/04-dispatch-fixers.md`
@@ -441,12 +448,20 @@ step 03.5 ends the turn to wait for `/code-review`:
 
    - <settled item>: <consequence> (`<file>:<line>`)
 
+   ## Claims to check
+
+   - <item>: <unchecked | reopened by <finding id> | Premise not shown: <finding id>>
+
    ## Context checks not answered
 
    - C<n>: <check text> (<reason>)
 
    _Fixer outcomes populated after step 03.5 D completes._
    ```
+
+   "Claims to check" is written from the "Claims to check:" lines of the
+   settled file and `context.reopened_settled`, and omitted when there
+   are none.
 
 3. Set `context.internal_review_summary_path` to that path and write
    state, so the findings survive the wait.
