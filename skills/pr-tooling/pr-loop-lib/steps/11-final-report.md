@@ -68,6 +68,7 @@ Internal review summary (local, not on PR):
     - Context-map checks: <n> yes (<n> flipped), <n> no, <n> not answered
 
   Declared but risky (settled, consequence reported, not fixed): <n>
+  Claims to check (premise not shown): <n> listed, <n> reopened by a finding
   /simplify skipped points reviewed: <n> (<n> fixed, <n> declared, <n> open)
 
   /code-review max (pre-open, not posted):
@@ -133,7 +134,9 @@ and dismissed" from `context.dismissed_checks` by `verdict`; and
 "Declared but risky" from entries with `declared_risk: true` whose
 status is not `duplicate`. A
 declared-but-risky finding is counted in that row only, never in
-"Open (needs-human)". A `/code-review` status of `skipped` names its
+"Open (needs-human)". "Claims to check" counts the "Claims to check:"
+lines of the settled file as listed and `context.reopened_settled` as
+reopened. A `/code-review` status of `skipped` names its
 reason (host unmapped, or the dry-run hint refused). The full detail (per-finding file:line, description, fixer/verifier
 outcome) lives in the review-summary file on disk — step 11 only
 prints counts to keep the terminal output scannable.

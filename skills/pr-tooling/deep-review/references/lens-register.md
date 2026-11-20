@@ -76,7 +76,10 @@ tier's Trigger table). A diff is **backend** when any group fires.
   mentions it.
 - **U4 — Reuse shared infrastructure.** Locking, error mapping, validation
   catalogs, pagination/batching helpers: grep for an existing shared seam
-  before writing a bespoke variant.
+  before writing a bespoke variant. Look for an existing helper that does
+  the same job even when its code looks different, not only for copied
+  text. A plan's or commit's stated reason for not reusing it is a claim
+  to check against the code and data, not a ruling.
 - **U5 — Naming census per new public name.** Grep how the repo already names
   the concept and cite the concrete exemplar; align to the majority
   convention rather than inventing a parallel one. "Consistent with existing
