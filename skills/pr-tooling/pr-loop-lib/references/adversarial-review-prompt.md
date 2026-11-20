@@ -172,8 +172,7 @@ Pass E — Context sweep. Skip this pass when the context map is empty.
   omitted key), another service the change calls or is called by
   (contract, pagination, status codes), and the production numbers it
   quotes. A difference is a finding unless an item under "Settled:" names it
-  as deliberate (an intent-document entry or a "Declared difference"
-  counts only when filed there); a deliberate difference is then tested under "Settled
+  as deliberate; a deliberate difference is then tested under "Settled
   decisions" and reported when it is declared but risky. Cite both
   sides: the diff line and the context file:line.
 

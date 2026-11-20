@@ -35,50 +35,53 @@ SETTLED_ONLY = "Drift and declared but risky apply to items under \"Settled:\" o
 HINT_START = "`. Settled decisions: <path>."
 
 
-def read(path):
-    return path.read_text(encoding="utf-8")
+def flat(text):
+    return " ".join(text.split())
 
 
-def prompt_template():
-    return re.search(r"## Prompt template\n(.*?)\n## ", read(PROMPT), re.S).group(1)
+def hint(lines):
+    return next(line for line in lines if line.strip().startswith(HINT_START))
 
 
 class SettledRuleTextTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.step = STEP.read_text(encoding="utf-8")
+        cls.step_lines = cls.step.splitlines()
+        prompt = PROMPT.read_text(encoding="utf-8")
+        cls.template = re.search(r"## Prompt template\n(.*?)\n## ", prompt, re.S).group(1)
+
     def test_adversarial_prompt_teaches_claims_to_check(self):
-        template = prompt_template()
-        self.assertIn("Claims to check", template)
-        self.assertIn("Premise not shown: ", template)
+        self.assertIn("Claims to check", self.template)
+        self.assertIn("Premise not shown: ", self.template)
 
     def test_helper_clause_is_in_every_copy(self):
-        step_lines = read(STEP).splitlines()
-        claims = next(line for line in step_lines if line.startswith("Claims to check: each item"))
-        hint = next(line for line in step_lines if line.strip().startswith(HINT_START))
-        for copy in (claims, hint, prompt_template()):
-            self.assertIn(HELPER_CLAUSE, " ".join(copy.split()))
+        claims = next(line for line in self.step_lines if line.startswith("Claims to check: each item"))
+        for copy in (claims, hint(self.step_lines), self.template):
+            self.assertIn(HELPER_CLAUSE, flat(copy))
 
     def test_prompt_never_lowers_severity_for_ruled_items(self):
-        self.assertIn("never lowered because the item was ruled on", " ".join(prompt_template().split()))
+        self.assertIn("never lowered because the item was ruled on", flat(self.template))
 
     def test_settled_file_headers_match_fixed_wording(self):
-        lines = read(STEP).splitlines()
-        self.assertIn(SETTLED_HEADER, lines)
-        self.assertIn(CLAIMS_HEADER, lines)
+        self.assertIn(SETTLED_HEADER, self.step_lines)
+        self.assertIn(CLAIMS_HEADER, self.step_lines)
 
     def test_settled_hint_carries_claims_rule(self):
-        hints = [line for line in read(STEP).splitlines() if line.strip().startswith(HINT_START)]
+        hints = [line for line in self.step_lines if line.strip().startswith(HINT_START)]
         self.assertEqual(len(hints), 1)
         self.assertTrue(hints[0].endswith(HINT_CLAIMS + "`"))
 
     def test_drift_and_risk_apply_to_settled_items_only(self):
-        self.assertIn(SETTLED_ONLY, " ".join(prompt_template().split()))
+        self.assertIn(SETTLED_ONLY, flat(self.template))
 
     def test_source_settles_choice_not_facts(self):
         self.assertIn(
-            "A source settles the choice, never the facts its reason states.",
-            " ".join(read(STEP).split()))
+            "source settles the choice, never the facts its reason states.",
+            flat(self.step))
 
     def test_kept_on_purpose_line_has_evidence_tail(self):
-        self.assertIn("- <statement> (<file>:<line>) Evidence: <evidence>", read(STEP))
+        self.assertIn("- <statement> (<file>:<line>) Evidence: <evidence>", self.step)
 
 
 if __name__ == "__main__":

@@ -211,8 +211,7 @@ the answers are counted, not trusted:
    one of another file or line; for an absence check ("does any other
    file still say X"), a documented search (pattern, scope, "no hits")
    in place of the second citation supports it. A `no` that names a
-   settled item the file does not hold under "Settled:" (a "Claims to
-   check:" item included), or one that does not cover the point, is
+   settled item the file does not hold under "Settled:", or one that does not cover the point, is
    judged by the citation rule. For ids with no answer and
    ids with an unsupported `no`, dispatch the `context` agent once more
    with the same head and only item 4, listing those ids and why each is
