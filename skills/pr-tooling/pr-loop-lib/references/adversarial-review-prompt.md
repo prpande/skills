@@ -17,8 +17,8 @@ Step 03.5 E instructs the orchestrator to:
    `{{CONTEXT_MAP}}` — step 01.7's file, empty string when it was
    skipped; `{{LENS_GUIDANCE}}` — see step 02's "Lens guidance rendering";
    empty string when the `deep-review` skill is not installed;
-   `{{SETTLED}}` — the settled-decisions list, "none" when there is
-   none).
+   `{{SETTLED}}` — the settled file, both sections, "none" when there
+   is none).
 3. Dispatch a `pr-reviewer` subagent, `model: "sonnet"`, with the
    rendered prompt.
 4. Treat the JSON response's findings as step 03.5 E describes.
@@ -86,6 +86,17 @@ Settled decisions
      alternative design. "recommendation" is the smallest change that
      removes the consequence and keeps the ruling, or "needs the author's
      call" when there is none. Severity follows the consequence.
+  Drift and declared but risky apply to items under "Settled:" only.
+  Items under "Claims to check:" are not settled. Each rests on a stated
+  fact that no evidence was shown for. Check the fact against the code
+  and data. When they contradict it, or when an existing helper does the
+  same job and the fact is the only reason it went unused, report it
+  with a summary that starts "Premise not shown: " followed by the
+  item's opening words, cited like any finding and ranked by what the
+  miss costs. The same holds for a finding of your own whose evidence
+  contradicts the fact behind a settled item: report it with "Premise
+  not shown: ". Severity follows what the miss costs and is never
+  lowered because the item was ruled on.
 
 Five ordered passes, merged:
 
@@ -224,6 +235,8 @@ If the user wants to tune the adversarial bar (harsher or softer),
 edit the tone sentences at the top and the severity rubric. Keep
 the pass structure intact — it defines the output schema. Keep the
 "Settled decisions" block's four consequence tests: they are what lets
-a ruling stand without hiding what it costs a caller. Pass D's
+a ruling stand without hiding what it costs a caller. Keep the
+claims-to-check paragraph beside them: it is what stops a ruling from
+shielding a stated fact that nobody showed evidence for. Pass D's
 content comes from the `deep-review` skill's lens register; edit the
 register there, not here.
