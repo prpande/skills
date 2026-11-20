@@ -32,7 +32,7 @@ same fill rules.
 | `## Testing` | Test count and type summary from any locally-run suites, plus any spec-referenced test-plan links |
 | `## Related Work` | Auto-linked tickets (`AB#\d+`, `[A-Z]+-\d+`, `#\d+`) + any cross-repo PR URLs found in branch name or commit messages |
 | `## Spec alignment notes` (only if `context.spec_alignment_notes` non-empty) | Bullet list summarizing spec updates |
-| `## Deliberate differences and scope` (only if `context.declarations` non-empty) | One bullet per declaration: the statement, then `file:line` when it has one. Scope entries say where the remaining work is tracked. Added after `## Changes` when the template has no such section |
+| `## Deliberate differences and scope` (only if `context.declarations` non-empty) | One bullet per declaration: the statement, then `file:line` when it has one, then `Evidence: <evidence>` when it has one. Scope entries say where the remaining work is tracked. Added after `## Changes` when the template has no such section |
 | `## Open questions for reviewers` (only if any `internal_review_findings` entry is `needs-human`) | One bullet per entry: the question, and `file:line` |
 
 Internal review findings reach the PR only as these two sections. The
