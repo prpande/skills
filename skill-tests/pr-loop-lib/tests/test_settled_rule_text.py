@@ -11,6 +11,8 @@ SETTLED_HEADER = (
     "report that as an ordinary finding. When the code as stated can crash a client, hide an "
     "outage or failure, drop the caller's own data, or let a caller past an access check, "
     "report it with a summary that starts \"Declared but risky: \" followed by the item's "
+    "opening words. When the code or data contradicts the fact an item's reason states, "
+    "report it with a summary that starts \"Premise not shown: \" followed by the item's "
     "opening words."
 )
 CLAIMS_HEADER = (
@@ -25,6 +27,9 @@ HINT_CLAIMS = (
     "and data, and when they contradict it, or an existing helper does the same job and the "
     "fact is the only reason it went unused, report it with a summary that starts "
     "\"Premise not shown: \" followed by the item's opening words."
+)
+HELPER_CLAUSE = (
+    "an existing helper does the same job and the fact is the only reason it went unused"
 )
 SETTLED_ONLY = "Drift and declared but risky apply to items under \"Settled:\" only."
 HINT_START = "`. Settled decisions: <path>."
@@ -43,6 +48,16 @@ class SettledRuleTextTest(unittest.TestCase):
         template = prompt_template()
         self.assertIn("Claims to check", template)
         self.assertIn("Premise not shown: ", template)
+
+    def test_helper_clause_is_in_every_copy(self):
+        step_lines = read(STEP).splitlines()
+        claims = next(line for line in step_lines if line.startswith("Claims to check: each item"))
+        hint = next(line for line in step_lines if line.strip().startswith(HINT_START))
+        for copy in (claims, hint, prompt_template()):
+            self.assertIn(HELPER_CLAUSE, " ".join(copy.split()))
+
+    def test_prompt_never_lowers_severity_for_ruled_items(self):
+        self.assertIn("never lowered because the item was ruled on", " ".join(prompt_template().split()))
 
     def test_settled_file_headers_match_fixed_wording(self):
         lines = read(STEP).splitlines()

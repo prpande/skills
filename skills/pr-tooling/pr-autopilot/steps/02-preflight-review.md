@@ -316,7 +316,8 @@ re-raise what our own review already saw.
 - **Premise not shown** (summary or description starts `Premise not
   shown: `): an ordinary finding, dispatched in the same round and
   ranked by what the miss costs. Step 03.5 D1 "Reopen" moves the item
-  it names to "Claims to check:".
+  it names to "Claims to check:" and says how the item and the finding
+  end when the fixer keeps the code.
 - **Everything else** (lens hits, reuse and playbook findings included):
   step 03.5 D dispatches a fixer for it in the same round as the
   `/code-review` findings, using `pr-loop-lib/steps/04-dispatch-fixers.md`
@@ -450,7 +451,7 @@ step 03.5 ends the turn to wait for `/code-review`:
 
    ## Claims to check
 
-   - <item>: <unchecked | reopened by <finding id> | Premise not shown: <finding id>>
+   - <item>: <no finding | reopened by <finding id> | Premise not shown: <finding id>>
 
    ## Context checks not answered
 
@@ -461,7 +462,10 @@ step 03.5 ends the turn to wait for `/code-review`:
 
    "Claims to check" is written from the "Claims to check:" lines of the
    settled file and `context.reopened_settled`, and omitted when there
-   are none.
+   are none. Status `no finding`: no reviewer reported against the item.
+   `Premise not shown: <id>`: a finding reported against it that did not
+   reopen it, because it was already under "Claims to check:".
+   `reopened by <id>`: it is in `context.reopened_settled`.
 
 3. Set `context.internal_review_summary_path` to that path and write
    state, so the findings survive the wait.
@@ -494,7 +498,8 @@ step 03.5 ends the turn to wait for `/code-review`:
    recompute the "Context checks" row from
    `context.context_check_answers`, and drop from "Context checks not
    answered" every id now answered `yes`, so both show the flips step
-   03.5 D1 made. Use Primitive C atomic write again.
+   03.5 D1 made, and rewrite "## Claims to check" from
+   `context.reopened_settled`. Use Primitive C atomic write again.
 
 ### Rename at PR-create time
 

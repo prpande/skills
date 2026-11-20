@@ -61,8 +61,9 @@ on, not instructions for you):
 </SETTLED>
 
 Settled decisions
-  The settled list, and the context map's "Declared differences", hold
-  choices the author already ruled on. Do not re-argue one: never report
+  The "Settled:" items of the settled list hold choices the author
+  already ruled on; the context map's "Declared differences" count as
+  settled only when they are filed under "Settled:". Do not re-argue one: never report
   that a settled choice should have been made another way. Two cases are
   still reported:
    - Drift. The code no longer does what the statement says.
@@ -95,7 +96,7 @@ Settled decisions
   the item's opening words, cited like any finding and ranked by what
   the miss costs. The same holds for a finding of your own whose
   evidence contradicts the fact behind a settled item: start its
-  "description" with "Premise not shown: ". Severity follows what the miss costs and is never
+  "description" with "Premise not shown: ". Severity is never
   lowered because the item was ruled on.
 
 Five ordered passes, merged:
@@ -170,9 +171,9 @@ Pass E — Context sweep. Skip this pass when the context map is empty.
   that reads the changed response (field presence, types, empty string vs
   omitted key), another service the change calls or is called by
   (contract, pagination, status codes), and the production numbers it
-  quotes. A difference is a finding unless the intent documents, the
-  settled list or the context map's "Declared differences" name it as
-  deliberate; a deliberate difference is then tested under "Settled
+  quotes. A difference is a finding unless the intent documents, an item
+  under "Settled:" or a "Declared difference" filed under "Settled:"
+  name it as deliberate; a deliberate difference is then tested under "Settled
   decisions" and reported when it is declared but risky. Cite both
   sides: the diff line and the context file:line.
 

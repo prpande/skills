@@ -153,7 +153,7 @@ equivalent predicates live in `P02.*`.
 | S35.7 | Every `context.lens_agents[]` entry with status `failed` is named in the review summary's "Agents" line. |
 | S35.8 | The ids in `context.dismissed_checks` are exactly the ids in `context.code_review_dismissed`, each once, and every `wrong` entry has a `context.internal_review_findings` entry whose `dismissed_id` is its id. |
 | S35.9 | Every `context.context_check_answers` entry with `flipped_by` set has answer `yes`, and `flipped_by` names a `context.preflight_passes.merged` id, a `/code-review` finding id (`code-review:finding-<N>`) or a simplify candidate id (`simplify-<N>`). |
-| S35.10 | Every `context.reopened_settled` item is under "Claims to check:" in the settled file, not under "Settled:", and its `finding_id` names an `internal_review_findings` entry whose status is not `declared` or `nit`. Not checked when no settled file was written. |
+| S35.10 | Every `context.reopened_settled` item is under "Claims to check:" in the settled file, or under "Settled:" with an `Evidence:` tail when a fixer kept the code and cited evidence; its `finding_id` names an `internal_review_findings` entry whose status is not `nit`, and is `declared` only in the second case. Not checked when no settled file was written. |
 
 ### Step 04g — self-post guard (pr-autopilot)
 
