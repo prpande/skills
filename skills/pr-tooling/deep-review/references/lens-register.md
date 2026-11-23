@@ -34,6 +34,11 @@ Findings cite lenses by id (`Lens U3`, `Lens TEN1`). A lens hit is a *candidate*
 — verify context before reporting; quoted strings, test doubles, and generated
 code false-positive.
 
+A declared rationale (a `Not a finding when:` guard met by a design note, PR
+text or commit message) suppresses a finding only when each fact it states
+cites evidence: a file and line, a schema, the code that writes the data, a
+query result, or a doc that shows the fact. Otherwise report the divergence.
+
 ## Backend production tier
 
 `references/backend-lenses.md` holds the governing tier described in precedence
@@ -76,7 +81,10 @@ tier's Trigger table). A diff is **backend** when any group fires.
   mentions it.
 - **U4 — Reuse shared infrastructure.** Locking, error mapping, validation
   catalogs, pagination/batching helpers: grep for an existing shared seam
-  before writing a bespoke variant.
+  before writing a bespoke variant. Look for an existing helper that does
+  the same job even when its code looks different, not only for copied
+  text. A plan's or commit's stated reason for not reusing it is a claim to
+  check against the code and data, not a ruling.
 - **U5 — Naming census per new public name.** Grep how the repo already names
   the concept and cite the concrete exemplar; align to the majority
   convention rather than inventing a parallel one. "Consistent with existing

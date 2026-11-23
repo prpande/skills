@@ -75,7 +75,8 @@ Rules:
 | `lens_dedup_hit` | `{kept_id, dropped_id}` — step 02 folded one lens agent's finding into another's |
 | `context_check_flipped` | `{id, finding_id}` — step 02 "Check flips" turned a `no` or `cannot-tell` context-map check into `yes` because finding `finding_id` (a merged lens finding, or in step 03.5 D1 a `/code-review` finding or simplify candidate) reports its problem |
 | `dismissed_checks_recorded` | `{upheld, wrong, cannot_tell, not_checked}` — step 03.5 E "Refuted candidates": the count of each verdict over `context.dismissed_checks` |
-| `simplify_skipped_points` | `{count, fallback?}` — step 01.5 stored the behaviour-changing points `/simplify` did not apply |
+| `settled_item_reopened` | `{item, finding_id}` — step 03.5 D1 "Reopen": finding `finding_id` moved the settled item `item` to "Claims to check:" |
+| `simplify_skipped_points` | `{count, fallback?}` — step 01.5 stored the points `/simplify` did not apply because they change behaviour or an earlier plan or decision ruled them out |
 | `context_map_skipped` | `{reason}` — pr-autopilot step 01.7 wrote no usable map (`no-sources`, `empty`, `error`, `timeout`) |
 | `shipped_text_checked` | `{claims_reported, fixed_body, fixed_code}` — pr-autopilot step 04b |
 | `invariant_fail` | `{step, invariant, observed, expected}` |

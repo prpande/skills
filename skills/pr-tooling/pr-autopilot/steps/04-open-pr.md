@@ -32,7 +32,7 @@ same fill rules.
 | `## Testing` | Test count and type summary from any locally-run suites, plus any spec-referenced test-plan links |
 | `## Related Work` | Auto-linked tickets (`AB#\d+`, `[A-Z]+-\d+`, `#\d+`) + any cross-repo PR URLs found in branch name or commit messages |
 | `## Spec alignment notes` (only if `context.spec_alignment_notes` non-empty) | Bullet list summarizing spec updates |
-| `## Deliberate differences and scope` (only if `context.declarations` non-empty) | One bullet per declaration: the statement, then `file:line` when it has one. Scope entries say where the remaining work is tracked. Added after `## Changes` when the template has no such section |
+| `## Deliberate differences and scope` (only if `context.declarations` non-empty) | One bullet per declaration: the statement, then `file:line` when it has one, then `Evidence: <evidence>` when it has one. Scope entries say where the remaining work is tracked. Added after `## Changes` when the template has no such section |
 | `## Open questions for reviewers` (only if any `internal_review_findings` entry is `needs-human`) | One bullet per entry: the question, and `file:line` |
 
 Internal review findings reach the PR only as these two sections. The
@@ -78,6 +78,7 @@ Report a claim when:
   instead of what the code does now
 - it holds a local file path (a drive letter or home folder)
 - a "Deliberate differences" bullet does not match the code it names
+- a declaration's `Evidence:` does not show the fact its reason states
 
 Return JSON: [{"where": "body" | "commit" | "code", "file": <path or
 null>, "line": <int or null>, "claim": "...", "truth": "...",
@@ -85,7 +86,9 @@ null>, "line": <int or null>, "claim": "...", "truth": "...",
 ```
 
 Apply the results:
-- `body`: edit `<pr_body_path>`.
+- `body`: edit `<pr_body_path>`. When the check refutes a declaration's
+  `Evidence:`, do not reword the bullet: move it to "Open questions for
+  reviewers" and add it to `context.needs_human_items`.
 - `code`: edit the text in place (text only, no behaviour change), then
   run the build and test commands detected per the Command detection
   table in `pr-loop-lib/steps/04.5-local-verify.md`, under its Execution

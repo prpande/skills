@@ -86,7 +86,8 @@ run; the category key under "Deduplication key" is not applied on top.
    the group (no escalation: the agents are not independent reviewers
    of the Universal lenses), `declared_risk: true` if any member has
    it, the `settled_item` and `check_id` of whichever member carries
-   one, and every other member's id in `duplicate_ids[]`. Append to its
+   one, a description starting `Premise not shown: ` if any member's
+   does, and every other member's id in `duplicate_ids[]`. Append to its
    description every lens id a member's description cites that it
    lacks, and each member's recommendation that differs from its own.
 
