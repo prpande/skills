@@ -117,8 +117,7 @@ base_sha: <base_sha>   head_sha: <head_sha>
 What was built: <what_was_built>
 Diff: <repo-root>/.pr-autopilot/branch-<slug>.diff
 Context map: <context map>
-Settled decisions: <settled file> (a "Settled:" section, and a "Claims
-to check:" section when items lack evidence)
+Settled decisions: <settled file>
 
 <Settled decisions rule>
 
@@ -183,7 +182,9 @@ And for the `context` agent:
    "yes" also needs a finding in "findings" with "check_id": "C<n>",
    even when a "Settled:" item covers the point: then apply the settled
    decisions rule to decide between a plain finding, a declared-but-risky
-   finding, and "no" with the settled item named in "reason". An item
+   finding, a finding starting "Premise not shown: " (your evidence
+   contradicts the item's fact), and "no" with the settled item named in
+   "reason". An item
    under "Claims to check:" does not cover a point.
    "cannot-tell" is only for a cited file you could not open; say which.
 
@@ -228,7 +229,7 @@ the answers are counted, not trusted:
    `{id, answer, evidence, reason, flipped_by, settled_item}`,
    `flipped_by` null until "Check flips" sets it. `settled_item` is the
    settled item a `no` names in its `reason`, set only when item 1 found
-   that the item is in the settled decisions file and covers the point,
+   that the item is under "Settled:" in the settled decisions file and covers the point,
    or item 3 below records it; null for any other answer, including a
    `no` judged by the citation rule.
 3. Every `yes` must have a finding with that `check_id`. For a `yes`
@@ -239,8 +240,11 @@ the answers are counted, not trusted:
    decisions file as in step 03.5 D1 ("Settled items"): code that no longer matches the item is a
    plain finding; a consequence test of the settled decisions rule
    holding gives
-   `declared_risk: true` with that `settled_item`; otherwise record the
-   answer as `no` with the item named in `reason` and as `settled_item`.
+   `declared_risk: true` with that `settled_item`; a `yes` whose
+   `evidence` contradicts the item's fact gives a finding whose
+   `description` starts "Premise not shown: " (step 03.5 D1 "Reopen"
+   then handles it); otherwise record the answer as `no` with the item
+   named in `reason` and as `settled_item`.
 4. `cannot-tell` answers still `cannot-tell` after "Check flips" are
    listed in the review summary under "## Context checks not answered",
    with the check text, and counted in the step 11 report. They are a
@@ -303,8 +307,10 @@ re-raise what our own review already saw.
   hit (no lens id in the description). Record in
   `context.preflight_minor_findings` and the review summary with status
   `nit`. Not dispatched.
-- **Declared but risky** (`declared_risk: true`, from any reviewer): the
-  author already ruled on the choice, so no fixer is dispatched; a fix
+- **Declared but risky** (`declared_risk: true`, from any reviewer, and
+  not starting `Premise not shown: `; that prefix means the item is not
+  settled, so Premise not shown applies and `declared_risk` is cleared):
+  the author already ruled on the choice, so no fixer is dispatched; a fix
   would overturn the ruling. Status `needs-human`, with
   `declared_risk: true` and the `settled_item` kept on the
   `internal_review_findings` entry. It is listed in the review summary
@@ -315,8 +321,9 @@ re-raise what our own review already saw.
 - **Premise not shown** (summary or description starts `Premise not
   shown: `): an ordinary finding, dispatched in the same round and
   ranked by what the miss costs. Step 03.5 D1 "Reopen" moves the item
-  it names to "Claims to check:" and says how the item and the finding
-  end when the fixer keeps the code.
+  it names to "Claims to check:", where it stays for the rest of the
+  run. The finding is never `declared`: when the fixer keeps the code,
+  it is `needs-human`, with the fixer's cited evidence in its reason.
 - **Everything else** (lens hits, reuse and playbook findings included):
   step 03.5 D dispatches a fixer for it in the same round as the
   `/code-review` findings, using `pr-loop-lib/steps/04-dispatch-fixers.md`
@@ -333,7 +340,9 @@ re-raise what our own review already saw.
   the fixer adds one line at the departure giving the reason. When the
   reason states a fact without evidence (step 03.5 B's rule), or rests
   on a "Claims to check:" item, the status is `needs-human`, not
-  `declared`.
+  `declared`, and add no `declarations[]` entry; step 03.5 D adds it to `context.needs_human_items` with
+  its id, file, line, summary and that reason. The same holds for a
+  finding Reopen handled, whatever the reason says.
 - **Undecided** (final verdict `needs-human`, which includes a verifier
   `partial`, or `ui-deferred`): status `needs-human`; step 04 lists it
   under "Open questions for reviewers" in the PR body.
@@ -498,11 +507,13 @@ step 03.5 ends the turn to wait for `/code-review`:
 
 5. Rewrite the summary section with the populated per-finding bullets,
    recompute the "Context checks" row from
-   `context.context_check_answers`, and drop from "Context checks not
-   answered" every id now answered `yes`, so both show the flips step
-   03.5 D1 made, and rewrite "## Claims to check" from
-   `context.reopened_settled` and from the `internal_review_findings`
-   entries whose summary or description starts `Premise not shown: `. Use Primitive C atomic write again.
+   `context.context_check_answers`, and rebuild "Context checks not
+   answered" from its `cannot-tell` entries, so both show the flips step
+   03.5 D1 made, and rebuild "## Claims to check" from the "Claims to
+   check:" lines of the settled file, `context.reopened_settled`, and
+   the `internal_review_findings` entries whose summary or description
+   starts `Premise not shown: `. Repeat the "Claims to check" rebuild
+   after step 03.5 E. Use Primitive C atomic write again.
 
 ### Rename at PR-create time
 

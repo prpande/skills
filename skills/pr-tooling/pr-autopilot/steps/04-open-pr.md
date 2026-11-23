@@ -78,6 +78,7 @@ Report a claim when:
   instead of what the code does now
 - it holds a local file path (a drive letter or home folder)
 - a "Deliberate differences" bullet does not match the code it names
+- a declaration's `Evidence:` does not show the fact its reason states
 
 Return JSON: [{"where": "body" | "commit" | "code", "file": <path or
 null>, "line": <int or null>, "claim": "...", "truth": "...",
@@ -85,7 +86,9 @@ null>, "line": <int or null>, "claim": "...", "truth": "...",
 ```
 
 Apply the results:
-- `body`: edit `<pr_body_path>`.
+- `body`: edit `<pr_body_path>`. When the check refutes a declaration's
+  `Evidence:`, do not reword the bullet: move it to "Open questions for
+  reviewers" and add it to `context.needs_human_items`.
 - `code`: edit the text in place (text only, no behaviour change), then
   run the build and test commands detected per the Command detection
   table in `pr-loop-lib/steps/04.5-local-verify.md`, under its Execution

@@ -64,9 +64,11 @@ Settled decisions
   The "Settled:" items of the settled list hold choices the author
   already ruled on; the context map's "Declared differences" count as
   settled only when they are filed under "Settled:". Do not re-argue one: never report
-  that a settled choice should have been made another way. Two cases are
+  that a settled choice should have been made another way. Three cases are
   still reported:
    - Drift. The code no longer does what the statement says.
+   - Premise not shown. Your own evidence contradicts the fact behind the
+     item (see below).
    - Declared but risky. With the choice exactly as stated, the code can
      (a) crash or break a shipped client: a key, type or value a client
          decodes as required goes missing or changes;
@@ -96,7 +98,8 @@ Settled decisions
   the item's opening words, cited like any finding and ranked by what
   the miss costs. The same holds for a finding of your own whose
   evidence contradicts the fact behind a settled item: start its
-  "description" with "Premise not shown: ". Severity is never
+  "description" with "Premise not shown: " followed by the item's
+  opening words, and never set "declared_risk" on it. Severity is never
   lowered because the item was ruled on.
 
 Five ordered passes, merged:

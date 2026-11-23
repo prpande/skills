@@ -147,13 +147,13 @@ equivalent predicates live in `P02.*`.
 | S35.1 | `context.pr_number` is still null when step 03.5 completes: no review, fix or declaration step runs after the PR exists. |
 | S35.2 | Unless `context.code_review_status` is `skipped`, it is `done`. A `running` status at the end of the step means step 04 was entered before the result arrived. |
 | S35.3 | Every `context.internal_review_findings` entry with status `nit` has `severity: "minor"`. |
-| S35.4 | Every `context.internal_review_findings` entry with status `declared` either has a `settled_item` (already declared by that item) or has a `context.declarations[]` entry with the same `finding_id`, and every declaration has a non-null `in_commit`. Not checked under `--dry-run`, which commits nothing. |
-| S35.5 | No `context.internal_review_findings` entry with `declared_risk: true` and a status other than `duplicate` has a `fixer_feedback_id`; each has status `needs-human` or `duplicate` and appears under "Declared but risky" in the review summary. |
+| S35.4 | Every `context.internal_review_findings` entry with status `declared` either has a `settled_item` that names a line under "Settled:" in the settled file, not one under "Claims to check:" (already declared by that item), or has a `context.declarations[]` entry with the same `finding_id`, and every declaration has a non-null `in_commit`. Not checked under `--dry-run`, which commits nothing. |
+| S35.5 | No `context.internal_review_findings` entry with `declared_risk: true` and a status other than `duplicate` has a `fixer_feedback_id`; each has status `needs-human` or `duplicate` and appears under "Declared but risky" in the review summary. A finding whose summary or description starts `Premise not shown: ` has no `declared_risk`. |
 | S35.6 | Every `context.simplify_skipped` entry has a `context.internal_review_findings` entry with `source: "simplify"`. |
 | S35.7 | Every `context.lens_agents[]` entry with status `failed` is named in the review summary's "Agents" line. |
 | S35.8 | The ids in `context.dismissed_checks` are exactly the ids in `context.code_review_dismissed`, each once, and every `wrong` entry has a `context.internal_review_findings` entry whose `dismissed_id` is its id. |
 | S35.9 | Every `context.context_check_answers` entry with `flipped_by` set has answer `yes`, and `flipped_by` names a `context.preflight_passes.merged` id, a `/code-review` finding id (`code-review:finding-<N>`) or a simplify candidate id (`simplify-<N>`). |
-| S35.10 | Every `context.reopened_settled` item is under "Claims to check:" in the settled file, or under "Settled:" with an `Evidence:` tail when a fixer kept the code and cited evidence; its `finding_id` names an `internal_review_findings` entry whose status is not `nit`, and is `declared` only in the second case. Not checked when no settled file was written. |
+| S35.10 | Every `context.reopened_settled` item is under "Claims to check:" in the settled file; its `finding_id` names an `internal_review_findings` entry whose status is neither `nit` nor `declared`. Not checked when no settled file was written. |
 
 ### Step 04g — self-post guard (pr-autopilot)
 

@@ -134,10 +134,11 @@ and dismissed" from `context.dismissed_checks` by `verdict`; and
 "Declared but risky" from entries with `declared_risk: true` whose
 status is not `duplicate`. A
 declared-but-risky finding is counted in that row only, never in
-"Open (needs-human)". "Claims to check" counts the "Claims to check:"
-lines of the settled file, reopened items included, as listed; the
-findings whose summary or description starts `Premise not shown: ` as
-reported; and `context.reopened_settled` as reopened. A `/code-review` status of `skipped` names its
+"Open (needs-human)". "Claims to check": listed is the number of items in the review
+summary's "## Claims to check" section, reopened items included;
+reported is the non-duplicate findings whose summary or description
+starts `Premise not shown: `; reopened is `context.reopened_settled`.
+All three print 0 when that section or the settled file is absent. A `/code-review` status of `skipped` names its
 reason (host unmapped, or the dry-run hint refused). The full detail (per-finding file:line, description, fixer/verifier
 outcome) lives in the review-summary file on disk — step 11 only
 prints counts to keep the terminal output scannable.

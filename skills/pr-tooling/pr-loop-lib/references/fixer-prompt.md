@@ -58,7 +58,12 @@ Your task
   5. Write a reply that quotes the specific sentence of the feedback you
      are addressing, followed by one of:
        - "Addressed: <brief description of the fix>"
-       - "Not addressing: <reason with evidence, e.g., 'null check already exists at line 85'>"
+       - "Not addressing: <reason with evidence, e.g., 'null check already exists at Foo.cs:85'>"
+         A kept reply (`not-addressing` or `replied`) cites evidence for
+         each fact its reason states: a `<file>:<line>`, a schema, the
+         code that writes the data, a query result or a doc (an
+         out-of-repo doc by title and shared location, never a local
+         path). When you cannot cite it, return `needs-human`.
        - "Deferred for user review: <one-line description of the proposed UI change>"
          (used with verdict `ui-deferred`).
 
