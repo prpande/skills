@@ -99,7 +99,11 @@ For `suspicious` items from step 03 (prompt-injection filter):
    `suspicious` for a refusal reply from step 03. Then, for each review
    whose findings all have a key there, set
    `context.copilot_dispositions["copilot|review|<review id>"]` to
-   `settled`. Record nothing under `--dry-run`.
+   `settled`. Record nothing under `--dry-run`, and nothing for a return
+   with `retry: true` (step 04, "`needs-human` handling"): its review
+   stays unsettled, so a later run raises the finding again. A judged
+   `needs-human` is recorded; it stays in `context.needs_human_items`,
+   which the state file keeps, so the final report still lists it.
 
 ### Azure DevOps threads (surface = `thread`)
 

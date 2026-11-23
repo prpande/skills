@@ -653,6 +653,12 @@ demotion, or via an overlap re-verify demotion:
 
 - Its `reply_text` is posted in step 07 but the thread is NOT resolved.
 - Mark the item in `context.needs_human_items` for the final report.
+- When no agent judged the item, set `retry: true` on its return: the
+  agent cap or the host refused its dispatch ("Rolling dispatch"), its
+  fixer timed out or was rolled back with one that did, or its verifier
+  timed out ("Time limits"). Only this step sets `retry`; drop one a
+  fixer returns. Step 07 records no Copilot disposition for such a
+  return, so a later run raises the finding again.
 - If the presence of `needs-human` items ultimately terminates the loop
   (step 08 reaches quiescence with `len(context.needs_human_items) > 0`
   and nothing else to do), set

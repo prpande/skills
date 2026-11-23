@@ -97,7 +97,7 @@ run `/simplify`).
 | `verify_tests_ran` | object | default `{}` | `{ <iteration>: <bool> }`, false when step 04.5 built but ran no test |
 | `unit_bases` | object | default `{}` | `feedback_id` to `{base, unit, order, dispatched_at, returned_at, returned_before}`, recorded by step 04 "Unit base"; `base` is a snapshot tree id; `dispatched_at` and `returned_at` are UTC epoch seconds, `returned_at` `null` until the unit returns; `returned_before` is the list of unit ids already returned when the base was recorded; reset to `{}` when step 04 starts. Step 04.5's retry subagents add `verify-retry-build` and `verify-retry-test` keys, each with a `files` list once the retry returns |
 | `agent_clock` | object | default `{}` | Verifier agent id to its `dispatched_at` (UTC epoch seconds), written by step 04 "Time limits"; reset to `{}` when step 04 starts |
-| `copilot_dispositions` | object | default `{}` | `copilot_key` to the verdict step 07 recorded for that Copilot review-body finding, and `copilot|review|<review id>` to `settled` for a review with nothing left to raise or to the verdict of its whole-body item; not written under `--dry-run`; step 03 drops a later finding with the same key, or naming the same defect on the same path (`references/known-bots.md`, "Copilot review body"). Kept for the life of the state file |
+| `copilot_dispositions` | object | default `{}` | `copilot_key` to the verdict step 07 recorded for that Copilot review-body finding, and `copilot|review|<review id>` to `settled` for a review with nothing left to raise or to the verdict of its whole-body item; not written under `--dry-run` or for a return with `retry: true`; step 03 drops a later finding with the same key, or naming the same defect on the same path (`references/known-bots.md`, "Copilot review body"). Kept for the life of the state file |
 
 ## CI gate
 
@@ -164,9 +164,13 @@ run `/simplify`).
   "files_changed": "array of strings (relative paths)",
   "reason": "string (one sentence)",
   "suspicious": "boolean (default false)",
-  "cluster_assessment": "string or null"
+  "cluster_assessment": "string or null",
+  "retry": "boolean, optional"
 }
 ```
+
+`retry: true` marks a `needs-human` return that no agent judged (step
+04, "`needs-human` handling"). Step 04 sets it, never a fixer.
 
 `ui-deferred` is never emitted with a non-empty `files_changed`. Step
 04's validation rolls back and demotes to `needs-human` if a fixer

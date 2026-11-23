@@ -358,6 +358,13 @@ only to Slack and needs no GitHub author check). Non-zero: post nothing,
 escalate ("needs you, no comment", reason "reply guard refused"), and go
 to section 9.
 
+Returns from one Copilot review body (record ids `<review id>:finding-<N>`)
+get one reply between them: the single top-level comment
+`pr-watch/references/known-bots-overlay.md` describes. Run steps 1 to 3
+once for that group. Step 3 records each finding's key, record id and the
+review's `parsed` entry only after that comment returns an `id`; when the
+post fails, nothing is recorded for any of them.
+
 1. Write the reply from the return's `verdict`, `reason`, `reply_text`
    (facts only), the short sha, and the files, following Writing a reply
    in `pr-watch/references/reply-contract.md`. Post only the reply text.

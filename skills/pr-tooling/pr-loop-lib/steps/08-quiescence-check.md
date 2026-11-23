@@ -52,9 +52,9 @@ The confirmation iteration always waits — `pr-followup`'s
    this iteration (step 07 item 4, for an item with a `copilot_key`) is
    never quiescent here, whatever its verdicts: it takes the
    non-quiescent branch, and the next fetch drops the finding through
-   that entry. A Copilot finding whose reply did not post, or any
-   finding under `--dry-run`, records nothing; the next fetch raises it
-   again, so it does not block this path.
+   that entry. A Copilot finding whose reply did not post, one whose
+   return has `retry: true`, or any finding under `--dry-run`, records
+   nothing; a later fetch raises it again, so it does not block this path.
    When this path exits AND the iteration's `context.agent_returns`
    contains at least one entry with `verdict == "ui-deferred"`,
    advance `context.last_handled_timestamp = now` (same mechanism as
@@ -67,7 +67,10 @@ The confirmation iteration always waits — `pr-followup`'s
    return `ui-deferred` again, and the user would be prompted twice
    for the same item. `needs-human` iterations do not get the same
    advance — they deliberately re-surface on the next run so the
-   user sees the still-open question in `pr-followup`'s report.
+   user sees the still-open question in `pr-followup`'s report. A
+   Copilot review-body finding re-surfaces only when its return has
+   `retry: true`; a judged one is dropped as a repeat and stays listed
+   through `context.needs_human_items`.
 3. **Iteration cap reached**:
    - `context.user_iteration_cap` if set → cap at that value.
    - Else 10 (default).
