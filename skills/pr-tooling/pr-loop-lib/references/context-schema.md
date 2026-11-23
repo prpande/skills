@@ -169,8 +169,8 @@ run `/simplify`).
 }
 ```
 
-`retry: true` marks a `needs-human` return that no agent judged (step
-04, "`needs-human` handling"). Step 04 sets it, never a fixer.
+`retry: true` marks a `needs-human` return that no agent judged; set by
+step 04, "`needs-human` handling".
 
 `ui-deferred` is never emitted with a non-empty `files_changed`. Step
 04's validation rolls back and demotes to `needs-human` if a fixer

@@ -102,8 +102,8 @@ For `suspicious` items from step 03 (prompt-injection filter):
    `settled`. Record nothing under `--dry-run`, and nothing for a return
    with `retry: true` (step 04, "`needs-human` handling"): its review
    stays unsettled, so a later run raises the finding again. A judged
-   `needs-human` is recorded; it stays in `context.needs_human_items`,
-   which the state file keeps, so the final report still lists it.
+   `needs-human` is recorded and stays listed in
+   `context.needs_human_items`.
 
 ### Azure DevOps threads (surface = `thread`)
 

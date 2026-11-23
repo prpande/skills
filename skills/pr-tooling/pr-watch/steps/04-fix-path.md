@@ -359,11 +359,9 @@ escalate ("needs you, no comment", reason "reply guard refused"), and go
 to section 9.
 
 Returns from one Copilot review body (record ids `<review id>:finding-<N>`)
-get one reply between them: the single top-level comment
-`pr-watch/references/known-bots-overlay.md` describes. Run steps 1 to 3
-once for that group. Step 3 records each finding's key, record id and the
-review's `parsed` entry only after that comment returns an `id`; when the
-post fails, nothing is recorded for any of them.
+are one reply: run steps 1 to 3 once for the group, posting the single
+comment and recording as `pr-watch/references/known-bots-overlay.md`
+("Copilot review body") says.
 
 1. Write the reply from the return's `verdict`, `reason`, `reply_text`
    (facts only), the short sha, and the files, following Writing a reply

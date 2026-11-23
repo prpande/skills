@@ -69,8 +69,7 @@ The confirmation iteration always waits — `pr-followup`'s
    advance — they deliberately re-surface on the next run so the
    user sees the still-open question in `pr-followup`'s report. A
    Copilot review-body finding re-surfaces only when its return has
-   `retry: true`; a judged one is dropped as a repeat and stays listed
-   through `context.needs_human_items`.
+   `retry: true` (step 07 item 4).
 3. **Iteration cap reached**:
    - `context.user_iteration_cap` if set → cap at that value.
    - Else 10 (default).

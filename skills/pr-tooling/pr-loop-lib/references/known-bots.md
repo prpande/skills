@@ -61,7 +61,9 @@ is dropped before its body is written out or parsed. Step 03 records that
 key as `settled` when the script returns no finding or every finding is
 dropped as a repeat; step 07 records it once every finding of the review
 has a key there. Under `--dry-run` nothing is recorded in
-`context.copilot_dispositions`.
+`context.copilot_dispositions`, and nothing is recorded for a return with
+`retry: true` (step 04, "`needs-human` handling"), so a later run raises
+that finding again.
 `pr-watch/references/known-bots-overlay.md` keeps the same keys in its
 progress file.
 
