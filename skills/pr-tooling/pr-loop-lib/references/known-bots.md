@@ -58,7 +58,7 @@ nothing. When it is not clearly the same defect, raise it. A finding
 whose key, or the key whose defect it repeats, holds `retry` is not a
 repeat: no agent judged it, so raise it with that key as its
 `copilot_key`, and step 07 records the new verdict there. The exit-2
-whole-body item below has no key a later review can repeat, so its
+whole-body item above has no key a later review can repeat, so its
 `retry` is not raised again; it stays in `context.needs_human_items`.
 
 A review whose `copilot|review|<review id>` is in `context.copilot_dispositions`
