@@ -114,15 +114,21 @@ in code that has not changed since the last review. Read both with
 body" describes, including its exit-2 rule: the body becomes one
 actionable item keyed by the review's id.
 
-Answer the findings of one review body in one top-level comment: the
-reference line once, then for each finding in the script's order its
-quoted part and verdict line, as the library's step 07 item 3 describes.
-Once that comment posts, record each finding's disposition in
-`handled_top_level_ids` (in the PR's progress file) under the finding's
-`key`, and the review's own id under `parsed`. A body the Skip row
-classifies is recorded `skipped` under the review's id. Repeats are
-dropped as the library's "Copilot review body" describes, looking keys up
-here in `handled_top_level_ids` instead of `context.copilot_dispositions`.
+Answer the findings of one review body in one top-level comment, in the
+"Several findings of one review" shape of
+`pr-watch/references/reply-contract.md`, in the script's order. An
+escalated finding gets no line and no comment
+(`pr-watch/steps/04-fix-path.md` section 4). Record each finding's
+disposition in `handled_top_level_ids` (in the PR's progress file) under
+the finding's `key`: an answered finding's verdict once the comment
+posts, and for an escalated finding, when it is escalated, `retry` if its
+return has `retry: true` (the library's step 04, "`needs-human`
+handling") and `needs-human` otherwise. Once every finding of the review
+has its key recorded, record the review's own id under `parsed`. A body
+the Skip row classifies is recorded `skipped` under the review's id.
+Repeats are dropped as the library's "Copilot review body" describes,
+looking keys up here in `handled_top_level_ids` instead of
+`context.copilot_dispositions`; a key holding `retry` is not a repeat.
 A body whose findings were all dropped as repeats posts no comment; record
 its id as `parsed` at once, since the library's `copilot|review|<review id>`
 settlement key is not what `poll.py` looks up.

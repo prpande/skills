@@ -54,16 +54,17 @@ review id and often reworded. Each finding's `key` is
 `context.copilot_dispositions`; when it is not there, compare the finding
 with the recorded keys for the same path, and when it names the same
 defect as one of them, record its key with that verdict and raise
-nothing. When it is not clearly the same defect, raise it.
+nothing. When it is not clearly the same defect, raise it. A finding
+whose key, or the key whose defect it repeats, holds `retry` is not a
+repeat: no agent judged it, so raise it, and step 07 records the new
+verdict under its key.
 
 A review whose `copilot|review|<review id>` is in `context.copilot_dispositions`
 is dropped before its body is written out or parsed. Step 03 records that
 key as `settled` when the script returns no finding or every finding is
 dropped as a repeat; step 07 records it once every finding of the review
 has a key there. Under `--dry-run` nothing is recorded in
-`context.copilot_dispositions`, and nothing is recorded for a return with
-`retry: true` (step 04, "`needs-human` handling"), so a later run raises
-that finding again.
+`context.copilot_dispositions`.
 `pr-watch/references/known-bots-overlay.md` keeps the same keys in its
 progress file.
 

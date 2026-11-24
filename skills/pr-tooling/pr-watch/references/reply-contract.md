@@ -21,6 +21,10 @@ is written plainly otherwise.
   promise a date or future work.
 - **Re-review verdict.** One line per finding: the verdict in plain words,
   then the evidence.
+- **Several findings of one review.** One line per finding answered, in
+  the order the findings came: the file it concerns, then what its own
+  shape above requires (the sha, the evidence, or what changed it). No
+  quote and no line for a finding left to the user.
 - **Closing a thread as author.** One line, or nothing.
 
 A file is cited by its repo-relative path in plain text, or by a GitHub

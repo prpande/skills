@@ -211,7 +211,10 @@ reasons in `needs_human_items`, and sort it as below.
   `settled_ids`.
 - `needs-human`: escalate (`pr-watch/steps/06-notify.md`), add the ids to
   `escalated_ids`, post nothing on GitHub. For a top-level item also set
-  `handled_top_level_ids[<item id>] = "escalated"`.
+  `handled_top_level_ids[<item id>] = "escalated"`. For a Copilot
+  review-body finding also record its key, and the review's id once every
+  finding of it has a key, as `pr-watch/references/known-bots-overlay.md`
+  ("`copilot-pull-request-reviewer`") says.
 
 No returns in section 5: go to section 7, then section 9.
 
@@ -358,10 +361,12 @@ only to Slack and needs no GitHub author check). Non-zero: post nothing,
 escalate ("needs you, no comment", reason "reply guard refused"), and go
 to section 9.
 
-Returns from one Copilot review body (record ids `<review id>:finding-<N>`)
-are one reply: run steps 1 to 3 once for the group, posting the single
-comment and recording as `pr-watch/references/known-bots-overlay.md`
-("Copilot review body") says.
+Returns with something to say from one Copilot review body (record ids
+`<review id>:finding-<N>` sharing a review id) are one reply: run steps 1
+to 3 once for the group, posting one comment in the "Several findings of
+one review" shape of `pr-watch/references/reply-contract.md` and
+recording as `pr-watch/references/known-bots-overlay.md`
+("`copilot-pull-request-reviewer`") says.
 
 1. Write the reply from the return's `verdict`, `reason`, `reply_text`
    (facts only), the short sha, and the files, following Writing a reply

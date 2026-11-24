@@ -64,7 +64,8 @@ Apply rules from `references/known-bots.md`. For each comment:
    multiple items. For a Copilot review body, drop the review when its
    `copilot|review|<review id>` is in `context.copilot_dispositions`;
    otherwise run `copilot_review.py` and
-   drop each finding whose key repeats one in `context.copilot_dispositions`,
+   drop each finding whose key repeats one in `context.copilot_dispositions`
+   that does not hold `retry`,
    as `references/known-bots.md`, "Copilot review body", says (a reworded
    repeat's key is recorded with the verdict of the finding it repeats;
    step 07 records a verdict only for items that reach it). Record

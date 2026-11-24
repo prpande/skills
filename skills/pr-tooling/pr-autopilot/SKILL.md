@@ -224,7 +224,8 @@ State a run writes beyond the PR's identity, all in `context-schema.md`:
   `verify_flaky_tests` and `verify_tests_ran` for the step 11 report.
 - Comment loop (pr-loop-lib step 07): `copilot_dispositions`, the
   verdict on each finding parsed from a Copilot review body, so a
-  repeat in a later review is not raised again.
+  repeat in a later review is not raised again unless no agent judged
+  it (`retry`).
 
 Concurrent invocations on the same PR are prevented by the advisory
 lock. If another session is active, pr-autopilot halts at step 01 with
