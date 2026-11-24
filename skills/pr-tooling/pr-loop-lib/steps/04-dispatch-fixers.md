@@ -656,10 +656,13 @@ item whose agent did not return:
 - Its `reply_text` is posted in step 07 but the thread is NOT resolved.
   A return demoted from `fixed` or `fixed-differently` gets a new
   `reply_text`: the quoted part, then what is still open and why (the
-  demotion's reason). The fixer's own text says the fix was made.
+  demotion's reason). The fixer's own text says the fix was made. One
+  this step writes for an item whose agent did not return gets the
+  quoted part, then that no change was made and why (its reason).
 - Add the item to `context.needs_human_items` for the final report,
-  replacing an entry with the same `feedback_id`. A later return for that
-  `feedback_id` with any other verdict removes its entry.
+  replacing an entry for the same item: the same `feedback_id`, or for a
+  Copilot review-body finding the same `copilot_key`. A later return for
+  that item with any other verdict removes its entry.
 - The item is judged when its fixer returned `needs-human`, or
   `ui-deferred` with no file changed, or its verifier returned `partial` or
   `not-addresses`; a later rollback or demotion does not undo that. Any

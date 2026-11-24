@@ -22,9 +22,10 @@ is written plainly otherwise.
 - **Re-review verdict.** One line per finding: the verdict in plain words,
   then the evidence.
 - **Several findings of one review.** One line per finding answered, in
-  the order the findings came: the file it concerns, then what its own
-  shape above requires (the sha, the evidence, or what changed it). No
-  quote and no line for a finding left to the user.
+  the order the findings came: the file and a few words naming the
+  finding, then what its own shape above requires (the sha, the
+  evidence, or what changed it). No quote and no line for a finding left
+  to the user.
 - **Closing a thread as author.** One line, or nothing.
 
 A file is cited by its repo-relative path in plain text, or by a GitHub
@@ -65,8 +66,9 @@ automation, or a process. No phrase lifted from any colleague. No
    thanks". When the second draft also fails, go to step 4 and post the
    Slack "voice fallback" line from `pr-watch/steps/06-notify.md`.
 4. **Plain reply.** Write the reply yourself in one to four plain
-   sentences that carry what the shape requires and break nothing under
-   Never, then run the audit below.
+   sentences (one per finding for "Several findings of one review")
+   that carry what the shape requires and break nothing under Never,
+   then run the audit below.
 
 Under `dry_run`, the same steps run; only the posting is replaced.
 

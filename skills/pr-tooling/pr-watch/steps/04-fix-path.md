@@ -189,7 +189,8 @@ the dispatch: <the fixer's reason>"), add the record's ids to
 `escalated_ids` and, for a top-level item, set
 `handled_top_level_ids[<item id>] = "escalated"` — without that the same
 feedback is pending again on the next poll and goes back to a fixer, so
-the refusal would be a pause rather than the end of it — roll back with
+the refusal would be a pause rather than the end of it — and for a
+Copilot review-body finding record as section 4 says, then roll back with
 section 10 over every path `git -C <worktree> status --porcelain` and
 `git -C <worktree> ls-files --others --exclude-standard` name rather than
 the return's `files_changed`, then section 9.
