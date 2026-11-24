@@ -120,11 +120,15 @@ Answer the findings of one review body in one top-level comment, in the
 escalated finding gets no line and no comment
 (`pr-watch/steps/04-fix-path.md` section 4). Record each finding's
 disposition in `handled_top_level_ids` (in the PR's progress file) under
-the finding's `key`: an answered finding's verdict once the comment
-posts, and for a finding escalated by any path, when it is escalated:
-`suspicious` for a fixer's refusal or a Filter C hit, `retry` if its
+the finding's `key` (for a finding raised again after `retry`, the key it
+repeats, as the library's "Copilot review body" says): an answered
+finding's verdict once the comment posts; `suspicious` for a fixer's
+refusal (`pr-watch/steps/04-fix-path.md` section 3) or a Filter C hit,
+when it is escalated; and for a section 4 `needs-human`, `retry` if its
 return has `retry: true` (the library's step 04, "`needs-human`
-handling"), and `needs-human` otherwise. Once every finding of the review
+handling") and `needs-human` otherwise. A reply that fails to post or a
+secret-scan hit records nothing for the review's findings, and the review
+stays pending. Once every finding of the review
 has its key recorded, record the review's own id under `parsed`. A body
 the Skip row classifies is recorded `skipped` under the review's id.
 Repeats are dropped as the library's "Copilot review body" describes,
