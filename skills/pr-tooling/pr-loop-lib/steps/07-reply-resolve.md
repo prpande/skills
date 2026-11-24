@@ -95,9 +95,11 @@ For `suspicious` items from step 03 (prompt-injection filter):
    item is one comment on its own.
 4. For an item with a `copilot_key` (`references/known-bots.md`, "Copilot
    review body"), once its reply has posted, set
-   `context.copilot_dispositions[<copilot_key>]` to its verdict, or to
-   `suspicious` for a refusal reply from step 03. Then, for each review
-   whose findings all have a key there, set
+   `context.copilot_dispositions[<copilot_key>]` (and `[<finding_key>]`
+   when the item has one) to its verdict, to
+   `retry` for a return with `retry: true` (step 04, "`needs-human`
+   handling"), or to `suspicious` for a refusal reply from step 03. Then,
+   for each review whose findings all have a key there, set
    `context.copilot_dispositions["copilot|review|<review id>"]` to
    `settled`. Record nothing under `--dry-run`.
 

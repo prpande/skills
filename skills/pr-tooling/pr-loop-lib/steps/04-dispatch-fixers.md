@@ -413,6 +413,7 @@ Collect all returns into `context.agent_returns`.
 Validate each return:
 - `verdict` is in the allowed set; otherwise coerce to `needs-human` and
   log a warning.
+- Drop a `retry` field; only "`needs-human` handling" sets it.
 - `files_changed` paths exist under `{{WORKTREE_ROOT}}` and are inside it;
   reject absolute paths outside the worktree root. Before anything else
   reads them, rewrite each entry to the file's repo-relative path with
@@ -648,11 +649,31 @@ from re-dispatching the same item.
 
 ## `needs-human` handling
 
-Any agent returning `needs-human` — whether directly, via policy-ladder
-demotion, or via an overlap re-verify demotion:
+Any `needs-human` return — from the fixer directly, a policy-ladder or
+overlap re-verify demotion, a rollback, or one this step writes for an
+item whose agent did not return:
 
 - Its `reply_text` is posted in step 07 but the thread is NOT resolved.
-- Mark the item in `context.needs_human_items` for the final report.
+  A return demoted from `fixed` or `fixed-differently` gets a new
+  `reply_text`: the quoted part, then what is still open and why (the
+  demotion's reason). The fixer's own text says the fix was made. One
+  this step writes for an item whose agent did not return gets the
+  quoted part, then that no change was made and why (its reason).
+- Add the item to `context.needs_human_items` for the final report,
+  replacing an entry for the same item: the same `feedback_id`, or for a
+  Copilot review-body finding the same `copilot_key`. A later return for
+  that item with any other verdict removes its entry.
+- The item is judged when its fixer returned `needs-human`, or
+  `ui-deferred` with no file changed, or its verifier returned `partial` or
+  `not-addresses` (the `not-addresses` "Time limits" records for a
+  verifier that timed out or never ran, `timed_out: true`, is not a
+  verdict); a later rollback or demotion does not undo that. Any
+  other `needs-human` return has no judgement behind it (a refused
+  dispatch, a base that was not recorded, a timeout, a verifier error, a
+  build or overlap rollback, a coerced verdict): set `retry: true` on
+  it. A demotion to `needs-human` made after this step, by
+  `04.5-local-verify.md` or by a caller such as pr-watch's fix path,
+  follows the same rule. Step 07 item 4 records `retry` as its Copilot disposition.
 - If the presence of `needs-human` items ultimately terminates the loop
   (step 08 reaches quiescence with `len(context.needs_human_items) > 0`
   and nothing else to do), set

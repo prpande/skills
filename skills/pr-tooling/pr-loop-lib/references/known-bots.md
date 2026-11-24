@@ -54,7 +54,13 @@ review id and often reworded. Each finding's `key` is
 `context.copilot_dispositions`; when it is not there, compare the finding
 with the recorded keys for the same path, and when it names the same
 defect as one of them, record its key with that verdict and raise
-nothing. When it is not clearly the same defect, raise it.
+nothing. When it is not clearly the same defect, raise it. A finding
+whose key, or the key whose defect it repeats, holds `retry` is not a
+repeat: no agent judged it, so raise it with that key as its
+`copilot_key` and its own key as `finding_key`, and step 07 records the
+new verdict under both. The exit-2
+whole-body item above has no key a later review can repeat, so its
+`retry` is not raised again; it stays in `context.needs_human_items`.
 
 A review whose `copilot|review|<review id>` is in `context.copilot_dispositions`
 is dropped before its body is written out or parsed. Step 03 records that

@@ -67,7 +67,9 @@ The confirmation iteration always waits — `pr-followup`'s
    return `ui-deferred` again, and the user would be prompted twice
    for the same item. `needs-human` iterations do not get the same
    advance — they deliberately re-surface on the next run so the
-   user sees the still-open question in `pr-followup`'s report.
+   user sees the still-open question in `pr-followup`'s report. A
+   Copilot review-body finding does not: its disposition settles its
+   review (step 07 item 4), and it stays in `context.needs_human_items`.
 3. **Iteration cap reached**:
    - `context.user_iteration_cap` if set → cap at that value.
    - Else 10 (default).

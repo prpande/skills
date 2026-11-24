@@ -189,7 +189,8 @@ the dispatch: <the fixer's reason>"), add the record's ids to
 `escalated_ids` and, for a top-level item, set
 `handled_top_level_ids[<item id>] = "escalated"` — without that the same
 feedback is pending again on the next poll and goes back to a fixer, so
-the refusal would be a pause rather than the end of it — roll back with
+the refusal would be a pause rather than the end of it — and for a
+Copilot review-body finding record as section 4 says, then roll back with
 section 10 over every path `git -C <worktree> status --porcelain` and
 `git -C <worktree> ls-files --others --exclude-standard` name rather than
 the return's `files_changed`, then section 9.
@@ -211,7 +212,10 @@ reasons in `needs_human_items`, and sort it as below.
   `settled_ids`.
 - `needs-human`: escalate (`pr-watch/steps/06-notify.md`), add the ids to
   `escalated_ids`, post nothing on GitHub. For a top-level item also set
-  `handled_top_level_ids[<item id>] = "escalated"`.
+  `handled_top_level_ids[<item id>] = "escalated"`. For a Copilot
+  review-body finding also record its key, and the review's id once every
+  finding of it has a key, as `pr-watch/references/known-bots-overlay.md`
+  ("`copilot-pull-request-reviewer`") says.
 
 No returns in section 5: go to section 7, then section 9.
 
@@ -357,6 +361,13 @@ Before the first reply or resolve of a pass, run
 only to Slack and needs no GitHub author check). Non-zero: post nothing,
 escalate ("needs you, no comment", reason "reply guard refused"), and go
 to section 9.
+
+Returns with something to say from one Copilot review body (record ids
+`<review id>:finding-<N>` sharing a review id) are one reply: run steps 1
+to 3 once for the group, posting one comment in the "Several findings of
+one review" shape of `pr-watch/references/reply-contract.md` and
+recording as `pr-watch/references/known-bots-overlay.md`
+("`copilot-pull-request-reviewer`") says.
 
 1. Write the reply from the return's `verdict`, `reason`, `reply_text`
    (facts only), the short sha, and the files, following Writing a reply
