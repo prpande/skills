@@ -665,11 +665,15 @@ item whose agent did not return:
   that item with any other verdict removes its entry.
 - The item is judged when its fixer returned `needs-human`, or
   `ui-deferred` with no file changed, or its verifier returned `partial` or
-  `not-addresses`; a later rollback or demotion does not undo that. Any
+  `not-addresses` (the `not-addresses` "Time limits" records for a
+  verifier that timed out or never ran, `timed_out: true`, is not a
+  verdict); a later rollback or demotion does not undo that. Any
   other `needs-human` return has no judgement behind it (a refused
   dispatch, a base that was not recorded, a timeout, a verifier error, a
   build or overlap rollback, a coerced verdict): set `retry: true` on
-  it. Step 07 item 4 records `retry` as its Copilot disposition.
+  it. A demotion to `needs-human` made after this step, by
+  `04.5-local-verify.md` or by a caller such as pr-watch's fix path,
+  follows the same rule. Step 07 item 4 records `retry` as its Copilot disposition.
 - If the presence of `needs-human` items ultimately terminates the loop
   (step 08 reaches quiescence with `len(context.needs_human_items) > 0`
   and nothing else to do), set

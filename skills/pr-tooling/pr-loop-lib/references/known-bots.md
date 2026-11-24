@@ -57,7 +57,8 @@ defect as one of them, record its key with that verdict and raise
 nothing. When it is not clearly the same defect, raise it. A finding
 whose key, or the key whose defect it repeats, holds `retry` is not a
 repeat: no agent judged it, so raise it with that key as its
-`copilot_key`, and step 07 records the new verdict there. The exit-2
+`copilot_key` and its own key as `finding_key`, and step 07 records the
+new verdict under both. The exit-2
 whole-body item above has no key a later review can repeat, so its
 `retry` is not raised again; it stays in `context.needs_human_items`.
 

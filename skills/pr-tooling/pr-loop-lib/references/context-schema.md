@@ -149,7 +149,8 @@ run `/simplify`).
   "body": "string",
   "thread_id": "string or null",
   "is_resolved": "boolean or null",
-  "copilot_key": "string, only on a finding parsed from a Copilot review body"
+  "copilot_key": "string, only on a finding parsed from a Copilot review body",
+  "finding_key": "string, only on a finding raised under a repeated `retry` key: its own key"
 }
 ```
 
